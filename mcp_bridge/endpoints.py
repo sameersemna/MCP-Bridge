@@ -4,33 +4,32 @@ from config import settings
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 
+from openai_clients import client, completions, chat_completions
+
 router = APIRouter(prefix="/v1")
 
 
 @router.post("/completions")
-async def completions(request: CreateCompletionRequest):
+async def openai_completions(request: CreateCompletionRequest):
     """Completions endpoint"""
     if request.stream:
         raise NotImplementedError("Streaming Completion is not supported")
     else:
-        raise NotImplementedError("Non-streaming Completion is not supported")
+        return await completions(request)
+        
 
 
 @router.post("/chat/completions")
-async def chat_completions(request: CreateChatCompletionRequest):
+async def openai_chat_completions(request: CreateChatCompletionRequest):
     """Chat Completions endpoint"""
     if request.stream:
         raise NotImplementedError("Streaming Chat Completion is not supported")
     else:
-        raise NotImplementedError("Non-streaming Chat Completion is not supported")
+        return await chat_completions(request)
 
 
 @router.get("/models")
 async def models():
     """List models"""
-    async with httpx.AsyncClient(
-        base_url=settings.inference_server.base_url,
-        headers={"Authorization": f"Bearer {settings.inference_server.api_key}"},
-    ) as client:
-        response = await client.get("/models")
-        return response.json()
+    response = await client.get("/models")
+    return response.json()
