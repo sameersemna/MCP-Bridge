@@ -1,6 +1,4 @@
-import httpx
 from fastapi import APIRouter
-from config import settings
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 
@@ -16,7 +14,6 @@ async def openai_completions(request: CreateCompletionRequest):
         raise NotImplementedError("Streaming Completion is not supported")
     else:
         return await completions(request)
-        
 
 
 @router.post("/chat/completions")
