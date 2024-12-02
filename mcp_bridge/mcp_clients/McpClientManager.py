@@ -15,7 +15,9 @@ class MCPClientManager:
             self.clients[server_name] = await self.construct_client(
                 server_name, server_config
             )
-            await self.clients[server_name].start() # TODO: make these sessions start async?
+            await self.clients[
+                server_name
+            ].start()  # TODO: make these sessions start async?
 
     async def construct_client(self, name, server_config) -> ClientInstance:
         logger.log("DEBUG", f"Constructing client for {server_config}")

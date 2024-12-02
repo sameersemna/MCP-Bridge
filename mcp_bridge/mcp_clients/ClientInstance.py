@@ -3,6 +3,7 @@ import asyncio
 from loguru import logger
 from mcp import ClientSession
 
+
 class ClientInstance:
     name: str
     lock: asyncio.Lock
@@ -24,7 +25,6 @@ class ClientInstance:
                 logger.debug(f"finished initialise session for {self.name}")
                 self.session = session
                 await asyncio.Future()
-        
 
     async def __aenter__(self):
         await self.lock.acquire()
