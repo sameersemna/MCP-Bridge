@@ -28,7 +28,7 @@ class Settings(BaseSettings):
         description="Inference server configuration"
     )
 
-    mcp_servers: dict[str, MCPServer] = Field(description="MCP servers configuration")
+    mcp_servers: dict[str, MCPServer] = Field(default_factory=dict, description="MCP servers configuration")
 
     model_config = SettingsConfigDict(
         env_prefix="MCP_BRIDGE__",
