@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 import asyncio
 from loguru import logger
 from mcp import ClientSession
@@ -7,7 +7,7 @@ from mcp import ClientSession
 class ClientInstance:
     name: str
     lock: asyncio.Lock
-    session: None
+    session: Optional[ClientSession]
 
     def __init__(self, name: str, client):
         logger.log("DEBUG", f"Creating client instance for {name}")
