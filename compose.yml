@@ -1,0 +1,11 @@
+services:
+  mpc-bridge:
+    build:
+      context: .
+    container_name: mpc-bridge
+    ports:
+      - "8000:8000"
+    environment:
+      - MCP_BRIDGE__INFERENCE_SERVER__BASE_URL=
+      - MCP_BRIDGE__INFERENCE_SERVER__API_KEY=
+    restart: unless-stopped
