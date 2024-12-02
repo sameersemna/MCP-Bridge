@@ -4,7 +4,7 @@ from loguru import logger
 import shutil
 import os
 
-async def construct_stdio_server(config: StdioServerParameters) -> ClientInstance:
+async def construct_stdio_client(config: StdioServerParameters):
     logger.log("DEBUG", "Constructing Stdio Server")
 
     env = dict(os.environ.copy())
@@ -18,8 +18,4 @@ async def construct_stdio_server(config: StdioServerParameters) -> ClientInstanc
         env=env,
     )
 
-    
-    async with stdio_client(server_parameters) as client:
-        async with ClientSession(*client) as session:
-            await session.initialize()
-            return ClientInstance(name="stdio", server=session)
+    return stdio_client(server_parameters)

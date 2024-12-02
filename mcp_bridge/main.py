@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from endpoints import router
+from endpoints import router as endpointRouter
+from mcp_endpoints import router as mcpRouter
 from lifespan import lifespan
 
 app = FastAPI(
@@ -8,4 +9,5 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.include_router(router)
+app.include_router(endpointRouter)
+app.include_router(mcpRouter)
