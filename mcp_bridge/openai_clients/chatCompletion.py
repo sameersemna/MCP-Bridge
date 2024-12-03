@@ -1,9 +1,13 @@
-from lmos_openai_types import CreateChatCompletionRequest
+from lmos_openai_types import CreateChatCompletionRequest, CreateChatCompletionResponse
 from .genericHttpxClient import client
 from mcp_clients.McpClientManager import ClientManager
 from tool_mappers import mcp2openai
+from loguru import logger
 
-async def chat_completions(request: CreateChatCompletionRequest) -> dict:
+
+async def chat_completions(
+    request: CreateChatCompletionRequest,
+) -> CreateChatCompletionResponse:
     """performs a chat completion using the inference server"""
 
     request.tools = []
@@ -13,10 +17,19 @@ async def chat_completions(request: CreateChatCompletionRequest) -> dict:
         for tool in tools.tools:
             request.tools.append(mcp2openai(tool))
 
-    response = await client.post(
-        "/chat/completions",
-        json=request.model_dump(
-            exclude_defaults=True, exclude_none=True, exclude_unset=True
-        ),
+    response = CreateChatCompletionResponse.model_validate_json(
+        (
+            await client.post(
+                "/chat/completions",
+                json=request.model_dump(
+                    exclude_defaults=True, exclude_none=True, exclude_unset=True
+                ),
+            )
+        ).text
     )
-    return response.json()
+
+    if response.choices[0].message.tool_calls is not None:
+        for tool_call in response.choices[0].message.tool_calls.root:
+            logger.debug(f"tool call: {tool_call.model_dump()}")
+
+    return response
