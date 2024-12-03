@@ -11,5 +11,6 @@ def mcp2openai(mcp_tool: Tool) -> ChatCompletionTool:
             "name": mcp_tool.name,
             "description": mcp_tool.description,
             "parameters": mcp_tool.inputSchema,
+            "strict": False,
         },
     )
