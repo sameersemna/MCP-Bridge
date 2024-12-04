@@ -55,8 +55,10 @@ New MCP servers can be added by updating the environment variables `.env` file, 
 
 ## Adding New MCP Servers
 To add new MCP servers, you need to update the environment variables `.env` file. Here is an example of how to add a new MCP server:
-   - MCP_BRIDGE__MCP_SERVERS__FETCH__COMMAND=uvx
-   - MCP_BRIDGE__MCP_SERVERS__FETCH__ARGS=["mcp-server-fetch"]
+```env
+MCP_BRIDGE__MCP_SERVERS__FETCH__COMMAND=uvx # any command in path
+MCP_BRIDGE__MCP_SERVERS__FETCH__ARGS=["mcp-server-fetch"] # json array
+```
 
 ## Contribution Guidelines
 Contributions to MCP-Bridge are welcome! To contribute, please follow these steps:
