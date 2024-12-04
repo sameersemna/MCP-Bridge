@@ -4,7 +4,9 @@ from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionReque
 
 from openai_clients import client, completions, chat_completions
 
-router = APIRouter(prefix="/v1")
+from openapi_tags import Tag
+
+router = APIRouter(prefix="/v1", tags=[Tag.openai])
 
 
 @router.post("/completions")

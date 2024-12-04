@@ -1,11 +1,15 @@
 from fastapi import APIRouter
 from mcp_clients.McpClientManager import ClientManager
+from mcp.types import ListToolsResult
+from openapi_tags import Tag
 
-router = APIRouter(prefix="/mcp")
+router = APIRouter(prefix="/mcp", tags=[Tag.mcp_management])
 
 
 @router.get("/tools")
-async def get_tools():
+async def get_tools() -> dict[str, ListToolsResult]:
+    """Get all tools from all MCP clients"""
+
     tools = {}
 
     for name, client in ClientManager.get_clients():
