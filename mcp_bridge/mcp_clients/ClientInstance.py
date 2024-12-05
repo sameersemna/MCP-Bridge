@@ -24,7 +24,17 @@ class ClientInstance:
                 await session.initialize()
                 logger.debug(f"finished initialise session for {self.name}")
                 self.session = session
-                await asyncio.Future()
+
+                try: 
+                    while True:
+                        await asyncio.sleep(10)
+                        logger.debug(f"pinging session for {self.name}")
+                        await session.send_ping()
+                except Exception as exc:
+                    logger.error(f"ping failed for {self.name}: {exc}")
+                    self.session = None
+                # TODO: handle session failure
+
 
     async def __aenter__(self):
         await self.lock.acquire()
