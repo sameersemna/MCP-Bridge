@@ -25,11 +25,9 @@ async def chat_completions(
 
 
     while True:
-        # logger.debug(request.messages)
-        # sleep(5)
+        # logger.debug(request.model_dump_json())
 
-        response = CreateChatCompletionResponse.model_validate_json(
-            (
+        text = (
                 await client.post(
                     "/chat/completions",
                     json=request.model_dump(
@@ -37,8 +35,11 @@ async def chat_completions(
                     ),
                 )
             ).text
-        )
-
+        logger.debug(text)
+        try:
+            response = CreateChatCompletionResponse.model_validate_json(text)
+        except Exception:
+            return
 
         msg = response.choices[0].message
         msg = ChatCompletionRequestMessage(
@@ -52,8 +53,6 @@ async def chat_completions(
         if response.choices[0].finish_reason.value in ["stop", "length"]:
             logger.debug("no tool calls found")
             return response
-
-        # sleep(3)
 
         logger.debug("tool calls found")
         for tool_call in response.choices[0].message.tool_calls.root:

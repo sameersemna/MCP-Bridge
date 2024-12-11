@@ -10,6 +10,7 @@ config: Settings = None # type: ignore
 if initial_settings.load_config:
     # import stuff needed to load the config
     from deepmerge import always_merger
+    import sys
     
     configs: list[dict[str, Any]] = []
     load_config: Callable[[str], dict] # without this mypy will error about param names
@@ -37,3 +38,6 @@ if initial_settings.load_config:
 
     # build the config
     config = Settings(**result)
+
+    logger.remove()
+    logger.add(sys.stderr, format="{time} {level} {message}", level=config.logging.log_level)

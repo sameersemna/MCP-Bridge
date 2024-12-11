@@ -1,4 +1,4 @@
-from typing import Annotated, Union
+from typing import Annotated, Literal, Union
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel, Field
 
@@ -10,6 +10,9 @@ class InferenceServer(BaseModel):
     api_key: str = Field(
         default="unauthenticated", description="API key for the inference server"
     )
+
+class Logging(BaseModel):
+    log_level: Literal["INFO", "DEBUG"] = Field("INFO", description="default log level")
 
 
 class SSEMCPServer(BaseModel):
@@ -30,6 +33,11 @@ class Settings(BaseSettings):
 
     mcp_servers: dict[str, MCPServer] = Field(
         default_factory=dict, description="MCP servers configuration"
+    )
+
+    logging: Logging = Field(
+        default_factory=Logging,
+        description="logging config",
     )
 
     model_config = SettingsConfigDict(
