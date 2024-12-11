@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Optional
 import asyncio
 from loguru import logger
 from mcp import ClientSession
@@ -25,7 +25,7 @@ class ClientInstance:
                 logger.debug(f"finished initialise session for {self.name}")
                 self.session = session
 
-                try: 
+                try:
                     while True:
                         await asyncio.sleep(10)
                         logger.debug(f"pinging session for {self.name}")
@@ -34,7 +34,6 @@ class ClientInstance:
                     logger.error(f"ping failed for {self.name}: {exc}")
                     self.session = None
                 # TODO: handle session failure
-
 
     async def __aenter__(self):
         await self.lock.acquire()

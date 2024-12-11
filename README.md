@@ -13,54 +13,84 @@ MCP-Bridge is designed to facilitate the integration of MCP tools with the OpenA
 - streaming chat completions are not implemented yet
 - streaming completionsare not implemented yet
 
+- MCP tools are supported
+- MCP resources are planned to be supported
+
 ## Installation
 
 The recommended way to install MCP-Bridge is to use Docker. See the example compose.yml file for an example of how to set up docker.
 
+### Docker installation
+
 1. **Clone the repository**
 
 2. **Edit the compose.yml file**
+
+You will need to add a reference to the config.json file in the compose.yml file. Pick any of
+- add the config.json file to the same directory as the compose.yml file and use a volume mount (you will need to add the volume manually)
+- add a http url to the environment variables to download the config.json file from a url
+- add the config json directly as an environment variable
+
+see below for an example of each option:
+```bash
+environment:
+  - MCP_BRIDGE__CONFIG__FILE=config.json # mount the config file for this to work
+  - MCP_BRIDGE__CONFIG__HTTP_URL=http://10.88.100.170:8888/config.json
+  - MCP_BRIDGE__CONFIG__JSON={"inference_server":{"base_url":"http://example.com/v1","api_key":"None"},"mcp_servers":{"fetch":{"command":"uvx","args":["mcp-server-fetch"]}}}
+```
 
 3. **run the service**
 ```
 docker-compose up --build -d
 ```
 
-### To manually install MCP-Bridge, follow these steps:
+### Manual installation (no docker)
+
+If you want to run the application without docker, you will need to install the requirements and run the application manually.
 
 1. **Clone the repository**
 
 2. **Set up a virtual environment:**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
 3. **Install the requirements:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+pip install -r requirements.txt
+```
 
-4. **Create a `.env` file in the root directory of the project with the following variables:**
-   - `MCP_BRIDGE__INFERENCE_SERVER__BASE_URL`: The base URL of the inference server
-   - `MCP_BRIDGE__INFERENCE_SERVER__API_KEY`: The API key for the inference server (optional)
+4. **Create a config.json file in the root directory**
+
+Here is an example config.json file:
+```json
+{
+   "inference_server": {
+      "base_url": "http://example.com/v1",
+      "api_key": "None"
+   },
+   "mcp_servers": {
+      "fetch": {
+        "command": "uvx",
+        "args": ["mcp-server-fetch"]
+      }
+   }
+}
+```
 
 5. **Run the application:**
-   ```bash
-   uvicorn mcp_bridge.main:app --reload
-   ```
+```bash
+python mcp_bridge/main.py
+```
 
 ## Usage
-Once the application is running, you can interact with it using the OpenAI API. Here is a quick example of how to use the `chatCompletion` endpoint.
+Once the application is running, you can interact with it using the OpenAI API.
 
-New MCP servers can be added by updating the environment variables `.env` file, and the tools are injected into the completion call automatically.
+View the documentation at [http://yourserver:8000/docs](http://localhost:8000/docs). There is an endpoint to list all the MCP tools available on the server, which you can use to test the application configuration.
 
 ## Adding New MCP Servers
-To add new MCP servers, you need to update the environment variables `.env` file. Here is an example of how to add a new MCP server:
-```env
-MCP_BRIDGE__MCP_SERVERS__FETCH__COMMAND=uvx # any command in path
-MCP_BRIDGE__MCP_SERVERS__FETCH__ARGS=["mcp-server-fetch"] # json array
-```
+To add new MCP servers, edit the config.json file.
 
 ## Contribution Guidelines
 Contributions to MCP-Bridge are welcome! To contribute, please follow these steps:

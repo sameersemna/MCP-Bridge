@@ -1,8 +1,8 @@
 from httpx import AsyncClient
-from config import settings
+from config import config
 
 client: AsyncClient = AsyncClient(
-    base_url=settings.inference_server.base_url,
-    headers={"Authorization": f"Bearer {settings.inference_server.api_key}"},
-    timeout=10000
+    base_url=config.inference_server.base_url,
+    headers={"Authorization": f"Bearer {config.inference_server.api_key}"},
+    timeout=10000,
 )

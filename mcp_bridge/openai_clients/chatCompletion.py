@@ -9,7 +9,7 @@ from tool_mappers import mcp2openai
 from loguru import logger
 import json
 
-from time import sleep
+
 
 async def chat_completions(
     request: CreateChatCompletionRequest,
@@ -23,29 +23,29 @@ async def chat_completions(
         for tool in tools.tools:
             request.tools.append(mcp2openai(tool))
 
-
     while True:
-        # logger.debug(request.messages)
-        # sleep(5)
+        # logger.debug(request.model_dump_json())
 
-        response = CreateChatCompletionResponse.model_validate_json(
-            (
-                await client.post(
-                    "/chat/completions",
-                    json=request.model_dump(
-                        exclude_defaults=True, exclude_none=True, exclude_unset=True
-                    ),
-                )
-            ).text
-        )
-
+        text = (
+            await client.post(
+                "/chat/completions",
+                json=request.model_dump(
+                    exclude_defaults=True, exclude_none=True, exclude_unset=True
+                ),
+            )
+        ).text
+        logger.debug(text)
+        try:
+            response = CreateChatCompletionResponse.model_validate_json(text)
+        except Exception:
+            return
 
         msg = response.choices[0].message
         msg = ChatCompletionRequestMessage(
             role="assistant",
             content=msg.content,
             tool_calls=msg.tool_calls,
-        ) # type: ignore
+        )  # type: ignore
         request.messages.append(msg)
 
         logger.debug(f"finish reason: {response.choices[0].finish_reason}")
@@ -53,16 +53,14 @@ async def chat_completions(
             logger.debug("no tool calls found")
             return response
 
-        # sleep(3)
-
         logger.debug("tool calls found")
         for tool_call in response.choices[0].message.tool_calls.root:
-            logger.debug(f"tool call: {tool_call.function.name} arguments: {json.loads(tool_call.function.arguments)}")
+            logger.debug(
+                f"tool call: {tool_call.function.name} arguments: {json.loads(tool_call.function.arguments)}"
+            )
 
             # FIXME: this can probably be done in parallel using asyncio gather
-            session = await ClientManager.get_client_from_tool(
-                tool_call.function.name
-            )
+            session = await ClientManager.get_client_from_tool(tool_call.function.name)
             tool_call_result = await session.call_tool(
                 name=tool_call.function.name,
                 arguments=json.loads(tool_call.function.arguments),
