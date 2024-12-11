@@ -1,5 +1,5 @@
 from typing import Any
-from config import settings
+from config import config
 from mcp import StdioServerParameters
 from mcp_clients.StdioClientFactory import construct_stdio_client
 from .ClientInstance import ClientInstance
@@ -11,7 +11,7 @@ class MCPClientManager:
 
     async def initialize(self):
         logger.log("DEBUG", "Initializing MCP Client Manager")
-        for server_name, server_config in settings.mcp_servers.items():
+        for server_name, server_config in config.mcp_servers.items():
             self.clients[server_name] = await self.construct_client(
                 server_name, server_config
             )
