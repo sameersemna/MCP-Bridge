@@ -92,6 +92,29 @@ View the documentation at [http://yourserver:8000/docs](http://localhost:8000/do
 ## Adding New MCP Servers
 To add new MCP servers, edit the config.json file.
 
+## How does it work
+
+The application sits between the OpenAI API and the inference engine. An incoming request is modified to include tool definitions for all MCP tools available on the MCP servers. The request is then forwarded to the inference engine, which uses the tool definitions to create tool calls. MCP bridge then manage the calls to the tools. The request is then modified to include the tool call results, and is returned to the inference engine again so the LLM can create a response. Finally, the response is returned to the OpenAI API.
+
+```mermaid
+sequenceDiagram
+    participant OpenWebUI as Open Web UI
+    participant MCPProxy as MCP Proxy
+    participant MCPserver as MCP Server
+    participant InferenceEngine as Inference Engine
+
+    OpenWebUI ->> MCPProxy: Request
+    MCPProxy ->> MCPserver: list tools
+    MCPserver ->> MCPProxy: list of tools
+    MCPProxy ->> InferenceEngine: Forward Request
+    InferenceEngine ->> MCPProxy: Response
+    MCPProxy ->> MCPserver: call tool
+    MCPserver ->> MCPProxy: tool response
+    MCPProxy ->> InferenceEngine: llm uses tool response
+    InferenceEngine ->> MCPProxy: Response
+    MCPProxy ->> OpenWebUI: Return Response
+```
+
 ## Contribution Guidelines
 Contributions to MCP-Bridge are welcome! To contribute, please follow these steps:
 1. Fork the repository.
