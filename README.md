@@ -34,7 +34,7 @@ You will need to add a reference to the config.json file in the compose.yml file
 see below for an example of each option:
 ```bash
 environment:
-  - MCP_BRIDGE__CONFIG__FILE=config.json
+  - MCP_BRIDGE__CONFIG__FILE=config.json # mount the config file for this to work
   - MCP_BRIDGE__CONFIG__HTTP_URL=http://10.88.100.170:8888/config.json
   - MCP_BRIDGE__CONFIG__JSON={"inference_server":{"base_url":"http://example.com/v1","api_key":"None"},"mcp_servers":{"fetch":{"command":"uvx","args":["mcp-server-fetch"]}}}
 ```
