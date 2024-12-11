@@ -6,3 +6,4 @@ pydantic-settings
 httpx
 lmos-openai-types @ git+https://github.com/LMOS-IO/LMOS-openai-types@pydantic-gen
 loguru
+deepmerge
