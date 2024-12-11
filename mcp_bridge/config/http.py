@@ -3,11 +3,12 @@ import httpx
 from typing import Any
 from loguru import logger
 
+
 def load_config(url: str) -> dict[str, Any]:
-    try: 
+    try:
         resp = httpx.get(str(url))
         return resp.json()
-    
+
     except httpx.ConnectError:
         logger.error(f"could not connect to {httpx.URL(url).host}")
 

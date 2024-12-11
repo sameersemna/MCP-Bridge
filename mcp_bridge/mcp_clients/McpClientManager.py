@@ -1,4 +1,3 @@
-from typing import Any
 from config import config
 from mcp import StdioServerParameters
 from mcp_clients.StdioClientFactory import construct_stdio_client
@@ -37,11 +36,11 @@ class MCPClientManager:
 
     def get_clients(self):
         return list(self.clients.items())
-    
+
     async def get_client_from_tool(self, tool: str):
-        for client in self.get_clients() :
+        for client in self.get_clients():
             tools = await client[1].session.list_tools()
-            for client_tool in tools.tools :
+            for client_tool in tools.tools:
                 if client_tool.name == tool:
                     return client[1].session
 

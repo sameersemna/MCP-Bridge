@@ -4,5 +4,5 @@ from config import config
 client: AsyncClient = AsyncClient(
     base_url=config.inference_server.base_url,
     headers={"Authorization": f"Bearer {config.inference_server.api_key}"},
-    timeout=10000
+    timeout=10000,
 )

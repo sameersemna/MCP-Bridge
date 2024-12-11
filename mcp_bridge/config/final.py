@@ -11,6 +11,7 @@ class InferenceServer(BaseModel):
         default="unauthenticated", description="API key for the inference server"
     )
 
+
 class Logging(BaseModel):
     log_level: Literal["INFO", "DEBUG"] = Field("INFO", description="default log level")
 
