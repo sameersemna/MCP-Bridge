@@ -7,7 +7,7 @@ __all__ = ["initial_settings"]
 class InitialSettings(BaseSettings):
     file: Optional[str] = Field("config.json")
     http_url: Optional[str] = Field(None)
-    config_json: Optional[Json] = Field(None) # allow for raw config to be passed as env var
+    json: Optional[Json] = Field(None) # allow for raw config to be passed as env var
 
     load_config: bool = Field(True, include_in_schema=False) # this can be used to disable loading the config
 

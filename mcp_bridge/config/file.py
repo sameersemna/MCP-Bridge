@@ -1,6 +1,16 @@
 import json
 from typing import Any
+from loguru import logger
 
 def load_config(file: str) -> dict[str, Any]:
-    with open(file, "r") as f:
-        return json.load(f)
+    try: 
+        with open(file, "r") as f:
+            return json.load(f)
+        
+    except FileNotFoundError:
+        logger.warning(f"the \"{file}\" file was not found")
+
+    except Exception as e:
+        logger.error(f"there was an error reading the \"{file}\" file")
+
+    return {}

@@ -2,6 +2,7 @@ from .initial import initial_settings
 from .final import Settings
 from typing import Any, Callable
 from loguru import logger
+from pydantic import ValidationError
 
 __all__ = ["config"]
 
@@ -26,10 +27,9 @@ if initial_settings.load_config:
         from .http import load_config
         configs.append(load_config(initial_settings.http_url))
 
-    if initial_settings.config_json is not None:
+    if initial_settings.json is not None:
         logger.info("Loading config from json string")
-        from json import loads as load_config
-        configs.append(load_config(initial_settings.config_json))
+        configs.append(initial_settings.json)
 
     # merge the configs
     result: dict = {}
@@ -37,7 +37,14 @@ if initial_settings.load_config:
         always_merger.merge(result, cfg)
 
     # build the config
-    config = Settings(**result)
+    try: 
+        config = Settings(**result)
+    except ValidationError as e:
+        logger.error("unable to load a valid configuration")
+        for error in e.errors():
+            logger.error(f"{error['loc'][0]}: {error['msg']}")
+        exit(1)
+
 
     logger.remove()
     logger.add(sys.stderr, format="{time} {level} {message}", level=config.logging.log_level)
