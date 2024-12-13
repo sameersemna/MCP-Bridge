@@ -18,7 +18,9 @@ MCP-Bridge is designed to facilitate the integration of MCP tools with the OpenA
 
 ## Installation
 
-The recommended way to install MCP-Bridge is to use Docker. See the example compose.yml file for an example of how to set up docker.
+The recommended way to install MCP-Bridge is to use Docker. See the example compose.yml file for an example of how to set up docker. 
+
+Note that this requires an inference engine with tool call support. I have tested this with vLLM with success, though ollama should also be compatible.
 
 ### Docker installation
 
