@@ -26,6 +26,10 @@ MCPServer = Annotated[
     Field(description="MCP server configuration"),
 ]
 
+class Network(BaseModel):
+    host: str = Field("0.0.0.0", description="Host of the network")
+    port: int = Field(8000, description="Port of the network")
+
 
 class Settings(BaseSettings):
     inference_server: InferenceServer = Field(
@@ -37,8 +41,13 @@ class Settings(BaseSettings):
     )
 
     logging: Logging = Field(
-        default_factory=Logging,
+        default_factory=lambda: Logging.model_construct(),
         description="logging config",
+    )
+
+    network: Network = Field(
+        default_factory=lambda: Network.model_construct(),
+        description="network config",
     )
 
     model_config = SettingsConfigDict(
