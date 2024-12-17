@@ -1,8 +1,8 @@
 services:
-  mpc-bridge:
+  mcp-bridge:
     build:
       context: .
-    container_name: mpc-bridge
+    container_name: mcp-bridge
     ports:
       - "8000:8000"
     environment:
