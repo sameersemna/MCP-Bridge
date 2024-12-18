@@ -16,3 +16,14 @@ async def get_tools() -> dict[str, ListToolsResult]:
         tools[name] = await client.session.list_tools()
 
     return tools
+
+@router.get("/servers")
+async def get_servers() -> list[str]:
+    """List all MCP servers"""
+
+    servers = []
+
+    for name, client in ClientManager.get_clients():
+        servers.append(name)
+
+    return servers
