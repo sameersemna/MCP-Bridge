@@ -47,7 +47,11 @@ if initial_settings.load_config:
             logger.error(f"{error['loc'][0]}: {error['msg']}")
         exit(1)
 
-    logger.remove()
-    logger.add(
-        sys.stderr, format="{time} {level} {message}", level=config.logging.log_level
-    )
+    if config.logging.log_level != "DEBUG":
+        logger.remove()
+        logger.add(
+            sys.stderr,
+            format="{time} {level} {message}",
+            level=config.logging.log_level,
+            colorize=True,
+        )
