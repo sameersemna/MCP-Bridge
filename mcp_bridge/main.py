@@ -18,4 +18,4 @@ if __name__ == "__main__":
     import uvicorn
     from config import config
 
-    uvicorn.run(app, host=config.network.host, port=config.network.port) 
+    uvicorn.run(app, host=config.network.host, port=config.network.port)

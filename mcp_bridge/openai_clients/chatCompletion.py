@@ -10,7 +10,6 @@ from loguru import logger
 import json
 
 
-
 async def chat_completions(
     request: CreateChatCompletionRequest,
 ) -> CreateChatCompletionResponse:

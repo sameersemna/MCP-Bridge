@@ -17,6 +17,7 @@ async def get_tools() -> dict[str, ListToolsResult]:
 
     return tools
 
+
 @router.get("/servers")
 async def get_servers() -> list[str]:
     """List all MCP servers"""
