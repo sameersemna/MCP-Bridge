@@ -12,8 +12,13 @@ async def construct_stdio_client(config: StdioServerParameters):
     if config.env is not None:
         env.update(config.env)
 
+    command = shutil.which(config.command)
+    if command is None:
+        logger.error(f"could not find command {config.command}")
+        exit(1)
+
     server_parameters = StdioServerParameters(
-        command=shutil.which(config.command),
+        command=command,
         args=config.args,
         env=env,
     )
