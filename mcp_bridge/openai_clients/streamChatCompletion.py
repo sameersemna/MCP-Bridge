@@ -49,11 +49,11 @@ async def chat_completions(request: CreateChatCompletionRequest):
 
         logger.debug(json_data)
 
+        last: Optional[CreateChatCompletionStreamResponse] = None  # last message
+
         async with aconnect_sse(
             client, "post", "/chat/completions", content=json_data
         ) as event_source:
-            last: Optional[CreateChatCompletionStreamResponse] = None  # last message
-
             async for sse in event_source.aiter_sse():
                 event = sse.event
                 data = sse.data
@@ -76,11 +76,14 @@ async def chat_completions(request: CreateChatCompletionRequest):
 
                 last = parsed_data
 
-            assert last is not None
-            assert last.choices[0].finish_reason is not None
-            if last.choices[0].finish_reason.value in ["stop", "length"]:
-                logger.debug("no tool calls found")
-                fully_done = True
+        # ideally we should check this properly
+        assert last is not None
+        assert last.choices[0].finish_reason is not None
+
+        if last.choices[0].finish_reason.value in ["stop", "length"]:
+            logger.debug("no tool calls found")
+            fully_done = True
 
     # when done, send the final event
+    logger.debug("sending final event")
     yield ServerSentEvent(event="message", data="[DONE]", id=None, retry=None)
