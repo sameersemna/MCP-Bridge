@@ -91,8 +91,42 @@ Once the application is running, you can interact with it using the OpenAI API.
 
 View the documentation at [http://yourserver:8000/docs](http://localhost:8000/docs). There is an endpoint to list all the MCP tools available on the server, which you can use to test the application configuration.
 
-## Adding New MCP Servers
+## Configuration
+
 To add new MCP servers, edit the config.json file.
+
+an example config.json file with most of the options explicitly set:
+
+```json
+{
+    "inference_server": {
+        "base_url": "http://localhost:8000/v1",
+        "api_key": "None"
+    },
+    "mcp_servers": {
+        "fetch": {
+            "command": "uvx",
+            "args": [
+                "mcp-server-fetch"
+            ]
+        }
+    },
+    "network": {
+        "host": "0.0.0.0",
+        "port": 9090
+    },
+    "logging": {
+        "log_level": "DEBUG"
+    }
+}
+```
+
+| Section          | Description                        |
+| ---------------- | ---------------------------------- |
+| inference_server | The inference server configuration |
+| mcp_servers      | The MCP servers configuration      |
+| network          | uvicorn network configuration      |
+| logging          | The logging configuration          |
 
 ## How does it work
 
