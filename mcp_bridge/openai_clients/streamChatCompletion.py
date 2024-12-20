@@ -5,6 +5,7 @@ from lmos_openai_types import (
     CreateChatCompletionRequest,
     CreateChatCompletionStreamResponse,
 )
+from .utils import chat_completion_add_tools
 from models import SSEData
 from .genericHttpxClient import client
 from mcp_clients.McpClientManager import ClientManager
@@ -34,12 +35,7 @@ async def chat_completions(request: CreateChatCompletionRequest):
 
     request.stream = True
 
-    request.tools = []
-
-    for _, session in ClientManager.get_clients():
-        tools = await session.session.list_tools()
-        for tool in tools.tools:
-            request.tools.append(mcp2openai(tool))
+    request = await chat_completion_add_tools(request)
 
     fully_done = False
     while not fully_done:
