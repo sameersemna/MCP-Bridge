@@ -8,7 +8,7 @@ from lmos_openai_types import (
     CreateChatCompletionStreamResponse,
     Function1,
 )
-from .utils import chat_completion_add_tools
+from .utils import call_tool, chat_completion_add_tools
 from models import SSEData
 from .genericHttpxClient import client
 from mcp_clients.McpClientManager import ClientManager
@@ -153,12 +153,9 @@ async def chat_completions(request: CreateChatCompletionRequest):
 
         #### MOST OF THIS IS COPY PASTED FROM CHAT_COMPLETIONS
         # FIXME: this can probably be done in parallel using asyncio gather
-        session = await ClientManager.get_client_from_tool(tool_call_name)
-        assert session is not None, "MCP server is not running"
-        tool_call_result = await session.call_tool(
-            name=tool_call_name,
-            arguments=json.loads(tool_call_json),
-        )
+        tool_call_result = await call_tool(tool_call_name, tool_call_json)
+        if tool_call_result is None:
+            continue
 
         logger.debug(
             f"tool call result for {tool_call_name}: {tool_call_result.model_dump()}"

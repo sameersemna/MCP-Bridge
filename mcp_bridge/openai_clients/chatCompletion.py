@@ -4,7 +4,7 @@ from lmos_openai_types import (
     ChatCompletionRequestMessage,
 )
 
-from .utils import chat_completion_add_tools
+from .utils import call_tool, chat_completion_add_tools
 from .genericHttpxClient import client
 from mcp_clients.McpClientManager import ClientManager
 from tool_mappers import mcp2openai
@@ -56,11 +56,9 @@ async def chat_completions(
             )
 
             # FIXME: this can probably be done in parallel using asyncio gather
-            session = await ClientManager.get_client_from_tool(tool_call.function.name)
-            tool_call_result = await session.call_tool(
-                name=tool_call.function.name,
-                arguments=json.loads(tool_call.function.arguments),
-            )
+            tool_call_result = await call_tool(tool_call.function.name, tool_call.function.arguments)
+            if tool_call_result is None:
+                continue
 
             logger.debug(
                 f"tool call result for {tool_call.function.name}: {tool_call_result.model_dump()}"
