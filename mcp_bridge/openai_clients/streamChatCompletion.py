@@ -166,19 +166,14 @@ async def chat_completions(request: CreateChatCompletionRequest):
 
         logger.debug(f"tool call result content: {tool_call_result.content}")
 
-        # FIXME: this cannot handle multipart messages
+        tools_content = [{"type": "text", "text": part.text} for part in tool_call_result.content]
         request.messages.append(
             ChatCompletionRequestMessage.model_validate(
                 {
                     "role": "tool",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": tool_call_result.content[0].text,
-                        },
-                    ],
+                    "content": tools_content,
                     "tool_call_id": tool_call_id,
-                }  # type: ignore
+                }
             )
         )
 
