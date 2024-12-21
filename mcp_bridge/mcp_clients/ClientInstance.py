@@ -2,6 +2,7 @@ from typing import Optional
 import asyncio
 from loguru import logger
 from mcp import ClientSession
+from config import config
 
 
 class ClientInstance:
@@ -28,11 +29,15 @@ class ClientInstance:
                 try:
                     while True:
                         await asyncio.sleep(10)
-                        logger.debug(f"pinging session for {self.name}")
+                        if config.logging.log_server_pings:
+                            logger.debug(f"pinging session for {self.name}")
+
                         await session.send_ping()
+
                 except Exception as exc:
                     logger.error(f"ping failed for {self.name}: {exc}")
                     self.session = None
+                
                 # TODO: handle session failure
 
     async def __aenter__(self):

@@ -14,6 +14,7 @@ class InferenceServer(BaseModel):
 
 class Logging(BaseModel):
     log_level: Literal["INFO", "DEBUG"] = Field("INFO", description="default log level")
+    log_server_pings: bool = Field(False, description="log server pings")
 
 
 class SSEMCPServer(BaseModel):
