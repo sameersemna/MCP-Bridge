@@ -3,6 +3,8 @@ from lmos_openai_types import (
     CreateChatCompletionResponse,
     ChatCompletionRequestMessage,
 )
+
+from .utils import call_tool, chat_completion_add_tools
 from .genericHttpxClient import client
 from mcp_clients.McpClientManager import ClientManager
 from tool_mappers import mcp2openai
@@ -15,12 +17,7 @@ async def chat_completions(
 ) -> CreateChatCompletionResponse:
     """performs a chat completion using the inference server"""
 
-    request.tools = []
-
-    for _, session in ClientManager.get_clients():
-        tools = await session.session.list_tools()
-        for tool in tools.tools:
-            request.tools.append(mcp2openai(tool))
+    request = await chat_completion_add_tools(request)
 
     while True:
         # logger.debug(request.model_dump_json())
@@ -59,11 +56,9 @@ async def chat_completions(
             )
 
             # FIXME: this can probably be done in parallel using asyncio gather
-            session = await ClientManager.get_client_from_tool(tool_call.function.name)
-            tool_call_result = await session.call_tool(
-                name=tool_call.function.name,
-                arguments=json.loads(tool_call.function.arguments),
-            )
+            tool_call_result = await call_tool(tool_call.function.name, tool_call.function.arguments)
+            if tool_call_result is None:
+                continue
 
             logger.debug(
                 f"tool call result for {tool_call.function.name}: {tool_call_result.model_dump()}"
@@ -71,19 +66,14 @@ async def chat_completions(
 
             logger.debug(f"tool call result content: {tool_call_result.content}")
 
-            # FIXME: this cannot handle multipart messages
+            tools_content = [{"type": "text", "text": part.text} for part in filter(lambda x: x.type == "text", tool_call_result.content)]
             request.messages.append(
                 ChatCompletionRequestMessage.model_validate(
                     {
                         "role": "tool",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": tool_call_result.content[0].text,
-                            },
-                        ],
+                        "content": tools_content,
                         "tool_call_id": tool_call.id,
-                    }  # type: ignore
+                    }
                 )
             )
 
