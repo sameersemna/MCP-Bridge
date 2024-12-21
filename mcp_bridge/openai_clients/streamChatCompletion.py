@@ -1,9 +1,11 @@
 import json
 from typing import Optional
 from lmos_openai_types import (
+    ChatCompletionMessageToolCall,
     ChatCompletionRequestMessage,
     CreateChatCompletionRequest,
     CreateChatCompletionStreamResponse,
+    Function1,
 )
 from .utils import chat_completion_add_tools
 from models import SSEData
@@ -50,6 +52,8 @@ async def chat_completions(request: CreateChatCompletionRequest):
         tool_call_name: str = ""
         tool_call_json: str = ""
         should_forward: bool = True
+        response_content: str = ""
+        tool_call_id: str = ""
 
         async with aconnect_sse(
             client, "post", "/chat/completions", content=json_data
@@ -72,6 +76,12 @@ async def chat_completions(request: CreateChatCompletionRequest):
                     data
                 )
 
+                # add the delta to the response content
+                content = parsed_data.choices[0].delta.content
+                content = content if content is not None else ""
+                response_content += content
+
+                # handle stop reasons
                 if parsed_data.choices[0].finish_reason is not None:
                     if parsed_data.choices[0].finish_reason.value in [
                         "stop",
@@ -85,21 +95,29 @@ async def chat_completions(request: CreateChatCompletionRequest):
                 # most of this is assertions to please mypy
                 if parsed_data.choices[0].delta.tool_calls is not None:
                     should_forward = False
-                    assert parsed_data.choices[0].delta.tool_calls[0].function is not None
+                    assert (
+                        parsed_data.choices[0].delta.tool_calls[0].function is not None
+                    )
 
                     name = parsed_data.choices[0].delta.tool_calls[0].function.name
                     name = name if name is not None else ""
                     tool_call_name = name if tool_call_name == "" else tool_call_name
 
+                    call_id = parsed_data.choices[0].delta.tool_calls[0].id
+                    call_id = call_id if call_id is not None else ""
+                    tool_call_id = id if tool_call_id == "" else tool_call_id
+
                     arg = parsed_data.choices[0].delta.tool_calls[0].function.arguments
                     tool_call_json += arg if arg is not None else ""
 
+                # forward SSE messages to the client
                 logger.debug(f"{should_forward=}")
                 if should_forward:
                     # we do not want to forward tool call json to the client
                     logger.debug("forwarding message")
                     yield SSEData.model_validate_json(sse.data).model_dump_json()
 
+                # save the last message
                 last = parsed_data
 
         # ideally we should check this properly
@@ -111,8 +129,57 @@ async def chat_completions(request: CreateChatCompletionRequest):
             fully_done = True
 
         logger.debug("tool calls found")
-        logger.error(f"{tool_call_name=} {tool_call_json=}") # this should not be error but its easier to debug 
-        break # FIXME: this is a hack to break out of the loop
+        logger.error(
+            f"{tool_call_name=} {tool_call_json=}"
+        )  # this should not be error but its easier to debug
+
+        # add recieved message to the history
+        msg = ChatCompletionRequestMessage(
+            role="assistant",
+            content=response_content,
+            tool_calls=[
+                ChatCompletionMessageToolCall(
+                    id=tool_call_id,
+                    type="function",
+                    function=Function1(
+                        name=tool_call_name, arguments=tool_call_json
+                    ),
+                )
+            ],
+        )  # type: ignore
+        request.messages.append(msg)
+
+        #### MOST OF THIS IS COPY PASTED FROM CHAT_COMPLETIONS
+        # FIXME: this can probably be done in parallel using asyncio gather
+        session = await ClientManager.get_client_from_tool(tool_call_name)
+        tool_call_result = await session.call_tool(
+            name=tool_call_name,
+            arguments=json.loads(tool_call_json),
+        )
+
+        logger.debug(
+            f"tool call result for {tool_call_name}: {tool_call_result.model_dump()}"
+        )
+
+        logger.debug(f"tool call result content: {tool_call_result.content}")
+
+        # FIXME: this cannot handle multipart messages
+        request.messages.append(
+            ChatCompletionRequestMessage.model_validate(
+                {
+                    "role": "tool",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": tool_call_result.content[0].text,
+                        },
+                    ],
+                    "tool_call_id": tool_call_id,
+                }  # type: ignore
+            )
+        )
+
+        logger.debug("sending next iteration of chat completion request")
 
     # when done, send the final event
     logger.debug("sending final event")
