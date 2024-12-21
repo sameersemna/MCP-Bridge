@@ -7,13 +7,20 @@ MCP-Bridge is designed to facilitate the integration of MCP tools with the OpenA
 ![open web ui example](/assets/owui_example.png)
 
 ## current features
+
+working features:
+
 - non streaming chat completions with MCP
+- streaming chat completions with MCP
+
 - non streaming completions without MCP
 
-- streaming chat completions are not implemented yet
-- streaming completionsare not implemented yet
+- MCP tools
 
-- MCP tools are supported
+planned features:
+
+- streaming completions are not implemented yet
+
 - MCP resources are planned to be supported
 
 ## Installation
