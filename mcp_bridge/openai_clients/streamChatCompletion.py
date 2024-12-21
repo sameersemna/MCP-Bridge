@@ -1,4 +1,5 @@
 import json
+from socket import timeout
 from typing import Optional
 from lmos_openai_types import (
     ChatCompletionMessageToolCall,
@@ -127,6 +128,7 @@ async def chat_completions(request: CreateChatCompletionRequest):
         if last.choices[0].finish_reason.value in ["stop", "length"]:
             logger.debug("no tool calls found")
             fully_done = True
+            continue
 
         logger.debug("tool calls found")
         logger.error(
@@ -152,6 +154,7 @@ async def chat_completions(request: CreateChatCompletionRequest):
         #### MOST OF THIS IS COPY PASTED FROM CHAT_COMPLETIONS
         # FIXME: this can probably be done in parallel using asyncio gather
         session = await ClientManager.get_client_from_tool(tool_call_name)
+        assert session is not None, "MCP server is not running"
         tool_call_result = await session.call_tool(
             name=tool_call_name,
             arguments=json.loads(tool_call_json),
