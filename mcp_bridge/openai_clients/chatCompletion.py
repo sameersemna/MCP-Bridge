@@ -66,7 +66,7 @@ async def chat_completions(
 
             logger.debug(f"tool call result content: {tool_call_result.content}")
 
-            tools_content = [{"type": "text", "text": part.text} for part in tool_call_result.content]
+            tools_content = [{"type": "text", "text": part.text} for part in filter(lambda x: x.type == "text", tool_call_result.content)]
             request.messages.append(
                 ChatCompletionRequestMessage.model_validate(
                     {
