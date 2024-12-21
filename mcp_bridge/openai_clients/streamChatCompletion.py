@@ -71,6 +71,7 @@ async def chat_completions(request: CreateChatCompletionRequest):
 
                 # handle if the SSE stream is done
                 if data == "[DONE]":
+                    logger.debug("inference serverstream done")
                     break
 
                 parsed_data = CreateChatCompletionStreamResponse.model_validate_json(
@@ -164,6 +165,8 @@ async def chat_completions(request: CreateChatCompletionRequest):
         logger.debug(f"tool call result content: {tool_call_result.content}")
 
         tools_content = [{"type": "text", "text": part.text} for part in filter(lambda x: x.type == "text", tool_call_result.content)]
+        if len(tools_content) == 0:
+            tools_content = [{"type": "text", "text": "the tool call result is empty"}]
         request.messages.append(
             ChatCompletionRequestMessage.model_validate(
                 {
