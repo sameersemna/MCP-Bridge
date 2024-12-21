@@ -131,7 +131,7 @@ async def chat_completions(request: CreateChatCompletionRequest):
             continue
 
         logger.debug("tool calls found")
-        logger.error(
+        logger.debug(
             f"{tool_call_name=} {tool_call_json=}"
         )  # this should not be error but its easier to debug
 
