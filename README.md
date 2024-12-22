@@ -1,4 +1,11 @@
 # MCP-Bridge
+
+<p>
+  <a href="https://discord.gg/4NVQHqNxSZ"><img alt="Discord" src="https://img.shields.io/discord/1320517159331430480?style=flat&logo=discord&color=blue"></a>
+  <a href="LICENSE"><img alt="Static Badge" src="https://img.shields.io/badge/License-MIT-blue?style=flat"></a>
+</p>
+
+
 A middleware to provide an openAI compatible endpoint that can call MCP tools. MCP-Bridge acts as a bridge between the OpenAI API and MCP (MCP) tools, allowing developers to leverage MCP tools through the OpenAI API interface.
 
 ## Overview
@@ -6,7 +13,7 @@ MCP-Bridge is designed to facilitate the integration of MCP tools with the OpenA
 
 ![open web ui example](/assets/owui_example.png)
 
-## current features
+## Current Features
 
 working features:
 
@@ -134,6 +141,10 @@ an example config.json file with most of the options explicitly set:
 | mcp_servers      | The MCP servers configuration      |
 | network          | uvicorn network configuration      |
 | logging          | The logging configuration          |
+
+## Support
+
+If you encounter any issues please open an issue or join the [discord](https://discord.gg/4NVQHqNxSZ).
 
 ## How does it work
 
