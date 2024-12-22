@@ -56,5 +56,9 @@ async def call_tool(tool_call_name: str, tool_call_json: str, timeout: Optional[
         except asyncio.TimeoutError:
             logger.error(f"timed out calling {tool_call_name}")
             return None
+        
+        except mcp.McpError as e:
+            logger.error(f"error calling {tool_call_name}: {e}")
+            return None
 
         return tool_call_result
