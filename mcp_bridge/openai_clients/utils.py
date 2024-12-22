@@ -59,6 +59,14 @@ async def call_tool(tool_call_name: str, tool_call_json: str, timeout: Optional[
         
         except mcp.McpError as e:
             logger.error(f"error calling {tool_call_name}: {e}")
-            return None
+            return mcp.types.CallToolResult(
+                content = [
+                    mcp.types.TextContent(
+                        type="text",
+                        text = f"Error calling {tool_call_name}: {e}"
+                    )
+                ],
+                isError = True
+            )
 
         return tool_call_result
