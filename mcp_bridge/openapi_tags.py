@@ -6,6 +6,7 @@ class Tag(str, Enum):
 
     mcp_management = "MCP Management API"
     openai = "OpenAI API Compatible APIs"
+    health = "System Health API"
 
 
 tags_metadata = [
@@ -16,5 +17,9 @@ tags_metadata = [
     {
         "name": Tag.openai,
         "description": "OpenAI compatible endpoints for use with openai clients",
+    },
+    {
+        "name": Tag.health,
+        "description": "System health endpoints",
     },
 ]
