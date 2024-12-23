@@ -5,6 +5,7 @@ import datetime
 
 class UnhealthyEvent(BaseModel):
     """Represents an unhealthy event"""
+
     name: str = Field(..., description="Name of the event")
     severity: Literal["error", "warning"] = Field(
         ..., description="Severity of the event"
@@ -18,6 +19,7 @@ class UnhealthyEvent(BaseModel):
 
 class HealthCheckResponse(BaseModel):
     """Represents a health check response"""
+
     status: Literal["ok", "error"] = Field(..., description="Server status")
     unhealthy_events: list[UnhealthyEvent] = Field(
         default_factory=list, description="List of unhealthy events"

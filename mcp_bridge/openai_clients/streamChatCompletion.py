@@ -144,9 +144,7 @@ async def chat_completions(request: CreateChatCompletionRequest):
                 ChatCompletionMessageToolCall(
                     id=tool_call_id,
                     type="function",
-                    function=Function1(
-                        name=tool_call_name, arguments=tool_call_json
-                    ),
+                    function=Function1(name=tool_call_name, arguments=tool_call_json),
                 )
             ],
         )  # type: ignore
@@ -164,7 +162,10 @@ async def chat_completions(request: CreateChatCompletionRequest):
 
         logger.debug(f"tool call result content: {tool_call_result.content}")
 
-        tools_content = [{"type": "text", "text": part.text} for part in filter(lambda x: x.type == "text", tool_call_result.content)]
+        tools_content = [
+            {"type": "text", "text": part.text}
+            for part in filter(lambda x: x.type == "text", tool_call_result.content)
+        ]
         if len(tools_content) == 0:
             tools_content = [{"type": "text", "text": "the tool call result is empty"}]
         request.messages.append(

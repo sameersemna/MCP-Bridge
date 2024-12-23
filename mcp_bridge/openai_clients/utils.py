@@ -24,49 +24,51 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
 
     return request
 
-async def call_tool(tool_call_name: str, tool_call_json: str, timeout: Optional[int] = None) -> Optional[mcp.types.CallToolResult]:
-        if tool_call_name == "" or tool_call_name is None:
-            logger.error("tool call name is empty")
-            return None
-        
-        if tool_call_json is None:
-            logger.error("tool call json is empty")
-            return None
 
-        session = await ClientManager.get_client_from_tool(tool_call_name)
-        
-        if session is None:
-            logger.error(f"session is `None` for {tool_call_name}")
-            return None
+async def call_tool(
+    tool_call_name: str, tool_call_json: str, timeout: Optional[int] = None
+) -> Optional[mcp.types.CallToolResult]:
+    if tool_call_name == "" or tool_call_name is None:
+        logger.error("tool call name is empty")
+        return None
 
-        try:
-            tool_call_args = json.loads(tool_call_json)
-        except json.JSONDecodeError:
-            logger.error(f"failed to decode json for {tool_call_name}")
-            return None
+    if tool_call_json is None:
+        logger.error("tool call json is empty")
+        return None
 
-        # try to call the tool
-        try:
-            async with asyncio.timeout(timeout):
-                tool_call_result = await session.call_tool(
-                    name=tool_call_name,
-                    arguments=tool_call_args,
-                )
+    session = await ClientManager.get_client_from_tool(tool_call_name)
 
-        except asyncio.TimeoutError:
-            logger.error(f"timed out calling {tool_call_name}")
-            return None
-        
-        except mcp.McpError as e:
-            logger.error(f"error calling {tool_call_name}: {e}")
-            return mcp.types.CallToolResult(
-                content = [
-                    mcp.types.TextContent(
-                        type="text",
-                        text = f"Error calling {tool_call_name}: {e}"
-                    )
-                ],
-                isError = True
+    if session is None:
+        logger.error(f"session is `None` for {tool_call_name}")
+        return None
+
+    try:
+        tool_call_args = json.loads(tool_call_json)
+    except json.JSONDecodeError:
+        logger.error(f"failed to decode json for {tool_call_name}")
+        return None
+
+    # try to call the tool
+    try:
+        async with asyncio.timeout(timeout):
+            tool_call_result = await session.call_tool(
+                name=tool_call_name,
+                arguments=tool_call_args,
             )
 
-        return tool_call_result
+    except asyncio.TimeoutError:
+        logger.error(f"timed out calling {tool_call_name}")
+        return None
+
+    except mcp.McpError as e:
+        logger.error(f"error calling {tool_call_name}: {e}")
+        return mcp.types.CallToolResult(
+            content=[
+                mcp.types.TextContent(
+                    type="text", text=f"Error calling {tool_call_name}: {e}"
+                )
+            ],
+            isError=True,
+        )
+
+    return tool_call_result

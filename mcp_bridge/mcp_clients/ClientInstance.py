@@ -37,7 +37,7 @@ class ClientInstance:
                 except Exception as exc:
                     logger.error(f"ping failed for {self.name}: {exc}")
                     self.session = None
-                
+
                 # TODO: handle session failure
 
     async def __aenter__(self):
