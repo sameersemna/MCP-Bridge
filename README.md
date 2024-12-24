@@ -66,18 +66,12 @@ If you want to run the application without docker, you will need to install the 
 
 1. **Clone the repository**
 
-2. **Set up a virtual environment:**
+2. **Set up a dependencies:**
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+uv sync
 ```
 
-3. **Install the requirements:**
-```bash
-pip install -r requirements.txt
-```
-
-4. **Create a config.json file in the root directory**
+3. **Create a config.json file in the root directory**
 
 Here is an example config.json file:
 ```json
@@ -95,9 +89,9 @@ Here is an example config.json file:
 }
 ```
 
-5. **Run the application:**
+4. **Run the application:**
 ```bash
-python mcp_bridge/main.py
+uv run python mcp_bridge/main.py
 ```
 
 ## Usage
