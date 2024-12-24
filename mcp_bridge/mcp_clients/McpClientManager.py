@@ -45,12 +45,12 @@ class MCPClientManager:
     def get_clients(self):
         return list(self.clients.items())
 
-    # async def get_client_from_tool(self, tool: str):
-    #     for client in self.get_clients():
-    #         tools = await client[1].session.list_tools()
-    #         for client_tool in tools.tools:
-    #             if client_tool.name == tool:
-    #                 return client[1].session
+    async def get_client_from_tool(self, tool: str):
+        for name, client in self.get_clients():
+            list_tools = await client.session.list_tools()
+            for client_tool in list_tools.tools:
+                if client_tool.name == tool:
+                    return client
 
 
 ClientManager = MCPClientManager()
