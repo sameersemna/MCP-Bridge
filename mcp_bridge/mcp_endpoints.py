@@ -13,7 +13,7 @@ async def get_tools() -> dict[str, ListToolsResult]:
     tools = {}
 
     for name, client in ClientManager.get_clients():
-        tools[name] = await client.session.list_tools()
+        tools[name] = await client.list_tools()
 
     return tools
 
