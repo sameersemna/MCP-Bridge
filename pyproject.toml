@@ -1,0 +1,22 @@
+[project]
+name = "mcp-bridge"
+version = "0.1.0"
+description = "A middleware to provide an openAI compatible endpoint that can call MCP tools."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "deepmerge>=2.0",
+    "fastapi>=0.115.6",
+    "httpx>=0.28.1",
+    "httpx-sse>=0.4.0",
+    "lmos-openai-types",
+    "loguru>=0.7.3",
+    "mcp>=1.1.2",
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.0",
+    "sse-starlette>=2.2.0",
+    "uvicorn>=0.34.0",
+]
+
+[tool.uv.sources]
+lmos-openai-types = { git = "https://github.com/LMOS-IO/LMOS-openai-types", rev = "pydantic-gen" }
