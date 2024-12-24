@@ -20,13 +20,16 @@ class GenericMcpClient(ABC):
     async def _maintain_session(self):
         pass
 
-    async def start(self):
+    async def _session_maintainer(self):
         while True:
             try:
-                asyncio.create_task(self._maintain_session())
+                await self._maintain_session()
             except Exception as e:
                 logger.trace(f"failed to maintain session for {self.name}: {e}")
                 await asyncio.sleep(0.5)
+    
+    async def start(self):
+        asyncio.create_task(self._session_maintainer())
 
     async def call_tool(
         self, name: str, arguments: dict, timeout: Optional[int] = None
