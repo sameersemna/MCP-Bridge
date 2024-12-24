@@ -7,7 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir uv
 
 # install npx to run stdio clients (npx)
-RUN apt-get update && apt-get install -y --no-install-recommends npm
+RUN apt-get update && apt-get install -y --no-install-recommends curl
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+RUN apt-get install -y --no-install-recommends nodejs
 
 COPY mcp_bridge mcp_bridge
 
