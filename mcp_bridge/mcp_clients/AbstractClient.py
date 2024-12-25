@@ -1,6 +1,7 @@
 import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Optional
+from fastapi import HTTPException
 from mcp import ClientSession, McpError
 from mcp.types import CallToolResult, ListToolsResult, TextContent
 from loguru import logger
@@ -34,8 +35,7 @@ class GenericMcpClient(ABC):
     async def call_tool(
         self, name: str, arguments: dict, timeout: Optional[int] = None
     ) -> CallToolResult:
-        while self.session is None:
-            await asyncio.sleep(1)
+        await self._wait_for_session()
 
         try:
             async with asyncio.timeout(timeout):
@@ -63,9 +63,7 @@ class GenericMcpClient(ABC):
     async def list_tools(self) -> ListToolsResult:
         # if session is None, then the client is not running
         # wait to see if it restarts
-        # TODO: timeout and throw an HTTP 500 error
-        while self.session is None:
-            await asyncio.sleep(1)
+        await self._wait_for_session()
 
         try:
             return await self.session.list_tools()
@@ -75,3 +73,15 @@ class GenericMcpClient(ABC):
 
     async def list_resources(self) -> dict:
         raise NotImplementedError("list_resources is not implemented")
+
+    async def _wait_for_session(self, timeout: int = 10, http_error: bool = True):
+        try:
+            async with asyncio.timeout(timeout):
+                while self.session is None:
+                    await asyncio.sleep(1)
+
+        except asyncio.TimeoutError:
+            if http_error:
+                raise HTTPException(status_code=500, detail="Could not connect to MCP server.")
+            
+            raise TimeoutError("Session initialization timed out.")
