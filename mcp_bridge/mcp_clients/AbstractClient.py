@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 from fastapi import HTTPException
 from mcp import ClientSession, McpError
-from mcp.types import CallToolResult, ListToolsResult, TextContent
+from mcp.types import CallToolResult, ListToolsResult, TextContent, ListResourcesResult
 from loguru import logger
 
 
@@ -71,8 +71,14 @@ class GenericMcpClient(ABC):
             logger.error(f"error listing tools: {e}")
             return ListToolsResult(tools=[])
 
-    async def list_resources(self) -> dict:
-        raise NotImplementedError("list_resources is not implemented")
+    async def list_resources(self) -> ListResourcesResult:
+        await self._wait_for_session()
+        try: 
+            return await self.session.list_resources()
+        except Exception as e:
+            logger.error(f"error listing resources: {e}")
+            return ListResourcesResult(resources=[])
+
 
     async def _wait_for_session(self, timeout: int = 10, http_error: bool = True):
         try:

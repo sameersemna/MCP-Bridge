@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from mcp_clients.McpClientManager import ClientManager
-from mcp.types import ListToolsResult
+from mcp.types import ListToolsResult, ListResourcesResult
 from openapi_tags import Tag
 
 router = APIRouter(prefix="/mcp", tags=[Tag.mcp_management])
@@ -17,6 +17,16 @@ async def get_tools() -> dict[str, ListToolsResult]:
 
     return tools
 
+@router.get("/resources")
+async def get_resources() -> dict[str, ListResourcesResult]:
+    """Get all resources from all MCP clients"""
+
+    resources = {}
+
+    for name, client in ClientManager.get_clients():
+        resources[name] = await client.list_resources()
+
+    return resources
 
 @router.get("/servers")
 async def get_servers() -> list[str]:
