@@ -48,7 +48,7 @@ class GenericMcpClient(ABC):
             logger.error(f"timed out calling tool: {name}")
             return CallToolResult(
                 content=[
-                    TextContent(type="text", text=f"Timeout Error calling {name}: {e}")
+                    TextContent(type="text", text=f"Timeout Error calling {name}")
                 ],
                 isError=True,
             )
