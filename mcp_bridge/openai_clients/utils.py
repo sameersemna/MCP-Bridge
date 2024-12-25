@@ -48,27 +48,4 @@ async def call_tool(
         logger.error(f"failed to decode json for {tool_call_name}")
         return None
 
-    # try to call the tool
-    try:
-        async with asyncio.timeout(timeout):
-            tool_call_result = await session.call_tool(
-                name=tool_call_name,
-                arguments=tool_call_args,
-            )
-
-    except asyncio.TimeoutError:
-        logger.error(f"timed out calling {tool_call_name}")
-        return None
-
-    except mcp.McpError as e:
-        logger.error(f"error calling {tool_call_name}: {e}")
-        return mcp.types.CallToolResult(
-            content=[
-                mcp.types.TextContent(
-                    type="text", text=f"Error calling {tool_call_name}: {e}"
-                )
-            ],
-            isError=True,
-        )
-
-    return tool_call_result
+    return await session.call_tool(tool_call_name, tool_call_args, timeout)
