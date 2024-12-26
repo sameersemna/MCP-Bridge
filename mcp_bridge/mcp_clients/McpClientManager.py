@@ -1,6 +1,6 @@
 from typing import Union
 from config import config
-from mcp import StdioServerParameters
+from mcp import McpError, StdioServerParameters
 from loguru import logger
 
 from .StdioClient import StdioClient
@@ -51,6 +51,16 @@ class MCPClientManager:
             for client_tool in list_tools.tools:
                 if client_tool.name == tool:
                     return client
+                
+    async def get_client_from_prompt(self, prompt: str):
+        for name, client in self.get_clients():
+            try:
+                list_prompts = await client.session.list_prompts()
+                for client_prompt in list_prompts.prompts:
+                    if client_prompt.name == prompt:
+                        return client
+            except McpError:
+                continue
 
 
 ClientManager = MCPClientManager()

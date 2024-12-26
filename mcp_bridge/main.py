@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from endpoints import router as endpointRouter
-from mcp_endpoints import router as mcpRouter
+from mcpManagement import router as mcpRouter
 from health import router as healthRouter
 from lifespan import lifespan
 from openapi_tags import tags_metadata
