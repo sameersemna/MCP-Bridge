@@ -4,7 +4,7 @@ variable "RELEASE" {
 }
 
 variable "REGISTRY" {
-    default = "https://github.com/SecretiveShell/MCP-Bridge/"
+    default = "ghcr.io/SecretiveShell/MCP-Bridge/"
 }
 
 group "default" {
