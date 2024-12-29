@@ -136,7 +136,7 @@ async def chat_completions(request: CreateChatCompletionRequest):
             f"{tool_call_name=} {tool_call_json=}"
         )  # this should not be error but its easier to debug
 
-        # add recieved message to the history
+        # add received message to the history
         msg = ChatCompletionRequestMessage(
             role="assistant",
             content=response_content,
