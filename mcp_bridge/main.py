@@ -4,11 +4,12 @@ from mcpManagement import router as mcpRouter
 from health import router as healthRouter
 from mcp_server import router as mcp_server_router
 from lifespan import lifespan
-from openapi_tags import tags_metadata
+from openapi_tags import tags_metadata, version
 
 app = FastAPI(
     title="MCP Bridge",
     description="A middleware application to add MCP support to openai compatible apis",
+    version=version,
     lifespan=lifespan,
     openapi_tags=tags_metadata,
 )
