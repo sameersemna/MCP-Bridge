@@ -51,7 +51,8 @@ async def list_tools() -> list[types.Tool]:
 
 @server.get_prompt()
 async def get_prompt(name: str, args: dict[str, str]) -> types.GetPromptResult:
-    pass
+    client = await ClientManager.get_client_from_prompt(name)
+    return await client.get_prompt(name, args)
 
 
 @server.read_resource()
@@ -63,7 +64,8 @@ async def handle_read_resource(uri: AnyUrl) -> str:
 async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-    pass
+    client = await ClientManager.get_client_from_tool(name)
+    return (await client.call_tool(name, arguments)).content
 
 
 # options
