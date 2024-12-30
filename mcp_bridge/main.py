@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from endpoints import router as endpointRouter
 from mcpManagement import router as mcpRouter
 from health import router as healthRouter
+from mcp_server import router as mcp_server_router
 from lifespan import lifespan
 from openapi_tags import tags_metadata
 
@@ -15,6 +16,7 @@ app = FastAPI(
 app.include_router(endpointRouter)
 app.include_router(mcpRouter)
 app.include_router(healthRouter)
+app.include_router(mcp_server_router)
 
 if __name__ == "__main__":
     import uvicorn
