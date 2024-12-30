@@ -3,7 +3,14 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 from fastapi import HTTPException
 from mcp import ClientSession, McpError
-from mcp.types import CallToolResult, ListToolsResult, TextContent, ListResourcesResult, ListPromptsResult, GetPromptResult
+from mcp.types import (
+    CallToolResult,
+    ListToolsResult,
+    TextContent,
+    ListResourcesResult,
+    ListPromptsResult,
+    GetPromptResult,
+)
 from loguru import logger
 from models.mcpServerStatus import McpServerStatus
 
@@ -29,7 +36,7 @@ class GenericMcpClient(ABC):
             except Exception as e:
                 logger.trace(f"failed to maintain session for {self.name}: {e}")
                 await asyncio.sleep(0.5)
-    
+
     async def start(self):
         asyncio.create_task(self._session_maintainer())
 
@@ -60,8 +67,10 @@ class GenericMcpClient(ABC):
                 content=[TextContent(type="text", text=f"Error calling {name}: {e}")],
                 isError=True,
             )
-        
-    async def get_prompt(self, prompt: str, arguments: dict[str, str]) -> GetPromptResult | None:
+
+    async def get_prompt(
+        self, prompt: str, arguments: dict[str, str]
+    ) -> GetPromptResult | None:
         await self._wait_for_session()
 
         try:
@@ -84,15 +93,15 @@ class GenericMcpClient(ABC):
 
     async def list_resources(self) -> ListResourcesResult:
         await self._wait_for_session()
-        try: 
+        try:
             return await self.session.list_resources()
         except Exception as e:
             logger.error(f"error listing resources: {e}")
             return ListResourcesResult(resources=[])
-        
+
     async def list_prompts(self) -> ListPromptsResult:
         await self._wait_for_session()
-        try: 
+        try:
             return await self.session.list_prompts()
         except Exception as e:
             logger.error(f"error listing prompts: {e}")
@@ -106,14 +115,14 @@ class GenericMcpClient(ABC):
 
         except asyncio.TimeoutError:
             if http_error:
-                raise HTTPException(status_code=500, detail="Could not connect to MCP server.")
-            
+                raise HTTPException(
+                    status_code=500, detail="Could not connect to MCP server."
+                )
+
             raise TimeoutError("Session initialization timed out.")
-        
+
     async def status(self) -> McpServerStatus:
         """Get the status of the MCP server"""
         return McpServerStatus(
-            name=self.name,
-            online=self.session is not None,
-            enabled=True
+            name=self.name, online=self.session is not None, enabled=True
         )
