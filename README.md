@@ -24,6 +24,8 @@ working features:
 
 - MCP tools
 
+- SSE Bridge for external clients
+
 planned features:
 
 - streaming completions are not implemented yet
@@ -98,6 +100,9 @@ uv run python mcp_bridge/main.py
 Once the application is running, you can interact with it using the OpenAI API.
 
 View the documentation at [http://yourserver:8000/docs](http://localhost:8000/docs). There is an endpoint to list all the MCP tools available on the server, which you can use to test the application configuration.
+
+## SSE Bridge
+MCP-Bridge also provides an SSE bridge for external clients. This lets external chat apps with explicit MCP support use MCP-Bridge as a MCP server. Point your client at the SSE endpoint (http://yourserver:8000/mcp-server/sse) and you should be able to see all the MCP tools available on the server.
 
 ## Configuration
 
