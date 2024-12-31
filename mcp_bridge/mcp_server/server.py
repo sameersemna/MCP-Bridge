@@ -16,6 +16,11 @@ server = Server("MCP-Bridge")
 async def list_prompts() -> list[types.Prompt]:
     prompts = []
     for name, client in ClientManager.get_clients():
+        # if client is None, then we cannot list the prompts
+        if client is None:
+            logger.error(f"Client '{name}' not found")
+            continue
+
         client_prompts = await client.list_prompts()
         prompts.extend(client_prompts.prompts)
     return prompts
@@ -42,6 +47,11 @@ async def list_resource_templates() -> list[types.ResourceTemplate]:
 async def list_tools() -> list[types.Tool]:
     tools = []
     for name, client in ClientManager.get_clients():
+        # if client is None, then we cannot list the tools
+        if client is None:
+            logger.error(f"Client '{name}' not found")
+            continue
+
         client_tools = await client.list_tools()
         tools.extend(client_tools.tools)
     return tools
@@ -51,14 +61,27 @@ async def list_tools() -> list[types.Tool]:
 
 
 @server.get_prompt()
-async def get_prompt(name: str, args: dict[str, str]) -> types.GetPromptResult:
+async def get_prompt(name: str, args: dict[str, str] | None) -> types.GetPromptResult:
     client = await ClientManager.get_client_from_prompt(name)
-    return await client.get_prompt(name, args)
+
+    # if client is None, then we cannot get the prompt
+    if client is None:
+        raise Exception(f"Prompt '{name}' not found")
+
+    # if args is None, then we should use an empty dict
+    if args is None:
+        args = {}
+
+    result = await client.get_prompt(name, args)
+    if result is None:
+        raise Exception(f"Prompt '{name}' not found")
+
+    return result
 
 
 @server.read_resource()
 async def handle_read_resource(uri: AnyUrl) -> str:
-    pass
+    return ""
 
 
 @server.call_tool()
@@ -66,6 +89,15 @@ async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     client = await ClientManager.get_client_from_tool(name)
+
+    # if client is None, then we cannot call the tool
+    if client is None:
+        raise Exception(f"Tool '{name}' not found")
+
+    # if arguments is None, then we should use an empty dict
+    if arguments is None:
+        arguments = {}
+
     return (await client.call_tool(name, arguments)).content
 
 
