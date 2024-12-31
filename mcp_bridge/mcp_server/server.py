@@ -1,5 +1,6 @@
-from mcp.server import Server, NotificationOptions, InitializationOptions
 from mcp import types
+from mcp.server import Server, NotificationOptions
+from mcp.server.models import InitializationOptions
 from pydantic import AnyUrl
 from mcp_clients.McpClientManager import ClientManager
 from loguru import logger
