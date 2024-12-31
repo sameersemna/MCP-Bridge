@@ -10,8 +10,11 @@ from mcp.types import (
     ListResourcesResult,
     ListPromptsResult,
     GetPromptResult,
+    TextResourceContents,
+    BlobResourceContents,
 )
 from loguru import logger
+from pydantic import AnyUrl
 from models.mcpServerStatus import McpServerStatus
 
 
@@ -79,6 +82,17 @@ class GenericMcpClient(ABC):
             logger.error(f"error evaluating prompt: {e}")
 
         return None
+
+    async def read_resource(
+        self, uri: AnyUrl
+    ) -> list[TextResourceContents | BlobResourceContents]:
+        await self._wait_for_session()
+        try:
+            resource = await self.session.read_resource(uri)
+            return resource.contents
+        except Exception as e:
+            logger.error(f"error reading resource: {e}")
+            return []
 
     async def list_tools(self) -> ListToolsResult:
         # if session is None, then the client is not running
