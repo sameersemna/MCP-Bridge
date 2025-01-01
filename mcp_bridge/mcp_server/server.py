@@ -82,27 +82,27 @@ async def get_prompt(name: str, args: dict[str, str] | None) -> types.GetPromptR
 
 @server.read_resource()
 async def handle_read_resource(uri: AnyUrl) -> str | bytes:
-
     for name, client in ClientManager.get_clients():
         try:
             client_resources = await client.list_resources()
             if str(uri) in map(lambda x: str(x.uri), client_resources.resources):
                 response = await client.read_resource(uri)
                 for resource in response:
-
                     if resource.mimeType == "text/plain":
                         assert isinstance(resource, types.TextResourceContents)
                         assert type(resource.text) is str
                         return resource.text
-                    
+
                     elif resource.mimeType == "application/octet-stream":
                         assert isinstance(resource, types.BlobResourceContents)
                         assert type(resource.blob) is bytes
                         return resource.blob
-                    
+
                     else:
-                        raise Exception(f"Unsupported resource type: {resource.mimeType}")
-            
+                        raise Exception(
+                            f"Unsupported resource type: {resource.mimeType}"
+                        )
+
         except Exception as e:
             logger.error(f"Error listing resources for {name}: {e}")
 

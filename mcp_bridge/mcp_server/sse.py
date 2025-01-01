@@ -27,6 +27,7 @@ async def handle_sse(request: Request):
             raise
     await request.close()
 
+
 @router.post("/messages")
 async def handle_messages(request: Request):
     await sse.handle_post_message(request.scope, request.receive, request._send)

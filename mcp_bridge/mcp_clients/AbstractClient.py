@@ -22,7 +22,7 @@ class GenericMcpClient(ABC):
     name: str
     config: Any
     client: Any
-    session: ClientSession
+    session: ClientSession | None
 
     def __init__(self, name: str) -> None:
         super().__init__()
@@ -134,6 +134,8 @@ class GenericMcpClient(ABC):
                 )
 
             raise TimeoutError("Session initialization timed out.")
+
+        assert self.session is not None, "Session is None"
 
     async def status(self) -> McpServerStatus:
         """Get the status of the MCP server"""

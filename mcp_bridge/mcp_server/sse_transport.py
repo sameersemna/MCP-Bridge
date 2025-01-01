@@ -23,7 +23,9 @@ from starlette.types import Receive, Scope, Send
 import mcp.types as types
 
 from loguru import logger
+
 logger.disable("mcp_server.sse_transport")
+
 
 class SseServerTransport:
     """
