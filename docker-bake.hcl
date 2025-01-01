@@ -4,7 +4,7 @@ variable "RELEASE" {
 }
 
 variable "REGISTRY" {
-    default = "ghcr.io/SecretiveShell/MCP-Bridge/"
+    default = "ghcr.io/secretiveshell/mcp-bridge/"
 }
 
 group "default" {
