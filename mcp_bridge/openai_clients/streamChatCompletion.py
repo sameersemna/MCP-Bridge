@@ -89,9 +89,19 @@ async def chat_completions(request: CreateChatCompletionRequest):
                     logger.debug("inference serverstream done")
                     break
 
-                parsed_data = CreateChatCompletionStreamResponse.model_validate_json(
-                    data
-                )
+                # for some reason openrouter uses uppercase for finish_reason
+                try:
+                    data['choices'][0]['finish_reason'] = data['choices'][0]['finish_reason'].lower() # type: ignore
+                except Exception:
+                    pass
+
+                try:
+                    parsed_data = CreateChatCompletionStreamResponse.model_validate_json(
+                        data
+                    )
+                except Exception as e:
+                    logger.debug(data)
+                    raise e
 
                 # add the delta to the response content
                 content = parsed_data.choices[0].delta.content
