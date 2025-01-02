@@ -9,7 +9,7 @@ from .server import server, options
 
 router = APIRouter(prefix="/sse")
 
-sse = SseServerTransport("./messages")
+sse = SseServerTransport("/mcp-server/sse/messages")
 
 
 @router.get("/", response_class=StreamingResponse)
