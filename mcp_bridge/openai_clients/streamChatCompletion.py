@@ -92,8 +92,8 @@ async def chat_completions(request: CreateChatCompletionRequest):
                 # for some reason openrouter uses uppercase for finish_reason
                 try:
                     data['choices'][0]['finish_reason'] = data['choices'][0]['finish_reason'].lower() # type: ignore
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"failed to lowercase finish_reason: {e}")
 
                 try:
                     parsed_data = CreateChatCompletionStreamResponse.model_validate_json(
