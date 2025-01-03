@@ -93,7 +93,7 @@ Here is an example config.json file:
 
 4. **Run the application:**
 ```bash
-uv run python mcp_bridge/main.py
+uv run mcp_bridge/main.py
 ```
 
 ## Usage
