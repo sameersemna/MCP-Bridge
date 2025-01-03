@@ -22,7 +22,7 @@ class GenericMcpClient(ABC):
     name: str
     config: Any
     client: Any
-    session: ClientSession | None
+    session: ClientSession | None = None
 
     def __init__(self, name: str) -> None:
         super().__init__()
