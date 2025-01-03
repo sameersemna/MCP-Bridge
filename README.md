@@ -56,6 +56,11 @@ environment:
   - MCP_BRIDGE__CONFIG__HTTP_URL=http://10.88.100.170:8888/config.json
   - MCP_BRIDGE__CONFIG__JSON={"inference_server":{"base_url":"http://example.com/v1","api_key":"None"},"mcp_servers":{"fetch":{"command":"uvx","args":["mcp-server-fetch"]}}}
 ```
+The mount point for using the config file would look like:
+```yaml
+    volumes:
+      - ./config.json:/mcp_bridge/config.json
+```
 
 3. **run the service**
 ```
