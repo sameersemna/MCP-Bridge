@@ -5,9 +5,10 @@ from loguru import logger
 
 from .StdioClient import StdioClient
 from .SseClient import SseClient
-from config.final import SSEMCPServer
+from .DockerClient import DockerClient
+from config.final import DockerMCPServer, SSEMCPServer
 
-client_types = Union[StdioClient, SseClient]
+client_types = Union[StdioClient, SseClient, DockerClient]
 
 
 class MCPClientManager:
@@ -34,6 +35,11 @@ class MCPClientManager:
         if isinstance(server_config, SSEMCPServer):
             # TODO: implement sse client
             client = SseClient(name, server_config)  # type: ignore
+            await client.start()
+            return client
+        
+        if isinstance(server_config, DockerMCPServer):
+            client = DockerClient(name, server_config)
             await client.start()
             return client
 
