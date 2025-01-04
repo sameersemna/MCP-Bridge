@@ -51,7 +51,7 @@ jobs:
             git config --global user.email "gha@github.com"
             git config --global user.name "github robot"
             git commit -am "update package build version gha"
-            git push origin main
+            git push origin master
 
     - name: Build a binary wheel and a source tarball
       run: uv build && uv publish
