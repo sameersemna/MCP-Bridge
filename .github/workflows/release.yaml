@@ -15,6 +15,11 @@ on:
             - major
             - minor
             - patch
+            - alpha
+            - beta
+            - rc
+            - rev
+            - post
 
 jobs:
 
@@ -25,6 +30,7 @@ jobs:
       new_tag: ${{ steps.set_var.outputs.new_tag }}
     permissions:
       contents: write  # IMPORTANT: mandatory for making GitHub Releases
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -35,54 +41,32 @@ jobs:
       run: >-
         python3 -m
         pip install
-        poetry
+        hatchling uv
         --user
     - name: update version tag in pyproject.toml
       id: set_var
-      run: |
-          poetry version ${{ github.event.inputs.version_bump }}
-          echo "new_tag=$(poetry version --short)" >> $GITHUB_OUTPUT
+      run: | 
+          hatchling version ${{ github.event.inputs.version_bump }}
+          echo "new_tag=$(hatchling version)" >> $GITHUB_OUTPUT
             git config --global user.email "gha@github.com"
             git config --global user.name "github robot"
             git commit -am "update package build version gha"
             git push origin main
 
     - name: Build a binary wheel and a source tarball
-      run: poetry build
+      run: uv build && uv publish
     - name: Store the distribution packages
       uses: actions/upload-artifact@v3
       with:
         name: python-package-distributions
         path: dist/
-  publish-to-pypi:
-    name: >-
-      Publish Python 🐍 distribution 📦 to PyPI
-    needs:
-    - build
-    runs-on: ubuntu-latest
-    environment:
-      name: release
-      url: https://pypi.org/p/MCP_Bridge  # Replace <package-name> with your PyPI project name
-    permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
 
-    steps:
-    - name: Download all the dists
-      uses: actions/download-artifact@v3
-      with:
-        name: python-package-distributions
-        path: dist/
-    - name: Publish distribution 📦 to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        skip-existing: true
 
   github-release:
     name: >-
       Sign the Python 🐍 distribution 📦 with Sigstore
       and upload them to GitHub Release
     needs:
-    - publish-to-pypi
     - build
     runs-on: ubuntu-latest
 
@@ -96,13 +80,13 @@ jobs:
       uses: actions/download-artifact@v3
       with:
         name: python-package-distributions
-        path: dist/
+        path: .
     - name: Sign the dists with Sigstore
       uses: sigstore/gh-action-sigstore-python@v3.0.0
       with:
         inputs: >-
-          ./dist/*.tar.gz
-          ./dist/*.whl      
+          ./*.tar.gz
+          ./*.whl      
     - name: Create GitHub Release
       env:
         GITHUB_TOKEN: ${{ github.token }}
@@ -111,7 +95,7 @@ jobs:
         gh release create
         '${{ needs.build.outputs.new_tag }}'
         --repo '${{ github.repository }}'
-        --notes ""
+        --generate-notes
     - name: Upload artifact signatures to GitHub Release
       env:
         GITHUB_TOKEN: ${{ github.token }}
@@ -120,12 +104,14 @@ jobs:
       # sigstore-produced signatures and certificates.
       run: >-
         gh release upload
-        '${{ needs.build.outputs.new_tag }}' dist/**
+        '${{ needs.build.outputs.new_tag }}' ./*.tar.gz ./*.whl ./*.tar.gz.sigstore.json ./*.whl.sigstore.json
         --repo '${{ github.repository }}'
 
   push-store-image:
     permissions: write-all
     runs-on: ubuntu-latest
+    needs:
+    - build
     steps:
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
@@ -133,8 +119,11 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-
+    - name: Checkout code
+      uses: actions/checkout@v4
     - name: 'Build images'
       run: |
         RELEASE=${{ needs.build.outputs.new_tag }} \
         docker buildx bake mcp-bridge -f docker-bake.hcl --push
+
+
