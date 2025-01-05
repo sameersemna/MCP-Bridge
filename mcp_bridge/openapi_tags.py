@@ -1,7 +1,5 @@
 from enum import Enum
 
-version = "0.0.1"
-
 
 class Tag(str, Enum):
     """Tag for OpenAPI"""
