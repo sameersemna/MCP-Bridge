@@ -26,6 +26,7 @@ class GenericMcpClient(ABC):
 
     def __init__(self, name: str) -> None:
         super().__init__()
+        self.session = None
         self.name = name
 
     @abstractmethod

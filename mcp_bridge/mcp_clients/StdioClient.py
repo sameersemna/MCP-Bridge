@@ -8,6 +8,9 @@ import shutil
 import os
 
 
+# Keywords to identify virtual environment variables
+venv_keywords = ['CONDA_', 'VIRTUAL_ENV', 'PYTHON']
+
 class StdioClient(GenericMcpClient):
     config: StdioServerParameters
 
@@ -15,6 +18,13 @@ class StdioClient(GenericMcpClient):
         super().__init__(name=name)
 
         env = dict(os.environ.copy())
+
+        env = {
+            key: value for key, value in env.items()
+            if not any(keyword in key for keyword in venv_keywords)
+        }
+
+        logger.debug(f"env: {env}")
 
         if config.env is not None:
             env.update(config.env)

@@ -5,7 +5,7 @@ from health import router as healthRouter
 from mcp_server import router as mcp_server_router
 from lifespan import lifespan
 from openapi_tags import tags_metadata
-from . import __version__ as version
+from __init__ import __version__ as version
 
 app = FastAPI(
     title="MCP Bridge",
