@@ -127,6 +127,7 @@ class GenericMcpClient(ABC):
             async with asyncio.timeout(timeout):
                 while self.session is None:
                     await asyncio.sleep(1)
+                    logger.debug(f"waiting for session for {self.name}")
 
         except asyncio.TimeoutError:
             if http_error:
