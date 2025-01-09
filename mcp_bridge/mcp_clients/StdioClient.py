@@ -9,7 +9,7 @@ import os
 
 
 # Keywords to identify virtual environment variables
-venv_keywords = ['CONDA_', 'VIRTUAL_ENV', 'PYTHON']
+venv_keywords = ["CONDA", "VIRTUAL", "PYTHON"]
 
 class StdioClient(GenericMcpClient):
     config: StdioServerParameters
@@ -21,7 +21,7 @@ class StdioClient(GenericMcpClient):
 
         env = {
             key: value for key, value in env.items()
-            if not any(keyword in key for keyword in venv_keywords)
+            if not any(key.startswith(keyword) for keyword in venv_keywords)
         }
 
         # logger.debug(f"env: {env}")
