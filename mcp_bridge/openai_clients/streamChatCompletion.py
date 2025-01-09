@@ -43,9 +43,12 @@ async def chat_completions(request: CreateChatCompletionRequest):
 
     fully_done = False
     while not fully_done:
-        json_data = request.model_dump_json(
+        # json_data = request.model_dump_json(
+        #     exclude_defaults=True, exclude_none=True, exclude_unset=True
+        # )
+        json_data = json.dumps(request.model_dump(
             exclude_defaults=True, exclude_none=True, exclude_unset=True
-        )
+        ))
 
         # logger.debug(json_data)
 
