@@ -53,13 +53,26 @@ class MCPClientManager:
 
     async def get_client_from_tool(self, tool: str):
         for name, client in self.get_clients():
-            list_tools = await client.session.list_tools()
-            for client_tool in list_tools.tools:
-                if client_tool.name == tool:
-                    return client
+            
+            # client cannot have tools if it is not connected
+            if not client.session:
+                continue
+
+            try:
+                list_tools = await client.session.list_tools()
+                for client_tool in list_tools.tools:
+                    if client_tool.name == tool:
+                        return client
+            except McpError:
+                continue
 
     async def get_client_from_prompt(self, prompt: str):
         for name, client in self.get_clients():
+
+            # client cannot have prompts if it is not connected
+            if not client.session:
+                continue
+
             try:
                 list_prompts = await client.session.list_prompts()
                 for client_prompt in list_prompts.prompts:
