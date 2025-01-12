@@ -46,6 +46,9 @@ async def chat_completions(request: CreateChatCompletionRequest):
         # json_data = request.model_dump_json(
         #     exclude_defaults=True, exclude_none=True, exclude_unset=True
         # )
+
+        request.model = "gpt-4o-mini"
+
         json_data = json.dumps(request.model_dump(
             exclude_defaults=True, exclude_none=True, exclude_unset=True
         ))
@@ -71,9 +74,10 @@ async def chat_completions(request: CreateChatCompletionRequest):
                 if "text/event-stream" not in content_type:
                     logger.error(f"Unexpected Content-Type: {content_type}")
                     error_data = await event_source.response.aread()
-                    logger.debug(f"Request URL: {event_source.response.url}")
-                    logger.debug(f"Response Status: {event_source.response.status_code}")
-                    logger.debug(f"Response Data: {error_data.decode(event_source.response.encoding or 'utf-8')}")
+                    logger.error(f"Request URL: {event_source.response.url}")
+                    logger.error(f"Request Data: {json_data}")
+                    logger.error(f"Response Status: {event_source.response.status_code}")
+                    logger.error(f"Response Data: {error_data.decode(event_source.response.encoding or 'utf-8')}")
                     raise HTTPException(status_code=500, detail="Unexpected Content-Type")
 
             # iterate over the SSE stream
