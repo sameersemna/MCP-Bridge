@@ -47,8 +47,6 @@ async def chat_completions(request: CreateChatCompletionRequest):
         #     exclude_defaults=True, exclude_none=True, exclude_unset=True
         # )
 
-        request.model = "gpt-4o-mini"
-
         json_data = json.dumps(request.model_dump(
             exclude_defaults=True, exclude_none=True, exclude_unset=True
         ))
