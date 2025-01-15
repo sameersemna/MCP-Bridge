@@ -6,8 +6,8 @@ from lmos_openai_types import (
 
 from .utils import call_tool, chat_completion_add_tools
 from .genericHttpxClient import client
-from mcp_clients.McpClientManager import ClientManager
-from tool_mappers import mcp2openai
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.tool_mappers import mcp2openai
 from loguru import logger
 import json
 

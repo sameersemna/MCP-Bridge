@@ -1,8 +1,8 @@
 import asyncio
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from config import config
-from config.final import SSEMCPServer
+from mcp_bridge.config import config
+from mcp_bridge.config.final import SSEMCPServer
 from .AbstractClient import GenericMcpClient
 from loguru import logger
 

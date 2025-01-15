@@ -1,6 +1,6 @@
 from typing import Any
 from fastapi import APIRouter, HTTPException
-from mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp.types import ListPromptsResult, GetPromptResult
 
 router = APIRouter(prefix="/prompts")

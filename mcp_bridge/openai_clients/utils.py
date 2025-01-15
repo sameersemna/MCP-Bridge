@@ -1,12 +1,11 @@
-import asyncio
 from typing import Optional
 from loguru import logger
 from lmos_openai_types import CreateChatCompletionRequest
 import mcp.types
 import json
 
-from mcp_clients.McpClientManager import ClientManager
-from tool_mappers import mcp2openai
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.tool_mappers import mcp2openai
 
 
 async def chat_completion_add_tools(request: CreateChatCompletionRequest):

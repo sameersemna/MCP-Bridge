@@ -2,7 +2,7 @@ from mcp import types
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
 from pydantic import AnyUrl
-from mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from loguru import logger
 
 __all__ = ["server", "options"]

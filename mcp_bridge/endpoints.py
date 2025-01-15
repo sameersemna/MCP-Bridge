@@ -2,14 +2,14 @@ from fastapi import APIRouter
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 
-from openai_clients import (
+from mcp_bridge.openai_clients import (
     client,
     completions,
     chat_completions,
     streaming_chat_completions,
 )
 
-from openapi_tags import Tag
+from mcp_bridge.openapi_tags import Tag
 
 router = APIRouter(prefix="/v1", tags=[Tag.openai])
 

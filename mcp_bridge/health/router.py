@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from .types import HealthCheckResponse
 from .manager import manager
-from openapi_tags import Tag
+from mcp_bridge.openapi_tags import Tag
 
 router = APIRouter(tags=[Tag.health])
 

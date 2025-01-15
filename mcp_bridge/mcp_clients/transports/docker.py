@@ -4,7 +4,7 @@ import anyio
 import anyio.lowlevel
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from loguru import logger
-from config.final import DockerMCPServer
+from mcp_bridge.config.final import DockerMCPServer
 from mcp import types
 
 

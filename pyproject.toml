@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.10.4",
     "pydantic-settings>=2.7.0",
     "sse-starlette>=2.2.0",
+    "tortoise-orm[asyncmy,asyncpg]>=0.23.0",
     "uvicorn>=0.34.0",
 ]
 
@@ -33,3 +34,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 path = "mcp_bridge/__init__.py"
+
+[project.scripts]
+mcp-bridge = "mcp_bridge.main:run"

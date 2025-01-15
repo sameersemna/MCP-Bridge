@@ -1,5 +1,5 @@
 from httpx import AsyncClient
-from config import config
+from mcp_bridge.config import config
 
 client: AsyncClient = AsyncClient(
     base_url=config.inference_server.base_url,

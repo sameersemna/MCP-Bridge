@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from openapi_tags import Tag
+from mcp_bridge.openapi_tags import Tag
 
 from .tools import router as tools_router
 from .prompts import router as prompts_router

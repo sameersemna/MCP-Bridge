@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from loguru import logger
 
 

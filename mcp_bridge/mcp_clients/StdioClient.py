@@ -1,7 +1,7 @@
 import asyncio
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
-from config import config
+from mcp_bridge.config import config
 from .AbstractClient import GenericMcpClient
 from loguru import logger
 import shutil

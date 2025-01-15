@@ -1,12 +1,12 @@
 from typing import Union
-from config import config
+from mcp_bridge.config import config
 from mcp import McpError, StdioServerParameters
 from loguru import logger
 
 from .StdioClient import StdioClient
 from .SseClient import SseClient
 from .DockerClient import DockerClient
-from config.final import DockerMCPServer, SSEMCPServer
+from mcp_bridge.config.final import DockerMCPServer, SSEMCPServer
 
 client_types = Union[StdioClient, SseClient, DockerClient]
 

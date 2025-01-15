@@ -1,5 +1,4 @@
 import json
-from socket import timeout
 from typing import Optional
 from fastapi import HTTPException
 from lmos_openai_types import (
@@ -10,10 +9,10 @@ from lmos_openai_types import (
     Function1,
 )
 from .utils import call_tool, chat_completion_add_tools
-from models import SSEData
+from mcp_bridge.models import SSEData
 from .genericHttpxClient import client
-from mcp_clients.McpClientManager import ClientManager
-from tool_mappers import mcp2openai
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.tool_mappers import mcp2openai
 from loguru import logger
 from httpx_sse import aconnect_sse
 

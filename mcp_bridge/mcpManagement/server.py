@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from mcp.types import ListPromptsResult, ListToolsResult, ListResourcesResult
-from models.mcpServerStatus import McpServerStatus
-from mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.models.mcpServerStatus import McpServerStatus
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 
 router = APIRouter(prefix="/servers")
 

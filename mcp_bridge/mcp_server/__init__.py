@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from .sse import router as sse_router
-from openapi_tags import Tag
+from mcp_bridge.openapi_tags import Tag
 
 __all__ = ["router"]
 

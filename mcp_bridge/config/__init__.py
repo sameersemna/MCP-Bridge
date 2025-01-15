@@ -1,5 +1,5 @@
-from .initial import initial_settings
-from .final import Settings
+from mcp_bridge.config.initial import initial_settings
+from mcp_bridge.config.final import Settings
 from typing import Any, Callable
 from loguru import logger
 from pydantic import ValidationError

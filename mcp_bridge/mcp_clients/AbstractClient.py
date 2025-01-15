@@ -15,7 +15,7 @@ from mcp.types import (
 )
 from loguru import logger
 from pydantic import AnyUrl
-from models.mcpServerStatus import McpServerStatus
+from mcp_bridge.models.mcpServerStatus import McpServerStatus
 
 
 class GenericMcpClient(ABC):
