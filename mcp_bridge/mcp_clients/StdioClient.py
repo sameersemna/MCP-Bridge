@@ -1,7 +1,8 @@
 import asyncio
-from mcp import ClientSession, StdioServerParameters, stdio_client
+from mcp import StdioServerParameters, stdio_client
 
 from mcp_bridge.config import config
+from mcp_bridge.mcp_clients.session import McpClientSession
 from .AbstractClient import GenericMcpClient
 from loguru import logger
 import shutil
@@ -17,6 +18,10 @@ class StdioClient(GenericMcpClient):
     def __init__(self, name: str, config: StdioServerParameters) -> None:
         super().__init__(name=name)
 
+        # logger.debug(f"initializing settings for {name}: {config.command} {" ".join(config.args)}")
+
+        own_config = config.model_copy(deep=True)
+
         env = dict(os.environ.copy())
 
         env = {
@@ -24,17 +29,17 @@ class StdioClient(GenericMcpClient):
             if not any(key.startswith(keyword) for keyword in venv_keywords)
         }
 
-        # logger.debug(f"env: {env}")
-
         if config.env is not None:
             env.update(config.env)
+
+        own_config.env = env
 
         command = shutil.which(config.command)
         if command is None:
             logger.error(f"could not find command {config.command}")
             exit(1)
 
-        own_config = config.model_copy(deep=True)
+        own_config.command = command
 
         # this changes the default to ignore
         if "encoding_error_handler" not in config.model_fields_set:
@@ -48,7 +53,7 @@ class StdioClient(GenericMcpClient):
             logger.debug(f"entered stdio_client context manager for {self.name}")
             assert client[0] is not None, f"missing read stream for {self.name}"
             assert client[1] is not None, f"missing write stream for {self.name}"
-            async with ClientSession(*client) as session:
+            async with McpClientSession(*client) as session:
                 logger.debug(f"entered client session context manager for {self.name}")
                 await session.initialize()
                 logger.debug(f"finished initialise session for {self.name}")

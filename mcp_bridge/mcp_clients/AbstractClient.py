@@ -2,7 +2,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 from fastapi import HTTPException
-from mcp import ClientSession, McpError
+from mcp import McpError
 from mcp.types import (
     CallToolResult,
     ListToolsResult,
@@ -15,6 +15,7 @@ from mcp.types import (
 )
 from loguru import logger
 from pydantic import AnyUrl
+from mcp_bridge.mcp_clients.session import McpClientSession
 from mcp_bridge.models.mcpServerStatus import McpServerStatus
 
 
@@ -22,7 +23,7 @@ class GenericMcpClient(ABC):
     name: str
     config: Any
     client: Any
-    session: ClientSession | None = None
+    session: McpClientSession | None = None
 
     def __init__(self, name: str) -> None:
         super().__init__()
@@ -39,8 +40,10 @@ class GenericMcpClient(ABC):
         while True:
             try:
                 await self._maintain_session()
+            except FileNotFoundError as e:
+                logger.error(f"failed to maintain session for {self.name}: file {e.filename} not found.")
             except Exception as e:
-                logger.trace(f"failed to maintain session for {self.name}: {e}")
+                logger.error(f"failed to maintain session for {self.name}: {type(e)} {e.args}")
 
             logger.debug(f"restarting session for {self.name}")
             await asyncio.sleep(0.5)

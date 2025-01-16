@@ -1,8 +1,8 @@
 import asyncio
-from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
+from mcp_bridge.mcp_clients.session import McpClientSession
 from .AbstractClient import GenericMcpClient
 from loguru import logger
 
@@ -17,7 +17,7 @@ class SseClient(GenericMcpClient):
 
     async def _maintain_session(self):
         async with sse_client(self.config.url) as client:
-            async with ClientSession(*client) as session:
+            async with McpClientSession(*client) as session:
                 await session.initialize()
                 logger.debug(f"finished initialise session for {self.name}")
                 self.session = session

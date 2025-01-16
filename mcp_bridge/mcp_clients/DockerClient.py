@@ -1,5 +1,7 @@
 import asyncio
 from mcp import ClientSession
+
+from mcp_bridge.mcp_clients.session import McpClientSession
 from .transports.docker import docker_client
 from mcp_bridge.config import config
 from mcp_bridge.config.final import DockerMCPServer
@@ -9,7 +11,6 @@ from loguru import logger
 
 class DockerClient(GenericMcpClient):
     config: DockerMCPServer
-    session: ClientSession | None = None
 
     def __init__(self, name: str, config: DockerMCPServer) -> None:
         super().__init__(name=name)
@@ -19,7 +20,7 @@ class DockerClient(GenericMcpClient):
     async def _maintain_session(self):
         async with docker_client(self.config) as client:
             logger.debug(f"made instance of docker client for {self.name}")
-            async with ClientSession(*client) as session:
+            async with McpClientSession(*client) as session:
                 await session.initialize()
                 logger.debug(f"finished initialise session for {self.name}")
                 self.session = session

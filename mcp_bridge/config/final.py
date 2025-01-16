@@ -20,6 +20,18 @@ class Logging(BaseModel):
     log_server_pings: bool = Field(False, description="log server pings")
 
 
+class SamplingModel(BaseModel):
+    model: Annotated[str, Field(description="Name of the sampling model")]
+
+    intelligence: Annotated[float, Field(description="Intelligence of the sampling model")] = 0.5
+    cost: Annotated[float, Field(description="Cost of the sampling model")] = 0.5
+    speed: Annotated[float, Field(description="Speed of the sampling model")] = 0.5
+
+
+class Sampling(BaseModel):
+    timeout: Annotated[int, Field(description="Timeout for sampling requests")] = 10
+    models: Annotated[list[SamplingModel], Field(description="List of sampling models")] = []
+
 class SSEMCPServer(BaseModel):
     # TODO: expand this once I find a good definition for this
     url: str = Field(description="URL of the MCP server")
@@ -50,6 +62,11 @@ class Settings(BaseSettings):
 
     mcp_servers: dict[str, MCPServer] = Field(
         default_factory=dict, description="MCP servers configuration"
+    )
+
+    sampling: Sampling = Field(
+        default_factory=lambda: Sampling.model_construct(),
+        description="sampling config",
     )
 
     logging: Logging = Field(

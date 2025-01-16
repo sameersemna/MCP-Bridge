@@ -23,6 +23,7 @@ working features:
 - non streaming completions without MCP
 
 - MCP tools
+- MCP sampling
 
 - SSE Bridge for external clients
 
@@ -128,6 +129,23 @@ an example config.json file with most of the options explicitly set:
     "inference_server": {
         "base_url": "http://localhost:8000/v1",
         "api_key": "None"
+    },
+    "sampling": {
+        "timeout": 10,
+        "models": [
+            {
+                "model": "gpt-4o",
+                "intelligence": 0.8,
+                "cost": 0.9,
+                "speed": 0.3
+            },
+            {
+                "model": "gpt-4o-mini",
+                "intelligence": 0.4,
+                "cost": 0.1,
+                "speed": 0.7
+            }
+        ]
     },
     "mcp_servers": {
         "fetch": {
