@@ -2,6 +2,7 @@
 
 <p>
   <a href="https://discord.gg/4NVQHqNxSZ"><img alt="Discord" src="https://img.shields.io/discord/1320517159331430480?style=flat&logo=discord&color=blue"></a>
+  <a href="/docs/README.md"><img alt="Static Badge" src="https://img.shields.io/badge/docs-md-blue"></a>
   <a href="LICENSE"><img alt="Static Badge" src="https://img.shields.io/badge/License-MIT-blue?style=flat"></a>
 </p>
 
