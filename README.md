@@ -176,6 +176,8 @@ an example config.json file with most of the options explicitly set:
 
 If you encounter any issues please open an issue or join the [discord](https://discord.gg/4NVQHqNxSZ).
 
+There is also documentation available [here](/docs/README.md).
+
 ## How does it work
 
 The application sits between the OpenAI API and the inference engine. An incoming request is modified to include tool definitions for all MCP tools available on the MCP servers. The request is then forwarded to the inference engine, which uses the tool definitions to create tool calls. MCP bridge then manage the calls to the tools. The request is then modified to include the tool call results, and is returned to the inference engine again so the LLM can create a response. Finally, the response is returned to the OpenAI API.
