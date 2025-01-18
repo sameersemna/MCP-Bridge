@@ -1,10 +1,8 @@
 import asyncio
-from mcp import ClientSession
 
 from mcp_bridge.mcp_clients.session import McpClientSession
-from .transports.docker import docker_client
 from mcp_bridge.config import config
-from mcp_bridge.config.final import DockerMCPServer
+from mcpx.client.transports.docker import docker_client, DockerMCPServer
 from .AbstractClient import GenericMcpClient
 from loguru import logger
 

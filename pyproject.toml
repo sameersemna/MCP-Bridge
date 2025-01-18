@@ -5,7 +5,6 @@ description = "A middleware to provide an openAI compatible endpoint that can ca
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "aiodocker>=0.24.0",
     "deepmerge>=2.0",
     "fastapi>=0.115.6",
     "httpx>=0.28.1",
@@ -13,6 +12,7 @@ dependencies = [
     "lmos-openai-types",
     "loguru>=0.7.3",
     "mcp>=1.2.0",
+    "mcpx[docker]>=0.1.1",
     "pydantic>=2.10.4",
     "pydantic-settings>=2.7.0",
     "sse-starlette>=2.2.0",
