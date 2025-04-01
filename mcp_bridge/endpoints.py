@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 
@@ -33,7 +33,26 @@ async def openai_chat_completions(request: CreateChatCompletionRequest):
 
 
 @router.get("/models")
-async def models():
+async def models(request: Request):
     """List models"""
+    # Convert headers to dictionary with case normalization (lowercase)
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    
+    # List of headers to check and forward (in lowercase)
+    # These headers are controlled by ENABLE_FORWARD_USER_INFO_HEADERS setting in Open-WebUI
+    # See documentation: https://docs.openwebui.com/getting-started/env-configuration#enable_forward_user_info_headers
+    # When enabled, Open-WebUI forwards user information (name, id, email, and role) as X-headers
+    openwebui_headers = [
+        "x-openwebui-user-name",
+        "x-openwebui-user-id",
+        "x-openwebui-user-email",
+        "x-openwebui-user-role"
+    ]
+    
+    # Check each header and set it in the client if it exists
+    for header in openwebui_headers:
+        if header in headers:
+            client.headers[header] = headers[header]
+    
     response = await client.get("/models")
     return response.json()
