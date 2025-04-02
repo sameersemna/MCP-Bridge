@@ -1,3 +1,4 @@
+from fastapi import Request
 from lmos_openai_types import (
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
@@ -14,6 +15,7 @@ import json
 
 async def chat_completions(
     request: CreateChatCompletionRequest,
+    http_request: Request,
 ) -> CreateChatCompletionResponse:
     """performs a chat completion using the inference server"""
 
@@ -21,16 +23,16 @@ async def chat_completions(
 
     while True:
         # logger.debug(request.model_dump_json())
-
-        text = (
-            await get_client(request).post(
-                "/chat/completions",
-                #content=request.model_dump_json(
-                #    exclude_defaults=True, exclude_none=True, exclude_unset=True
-                #),
-                json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
-            )
-        ).text
+        async with get_client(http_request) as client:
+            text = (
+                await client.post(
+                    "/chat/completions",
+                    #content=request.model_dump_json(
+                    #    exclude_defaults=True, exclude_none=True, exclude_unset=True
+                    #),
+                    json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+                )
+            ).text
         logger.debug(text)
         try:
             response = CreateChatCompletionResponse.model_validate_json(text)

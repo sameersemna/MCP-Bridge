@@ -52,11 +52,12 @@ async def handle_sampling_message(
 
     logger.debug(request)
 
-    resp = await get_client(request).post(
-        "/chat/completions",
-        json=request,
-        timeout=config.sampling.timeout,
-    )
+    async with get_client as client:
+        resp = await client.post(
+            "/chat/completions",
+            json=request,
+            timeout=config.sampling.timeout,
+        )
 
     logger.debug("parsing json")
     text = resp.text
