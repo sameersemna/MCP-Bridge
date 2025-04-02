@@ -5,7 +5,7 @@ from lmos_openai_types import (
 )
 
 from .utils import call_tool, chat_completion_add_tools
-from .genericHttpxClient import client
+from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
 from loguru import logger
@@ -23,7 +23,7 @@ async def chat_completions(
         # logger.debug(request.model_dump_json())
 
         text = (
-            await client.post(
+            await get_client(request).post(
                 "/chat/completions",
                 #content=request.model_dump_json(
                 #    exclude_defaults=True, exclude_none=True, exclude_unset=True

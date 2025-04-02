@@ -10,7 +10,7 @@ from lmos_openai_types import (
 )
 from .utils import call_tool, chat_completion_add_tools
 from mcp_bridge.models import SSEData
-from .genericHttpxClient import client
+from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
 from loguru import logger
@@ -61,7 +61,7 @@ async def chat_completions(request: CreateChatCompletionRequest):
         tool_call_id: str = ""
 
         async with aconnect_sse(
-            client, "post", "/chat/completions", content=json_data
+            get_client(request), "post", "/chat/completions", content=json_data
         ) as event_source:
             
             # check if the content type is correct because the aiter_sse method
