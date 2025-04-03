@@ -52,7 +52,7 @@ async def handle_sampling_message(
 
     logger.debug(request)
 
-    async with get_client as client:
+    async with get_client() as client:
         resp = await client.post(
             "/chat/completions",
             json=request,
