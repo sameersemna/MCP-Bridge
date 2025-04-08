@@ -1,6 +1,6 @@
 import json
 from typing import Optional
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from lmos_openai_types import (
     ChatCompletionMessageToolCall,
     ChatCompletionRequestMessage,
@@ -10,7 +10,7 @@ from lmos_openai_types import (
 )
 from .utils import call_tool, chat_completion_add_tools
 from mcp_bridge.models import SSEData
-from .genericHttpxClient import client
+from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
 from loguru import logger
@@ -19,12 +19,12 @@ from httpx_sse import aconnect_sse
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
 
-async def streaming_chat_completions(request: CreateChatCompletionRequest):
+async def streaming_chat_completions(request: CreateChatCompletionRequest, http_request: Request):
     # raise NotImplementedError("Streaming Chat Completion is not supported")
 
     try:
         return EventSourceResponse(
-            content=chat_completions(request),
+            content=chat_completions(request, http_request),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache"},
         )
@@ -33,7 +33,7 @@ async def streaming_chat_completions(request: CreateChatCompletionRequest):
         logger.error(e)
 
 
-async def chat_completions(request: CreateChatCompletionRequest):
+async def chat_completions(request: CreateChatCompletionRequest, http_request: Request):
     """performs a chat completion using the inference server"""
 
     request.stream = True
@@ -60,96 +60,97 @@ async def chat_completions(request: CreateChatCompletionRequest):
         response_content: str = ""
         tool_call_id: str = ""
 
-        async with aconnect_sse(
-            client, "post", "/chat/completions", content=json_data
-        ) as event_source:
-            
-            # check if the content type is correct because the aiter_sse method
-            # will raise an exception if the content type is not correct
-            if "Content-Type" in event_source.response.headers:
-                content_type = event_source.response.headers["Content-Type"]
-                if "text/event-stream" not in content_type:
-                    logger.error(f"Unexpected Content-Type: {content_type}")
-                    error_data = await event_source.response.aread()
-                    logger.error(f"Request URL: {event_source.response.url}")
-                    logger.error(f"Request Data: {json_data}")
-                    logger.error(f"Response Status: {event_source.response.status_code}")
-                    logger.error(f"Response Data: {error_data.decode(event_source.response.encoding or 'utf-8')}")
-                    raise HTTPException(status_code=500, detail="Unexpected Content-Type")
+        async with get_client(http_request) as client:
+            async with aconnect_sse(
+                client, "post", "/chat/completions", content=json_data
+            ) as event_source:
+                
+                # check if the content type is correct because the aiter_sse method
+                # will raise an exception if the content type is not correct
+                if "Content-Type" in event_source.response.headers:
+                    content_type = event_source.response.headers["Content-Type"]
+                    if "text/event-stream" not in content_type:
+                        logger.error(f"Unexpected Content-Type: {content_type}")
+                        error_data = await event_source.response.aread()
+                        logger.error(f"Request URL: {event_source.response.url}")
+                        logger.error(f"Request Data: {json_data}")
+                        logger.error(f"Response Status: {event_source.response.status_code}")
+                        logger.error(f"Response Data: {error_data.decode(event_source.response.encoding or 'utf-8')}")
+                        raise HTTPException(status_code=500, detail="Unexpected Content-Type")
 
-            # iterate over the SSE stream
-            async for sse in event_source.aiter_sse():
-                event = sse.event
-                data = sse.data
-                id = sse.id
-                retry = sse.retry
+                # iterate over the SSE stream
+                async for sse in event_source.aiter_sse():
+                    event = sse.event
+                    data = sse.data
+                    id = sse.id
+                    retry = sse.retry
 
-                logger.debug(
-                    f"event: {event},\ndata: {data},\nid: {id},\nretry: {retry}"
-                )
-
-                # handle if the SSE stream is done
-                if data == "[DONE]":
-                    logger.debug("inference serverstream done")
-                    break
-
-                # for some reason openrouter uses uppercase for finish_reason
-                try:
-                    data['choices'][0]['finish_reason'] = data['choices'][0]['finish_reason'].lower() # type: ignore
-                except Exception as e:
-                    logger.debug(f"failed to lowercase finish_reason: {e}")
-
-                try:
-                    parsed_data = CreateChatCompletionStreamResponse.model_validate_json(
-                        data
+                    logger.debug(
+                        f"event: {event},\ndata: {data},\nid: {id},\nretry: {retry}"
                     )
-                except Exception as e:
-                    logger.debug(data)
-                    raise e
 
-                # add the delta to the response content
-                content = parsed_data.choices[0].delta.content
-                content = content if content is not None else ""
-                response_content += content
+                    # handle if the SSE stream is done
+                    if data == "[DONE]":
+                        logger.debug("inference serverstream done")
+                        break
 
-                # handle stop reasons
-                if parsed_data.choices[0].finish_reason is not None:
-                    if parsed_data.choices[0].finish_reason.value in [
-                        "stop",
-                        "length",
-                    ]:
-                        fully_done = True
-                    else:
+                    # for some reason openrouter uses uppercase for finish_reason
+                    try:
+                        data['choices'][0]['finish_reason'] = data['choices'][0]['finish_reason'].lower() # type: ignore
+                    except Exception as e:
+                        logger.debug(f"failed to lowercase finish_reason: {e}")
+
+                    try:
+                        parsed_data = CreateChatCompletionStreamResponse.model_validate_json(
+                            data
+                        )
+                    except Exception as e:
+                        logger.debug(data)
+                        raise e
+
+                    # add the delta to the response content
+                    content = parsed_data.choices[0].delta.content
+                    content = content if content is not None else ""
+                    response_content += content
+
+                    # handle stop reasons
+                    if parsed_data.choices[0].finish_reason is not None:
+                        if parsed_data.choices[0].finish_reason.value in [
+                            "stop",
+                            "length",
+                        ]:
+                            fully_done = True
+                        else:
+                            should_forward = False
+
+                    # this manages the incoming tool call schema
+                    # most of this is assertions to please mypy
+                    if parsed_data.choices[0].delta.tool_calls is not None:
                         should_forward = False
+                        assert (
+                            parsed_data.choices[0].delta.tool_calls[0].function is not None
+                        )
 
-                # this manages the incoming tool call schema
-                # most of this is assertions to please mypy
-                if parsed_data.choices[0].delta.tool_calls is not None:
-                    should_forward = False
-                    assert (
-                        parsed_data.choices[0].delta.tool_calls[0].function is not None
-                    )
+                        name = parsed_data.choices[0].delta.tool_calls[0].function.name
+                        name = name if name is not None else ""
+                        tool_call_name = name if tool_call_name == "" else tool_call_name
 
-                    name = parsed_data.choices[0].delta.tool_calls[0].function.name
-                    name = name if name is not None else ""
-                    tool_call_name = name if tool_call_name == "" else tool_call_name
+                        call_id = parsed_data.choices[0].delta.tool_calls[0].id
+                        call_id = call_id if call_id is not None else ""
+                        tool_call_id = id if tool_call_id == "" else tool_call_id
 
-                    call_id = parsed_data.choices[0].delta.tool_calls[0].id
-                    call_id = call_id if call_id is not None else ""
-                    tool_call_id = id if tool_call_id == "" else tool_call_id
+                        arg = parsed_data.choices[0].delta.tool_calls[0].function.arguments
+                        tool_call_json += arg if arg is not None else ""
 
-                    arg = parsed_data.choices[0].delta.tool_calls[0].function.arguments
-                    tool_call_json += arg if arg is not None else ""
+                    # forward SSE messages to the client
+                    logger.debug(f"{should_forward=}")
+                    if should_forward:
+                        # we do not want to forward tool call json to the client
+                        logger.debug("forwarding message")
+                        yield SSEData.model_validate_json(sse.data).model_dump_json()
 
-                # forward SSE messages to the client
-                logger.debug(f"{should_forward=}")
-                if should_forward:
-                    # we do not want to forward tool call json to the client
-                    logger.debug("forwarding message")
-                    yield SSEData.model_validate_json(sse.data).model_dump_json()
-
-                # save the last message
-                last = parsed_data
+                    # save the last message
+                    last = parsed_data
 
         # ideally we should check this properly
         assert last is not None

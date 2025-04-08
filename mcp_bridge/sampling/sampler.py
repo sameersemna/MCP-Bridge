@@ -5,7 +5,7 @@ from lmos_openai_types import CreateChatCompletionResponse
 from mcp.types import CreateMessageRequestParams, CreateMessageResult
 
 from mcp_bridge.config import config
-from mcp_bridge.openai_clients.genericHttpxClient import client
+from mcp_bridge.openai_clients.genericHttpxClient import get_client
 from mcp_bridge.sampling.modelSelector import find_best_model
 
 def make_message(x: SamplingMessage):
@@ -52,11 +52,12 @@ async def handle_sampling_message(
 
     logger.debug(request)
 
-    resp = await client.post(
-        "/chat/completions",
-        json=request,
-        timeout=config.sampling.timeout,
-    )
+    async with get_client() as client:
+        resp = await client.post(
+            "/chat/completions",
+            json=request,
+            timeout=config.sampling.timeout,
+        )
 
     logger.debug("parsing json")
     text = resp.text
