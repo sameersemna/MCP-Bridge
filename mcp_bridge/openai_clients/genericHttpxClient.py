@@ -33,7 +33,7 @@ async def create_client(request: Request = None):
 
 @asynccontextmanager
 async def get_client(request: Request = None):
-    """Context manager dla klienta HTTP"""
+    """Context manager for HTTP client"""
     client = await create_client(request)
     try:
         yield client
