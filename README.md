@@ -133,7 +133,9 @@ MCP-Bridge supports API key authentication to secure your server. To enable this
       "auth": {
         "enabled": true,
         "api_keys": [
-          {"key": "your-secure-api-key-here"}
+          {
+            "key": "your-secure-api-key-here"
+          }
         ]
       }
     }
@@ -187,7 +189,9 @@ an example config.json file with most of the options explicitly set:
       "auth": {
         "enabled": true,
         "api_keys": [
-          {"key": "your-secure-api-key-here"}
+          {
+            "key": "your-secure-api-key-here"
+          }
         ]
       }
     },
