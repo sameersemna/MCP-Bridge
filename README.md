@@ -125,11 +125,20 @@ To add new MCP servers, edit the config.json file.
 
 ### API Key Authentication
 
-MCP-Bridge supports API key authentication to secure your server. To enable this feature, add an `api_key` field to your config.json file:
+MCP-Bridge supports API key authentication to secure your server. To enable this feature, add something like this to your `config.json` file:
 
 ```json
 {
-    "api_key": "your-secure-api-key-here"
+    "security": {
+      "auth": {
+        "enabled": true,
+        "api_keys": [
+          {
+            "key": "your-secure-api-key-here"
+          }
+        ]
+      }
+    }
 }
 ```
 
@@ -176,14 +185,23 @@ an example config.json file with most of the options explicitly set:
             ]
         }
     },
+    "security": {
+      "auth": {
+        "enabled": true,
+        "api_keys": [
+          {
+            "key": "your-secure-api-key-here"
+          }
+        ]
+      }
+    },
     "network": {
         "host": "0.0.0.0",
         "port": 9090
     },
     "logging": {
         "log_level": "DEBUG"
-    },
-    "api_key": "your-secure-api-key-here"
+    }
 }
 ```
 
