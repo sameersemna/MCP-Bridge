@@ -109,12 +109,12 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                         raise e
 
                     # add the delta to the response content
-                    content = parsed_data.choices[0].delta.content
+                    content = parsed_data.choices[0].delta.content if len(parsed_data.choices) > 0 else ""
                     content = content if content is not None else ""
                     response_content += content
 
                     # handle stop reasons
-                    if parsed_data.choices[0].finish_reason is not None:
+                    if  len(parsed_data.choices) > 0 and parsed_data.choices[0].finish_reason is not None:
                         if parsed_data.choices[0].finish_reason.value in [
                             "stop",
                             "length",
@@ -125,7 +125,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
 
                     # this manages the incoming tool call schema
                     # most of this is assertions to please mypy
-                    if parsed_data.choices[0].delta.tool_calls is not None:
+                    if len(parsed_data.choices) > 0 and parsed_data.choices[0].delta.tool_calls is not None:
                         should_forward = False
                         assert (
                             parsed_data.choices[0].delta.tool_calls[0].function is not None
@@ -154,9 +154,10 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
 
         # ideally we should check this properly
         assert last is not None
-        assert last.choices[0].finish_reason is not None
+        if len(last.choices) > 0:
+            assert last.choices[0].finish_reason is not None
 
-        if last.choices[0].finish_reason.value in ["stop", "length"]:
+        if len(last.choices) > 0 and last.choices[0].finish_reason.value in ["stop", "length"]:
             logger.debug("no tool calls found")
             fully_done = True
             continue
