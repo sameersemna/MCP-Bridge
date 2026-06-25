@@ -7,10 +7,7 @@ services:
         - path: mcp_bridge
           action: rebuild
     container_name: mcp-bridge
-    ports:
-      - "11410:8000"
-      - "11411:11401"
-      - "11413:11403"
+    network_mode: host
     environment:
       - MCP_BRIDGE__CONFIG__FILE=config.json # mount the config file for this to work
       # - MCP_BRIDGE__CONFIG__HTTP_URL=http://10.88.100.170:8888/config.json
@@ -23,7 +20,7 @@ services:
     image: jaegertracing/jaeger:latest
     ports:
       - "16686:16686"   # Web UI
-      # - "4317:4317"     # OTLP gRPC
+      - "4317:4317"     # OTLP gRPC
       - "4318:4318"     # OTLP HTTP
       # - "5778:5778"     # Config server
       # - "9411:9411"     # Zipkin compatible
