@@ -168,4 +168,4 @@ compose.yml
 config.json
 .qwen/
 tools.json
-response.json
+response*.json
