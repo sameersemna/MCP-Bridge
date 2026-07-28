@@ -15,7 +15,7 @@ class SseClient(GenericMcpClient):
 
         self.config = config
 
-    async def _maintain_session(self):
+    async def _maintain_session(self) -> None:
         async with sse_client(self.config.url) as client:
             async with McpClientSession(*client) as session:
                 await session.initialize()
@@ -33,5 +33,6 @@ class SseClient(GenericMcpClient):
                 except Exception as exc:
                     logger.error(f"ping failed for {self.name}: {exc}")
                     self.session = None
+                    raise
 
         logger.debug(f"exiting session for {self.name}")

@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 from mcp import StdioServerParameters, stdio_client
 
 from mcp_bridge.config import config
@@ -47,7 +48,7 @@ class StdioClient(GenericMcpClient):
 
         self.config = own_config
 
-    async def _maintain_session(self):
+    async def _maintain_session(self) -> None:
         logger.debug(f"starting maintain session for {self.name}")
         async with stdio_client(self.config) as client:
             logger.debug(f"entered stdio_client context manager for {self.name}")
@@ -70,5 +71,6 @@ class StdioClient(GenericMcpClient):
                 except Exception as exc:
                     logger.error(f"ping failed for {self.name}: {exc}")
                     self.session = None
+                    raise
 
         logger.debug(f"exiting session for {self.name}")

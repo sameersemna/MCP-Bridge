@@ -1,9 +1,24 @@
 from typing import Annotated, Literal, Union
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
-from mcp.client.stdio import StdioServerParameters
-from mcpx.client.transports.docker import DockerMCPServer
+try:
+    from mcp.client.stdio import StdioServerParameters
+except ImportError:  # pragma: no cover - fallback for environments without the SDK installed
+    class StdioServerParameters(BaseModel):
+        command: str = Field(default="python")
+        args: list[str] = Field(default_factory=list)
+        env: dict[str, str] = Field(default_factory=dict)
+        cwd: str | None = None
+
+try:
+    from mcpx.client.transports.docker import DockerMCPServer
+except ImportError:  # pragma: no cover - fallback for environments without the SDK installed
+    class DockerMCPServer(BaseModel):
+        image: str | None = None
+        command: list[str] = Field(default_factory=list)
+        env: dict[str, str] = Field(default_factory=dict)
+        volumes: list[str] = Field(default_factory=list)
 
 
 class InferenceServer(BaseModel):
@@ -32,10 +47,12 @@ class SamplingModel(BaseModel):
 
 
 class Sampling(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     timeout: Annotated[int, Field(description="Timeout for sampling requests")] = 10
     models: Annotated[
         list[SamplingModel], Field(description="List of sampling models")
-    ] = []
+    ] = Field(default_factory=list)
 
 
 class SSEMCPServer(BaseModel):
@@ -50,8 +67,24 @@ MCPServer = Annotated[
 
 
 class Network(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     host: str = Field("0.0.0.0", description="Host of the network")
     port: int = Field(8000, description="Port of the network")
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str) -> str:
+        if not value:
+            raise ValueError("host cannot be empty")
+        return value
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, value: int) -> int:
+        if not 1 <= value <= 65535:
+            raise ValueError("port must be between 1 and 65535")
+        return value
 
 
 class Cors(BaseModel):
@@ -71,17 +104,14 @@ class ApiKey(BaseModel):
 
 class Auth(BaseModel):
     enabled: bool = Field(False, description="Enable authentication")
-    api_keys: list[ApiKey] = Field([], description="API keys")
+    api_keys: list[ApiKey] = Field(default_factory=list, description="API keys")
 
 
 class Security(BaseModel):
-    CORS: Cors = Field(
-        default_factory=lambda: Cors.model_construct(), description="CORS configuration"
-    )
-    auth: Auth = Field(
-        default_factory=lambda: Auth.model_construct(),
-        description="Authentication configuration",
-    )
+    model_config = ConfigDict(extra="forbid")
+
+    CORS: Cors = Field(default_factory=Cors, description="CORS configuration")
+    auth: Auth = Field(default_factory=Auth, description="Authentication configuration")
 
 
 class Telemetry(BaseModel):
@@ -101,8 +131,17 @@ class Telemetry(BaseModel):
     )
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="MCP_BRIDGE__",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        cli_parse_args=False,
+        cli_avoid_json=True,
+        extra="ignore",
+    )
     inference_server: InferenceServer = Field(
-        default_factory=lambda: InferenceServer.model_construct(),
+        default_factory=InferenceServer,
         description="Inference server configuration",
     )
 
@@ -110,36 +149,13 @@ class Settings(BaseSettings):
         default_factory=dict, description="MCP servers configuration"
     )
 
-    sampling: Sampling = Field(
-        default_factory=lambda: Sampling.model_construct(),
-        description="sampling config",
-    )
+    sampling: Sampling = Field(default_factory=Sampling, description="sampling config")
 
-    logging: Logging = Field(
-        default_factory=lambda: Logging.model_construct(),
-        description="logging config",
-    )
+    logging: Logging = Field(default_factory=Logging, description="logging config")
 
-    network: Network = Field(
-        default_factory=lambda: Network.model_construct(),
-        description="network config",
-    )
+    network: Network = Field(default_factory=Network, description="network config")
 
-    security: Security = Field(
-        default_factory=lambda: Security.model_construct(),
-        description="security config",
-    )
+    security: Security = Field(default_factory=Security, description="security config")
 
-    telemetry: Telemetry = Field(
-        default_factory=lambda: Telemetry.model_construct(),
-        description="telemetry config",
-    )
+    telemetry: Telemetry = Field(default_factory=Telemetry, description="telemetry config")
 
-    model_config = SettingsConfigDict(
-        env_prefix="MCP_BRIDGE__",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-        cli_parse_args=True,
-        cli_avoid_json=True,
-    )

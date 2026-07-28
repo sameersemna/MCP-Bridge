@@ -1,4 +1,5 @@
-from typing import Union
+import asyncio
+from typing import Any, Union
 
 from loguru import logger
 from mcp import McpError, StdioServerParameters
@@ -16,19 +17,21 @@ client_types = Union[StdioClient, SseClient, DockerClient]
 
 class MCPClientManager:
     clients: dict[str, client_types] = {}
+    _lock = asyncio.Lock()
 
     async def initialize(self):
         """Initialize the MCP Client Manager and start all clients"""
 
-        logger.log("DEBUG", "Initializing MCP Client Manager")
+        logger.debug("Initializing MCP Client Manager")
 
-        for server_name, server_config in config.mcp_servers.items():
-            self.clients[server_name] = await self.construct_client(
-                server_name, server_config
-            )
+        async with self._lock:
+            for server_name, server_config in config.mcp_servers.items():
+                self.clients[server_name] = await self.construct_client(
+                    server_name, server_config
+                )
 
-    async def construct_client(self, name, server_config) -> client_types:
-        logger.log("DEBUG", f"Constructing client for {server_config}")
+    async def construct_client(self, name: str, server_config: Any) -> client_types:
+        logger.debug(f"Constructing client for {server_config}")
 
         if isinstance(server_config, StdioServerParameters):
             client = StdioClient(name, server_config)
@@ -55,9 +58,7 @@ class MCPClientManager:
         return list(self.clients.items())
 
     async def get_client_from_tool(self, tool: str):
-        for name, client in self.get_clients():
-            
-            # client cannot have tools if it is not connected
+        for _, client in self.get_clients():
             if not client.session:
                 continue
 
@@ -69,10 +70,10 @@ class MCPClientManager:
             except McpError:
                 continue
 
-    async def get_client_from_prompt(self, prompt: str):
-        for name, client in self.get_clients():
+        return None
 
-            # client cannot have prompts if it is not connected
+    async def get_client_from_prompt(self, prompt: str):
+        for _, client in self.get_clients():
             if not client.session:
                 continue
 
@@ -83,6 +84,8 @@ class MCPClientManager:
                         return client
             except McpError:
                 continue
+
+        return None
 
 
 ClientManager = MCPClientManager()

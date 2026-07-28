@@ -15,7 +15,7 @@ class DockerClient(GenericMcpClient):
 
         self.config = config
 
-    async def _maintain_session(self):
+    async def _maintain_session(self) -> None:
         async with docker_client(self.config) as client:
             logger.debug(f"made instance of docker client for {self.name}")
             async with McpClientSession(*client) as session:
@@ -34,5 +34,6 @@ class DockerClient(GenericMcpClient):
                 except Exception as exc:
                     logger.error(f"ping failed for {self.name}: {exc}")
                     self.session = None
+                    raise
 
         logger.debug(f"exiting session for {self.name}")

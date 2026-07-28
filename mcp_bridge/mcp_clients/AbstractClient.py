@@ -1,6 +1,6 @@
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 from fastapi import HTTPException
 from mcp import McpError
 from mcp.types import (
@@ -24,11 +24,17 @@ class GenericMcpClient(ABC):
     config: Any
     client: Any
     session: McpClientSession | None = None
+    _start_lock: asyncio.Lock
+    _started: bool
+    _maintainer_task: asyncio.Task[None] | None
 
     def __init__(self, name: str) -> None:
         super().__init__()
         self.session = None
         self.name = name
+        self._start_lock = asyncio.Lock()
+        self._started = False
+        self._maintainer_task = None
 
         logger.debug(f"initializing client class for {name}")
 
@@ -37,6 +43,7 @@ class GenericMcpClient(ABC):
         pass
 
     async def _session_maintainer(self):
+        reconnect_delay = 0.5
         while True:
             try:
                 await self._maintain_session()
@@ -45,22 +52,33 @@ class GenericMcpClient(ABC):
             except Exception as e:
                 logger.error(f"failed to maintain session for {self.name}: {type(e)} {e.args}")
 
-            logger.debug(f"restarting session for {self.name}")
-            await asyncio.sleep(0.5)
+            self.session = None
+            logger.debug(f"restarting session for {self.name} in {reconnect_delay}s")
+            await asyncio.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, 5.0)
 
-    async def start(self):
-        asyncio.create_task(self._session_maintainer())
+    async def start(self) -> None:
+        async with self._start_lock:
+            if self._started:
+                return
+
+            self._started = True
+            self._maintainer_task = asyncio.create_task(self._session_maintainer())
 
     async def call_tool(
-        self, name: str, arguments: dict, timeout: Optional[int] = None
+        self, name: str, arguments: dict[str, Any] | None, timeout: int | None = None
     ) -> CallToolResult:
         await self._wait_for_session()
+
+        normalized_arguments = arguments or {}
+        if not isinstance(normalized_arguments, dict):
+            raise HTTPException(status_code=400, detail="Tool arguments must be a JSON object")
 
         try:
             async with asyncio.timeout(timeout):
                 return await self.session.call_tool(
                     name=name,
-                    arguments=arguments,
+                    arguments=normalized_arguments,
                 )
 
         except asyncio.TimeoutError:
@@ -80,12 +98,16 @@ class GenericMcpClient(ABC):
             )
 
     async def get_prompt(
-        self, prompt: str, arguments: dict[str, str]
+        self, prompt: str, arguments: dict[str, str] | None
     ) -> GetPromptResult | None:
         await self._wait_for_session()
 
+        normalized_arguments = arguments or {}
+        if not isinstance(normalized_arguments, dict):
+            raise HTTPException(status_code=400, detail="Prompt arguments must be a JSON object")
+
         try:
-            return await self.session.get_prompt(prompt, arguments)
+            return await self.session.get_prompt(prompt, normalized_arguments)
         except Exception as e:
             logger.error(f"error evaluating prompt: {e}")
 

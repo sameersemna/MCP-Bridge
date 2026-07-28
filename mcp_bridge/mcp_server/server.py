@@ -5,6 +5,14 @@ from pydantic import AnyUrl
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from loguru import logger
 
+
+def _normalize_arguments(arguments: dict | None) -> dict[str, object]:
+    if arguments is None:
+        return {}
+    if not isinstance(arguments, dict):
+        raise TypeError("Arguments must be a JSON object")
+    return {str(key): value for key, value in arguments.items()}
+
 __all__ = ["server", "options"]
 
 server = Server("MCP-Bridge")
@@ -68,11 +76,8 @@ async def get_prompt(name: str, args: dict[str, str] | None) -> types.GetPromptR
     if client is None:
         raise Exception(f"Prompt '{name}' not found")
 
-    # if args is None, then we should use an empty dict
-    if args is None:
-        args = {}
-
-    result = await client.get_prompt(name, args)
+    normalized_args = _normalize_arguments(args)
+    result = await client.get_prompt(name, normalized_args)
     if result is None:
         raise Exception(f"Prompt '{name}' not found")
 
@@ -118,11 +123,8 @@ async def handle_call_tool(
     if client is None:
         raise Exception(f"Tool '{name}' not found")
 
-    # if arguments is None, then we should use an empty dict
-    if arguments is None:
-        arguments = {}
-
-    return (await client.call_tool(name, arguments)).content
+    normalized_arguments = _normalize_arguments(arguments)
+    return (await client.call_tool(name, normalized_arguments)).content
 
 
 # options

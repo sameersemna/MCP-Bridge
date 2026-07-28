@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any
 from loguru import logger
 from lmos_openai_types import CreateChatCompletionRequest
 import mcp.types
@@ -25,8 +25,8 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
 
 
 async def call_tool(
-    tool_call_name: str, tool_call_json: str, timeout: Optional[int] = None
-) -> Optional[mcp.types.CallToolResult]:
+    tool_call_name: str, tool_call_json: str, timeout: int | None = None
+) -> mcp.types.CallToolResult | None:
     if tool_call_name == "" or tool_call_name is None:
         logger.error("tool call name is empty")
         return None
