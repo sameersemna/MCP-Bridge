@@ -17,10 +17,23 @@ class UnhealthyEvent(BaseModel):
     )
 
 
+class MCPServerHealth(BaseModel):
+    """Represents the runtime health of a configured MCP server."""
+
+    name: str = Field(..., description="Configured MCP server name")
+    status: Literal["online", "offline", "degraded"] = Field(
+        ..., description="Runtime status of the MCP server"
+    )
+    detail: str | None = Field(default=None, description="Optional detail about the state")
+
+
 class HealthCheckResponse(BaseModel):
     """Represents a health check response"""
 
     status: Literal["ok", "error"] = Field(..., description="Server status")
     unhealthy_events: list[UnhealthyEvent] = Field(
         default_factory=list, description="List of unhealthy events"
+    )
+    mcp_servers: list[MCPServerHealth] = Field(
+        default_factory=list, description="Runtime status of configured MCP servers"
     )

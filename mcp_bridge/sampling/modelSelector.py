@@ -1,6 +1,13 @@
 import math
+from typing import Any
 
-from mcp.types import ModelPreferences
+try:
+    from mcp.types import ModelPreferences
+except ImportError:  # pragma: no cover - allows the package to import in minimal environments
+    class ModelPreferences:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
 
 from mcp_bridge.config import config
 

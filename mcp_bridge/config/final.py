@@ -1,4 +1,5 @@
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, Literal, Union
+from urllib.parse import urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
@@ -6,19 +7,37 @@ try:
     from mcp.client.stdio import StdioServerParameters
 except ImportError:  # pragma: no cover - fallback for environments without the SDK installed
     class StdioServerParameters(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
         command: str = Field(default="python")
         args: list[str] = Field(default_factory=list)
         env: dict[str, str] = Field(default_factory=dict)
         cwd: str | None = None
 
+        @field_validator("command")
+        @classmethod
+        def validate_command(cls, value: str) -> str:
+            if not value:
+                raise ValueError("stdio MCP server requires a non-empty command")
+            return value
+
 try:
     from mcpx.client.transports.docker import DockerMCPServer
 except ImportError:  # pragma: no cover - fallback for environments without the SDK installed
     class DockerMCPServer(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
         image: str | None = None
         command: list[str] = Field(default_factory=list)
         env: dict[str, str] = Field(default_factory=dict)
         volumes: list[str] = Field(default_factory=list)
+
+        @field_validator("image")
+        @classmethod
+        def validate_image(cls, value: str | None) -> str | None:
+            if value is not None and not value.strip():
+                raise ValueError("docker MCP server image must be non-empty when provided")
+            return value
 
 
 class InferenceServer(BaseModel):
@@ -29,6 +48,16 @@ class InferenceServer(BaseModel):
     api_key: str = Field(
         default="unauthenticated", description="API key for the inference server"
     )
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError("base_url must be a valid absolute URL")
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("base_url must use http or https")
+        return value.rstrip("/")
 
 
 class Logging(BaseModel):
@@ -56,8 +85,19 @@ class Sampling(BaseModel):
 
 
 class SSEMCPServer(BaseModel):
-    # TODO: expand this once I find a good definition for this
+    model_config = ConfigDict(extra="forbid")
+
     url: str = Field(description="URL of the MCP server")
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError("url must be a valid absolute URL")
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("url must use http or https")
+        return value.rstrip("/")
 
 
 MCPServer = Annotated[

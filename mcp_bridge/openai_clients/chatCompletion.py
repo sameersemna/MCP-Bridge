@@ -5,7 +5,7 @@ from lmos_openai_types import (
     ChatCompletionRequestMessage,
 )
 
-from .utils import call_tool, chat_completion_add_tools
+from .utils import call_tools, chat_completion_add_tools
 from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
@@ -55,40 +55,49 @@ async def chat_completions(
             return response
 
         logger.debug("tool calls found")
-        for tool_call in response.choices[0].message.tool_calls.root:
-            logger.debug(
-                f"tool call: {tool_call.function.name} arguments: {json.loads(tool_call.function.arguments)}"
+        tool_call_items = [
+            (
+                tool_call.function.name,
+                tool_call.function.arguments,
             )
+            for tool_call in response.choices[0].message.tool_calls.root
+            if getattr(tool_call.function, "name", None) is not None
+        ]
 
-            # FIXME: this can probably be done in parallel using asyncio gather
-            tool_call_result = await call_tool(
-                tool_call.function.name, tool_call.function.arguments
-            )
-            if tool_call_result is None:
-                continue
+        if tool_call_items:
+            tool_call_results = await call_tools(tool_call_items)
+            for tool_call, tool_call_result in zip(
+                response.choices[0].message.tool_calls.root,
+                tool_call_results,
+            ):
+                if tool_call_result is None:
+                    logger.warning(
+                        f"tool call '{getattr(tool_call.function, 'name', 'unknown')}' returned no result"
+                    )
+                    continue
 
-            logger.debug(
-                f"tool call result for {tool_call.function.name}: {tool_call_result.model_dump()}"
-            )
-
-            logger.debug(f"tool call result content: {tool_call_result.content}")
-
-            tools_content = [
-                {"type": "text", "text": part.text}
-                for part in filter(lambda x: x.type == "text", tool_call_result.content)
-            ]
-            if len(tools_content) == 0:
-                tools_content = [
-                    {"type": "text", "text": "the tool call result is empty"}
-                ]
-            request.messages.append(
-                ChatCompletionRequestMessage.model_validate(
-                    {
-                        "role": "tool",
-                        "content": tools_content,
-                        "tool_call_id": tool_call.id,
-                    }
+                logger.debug(
+                    f"tool call result for {tool_call.function.name}: {tool_call_result.model_dump()}"
                 )
-            )
 
-            logger.debug("sending next iteration of chat completion request")
+                logger.debug(f"tool call result content: {tool_call_result.content}")
+
+                tools_content = [
+                    {"type": "text", "text": part.text}
+                    for part in filter(lambda x: getattr(x, "type", None) == "text", tool_call_result.content)
+                ]
+                if len(tools_content) == 0:
+                    tools_content = [
+                        {"type": "text", "text": "the tool call result is empty"}
+                    ]
+                request.messages.append(
+                    ChatCompletionRequestMessage.model_validate(
+                        {
+                            "role": "tool",
+                            "content": tools_content,
+                            "tool_call_id": tool_call.id,
+                        }
+                    )
+                )
+
+                logger.debug("sending next iteration of chat completion request")

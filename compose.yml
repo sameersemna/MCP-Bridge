@@ -9,11 +9,11 @@ services:
     container_name: mcp-bridge
     network_mode: host
     environment:
-      - MCP_BRIDGE__CONFIG__FILE=config.json # mount the config file for this to work
+      - MCP_BRIDGE__CONFIG__FILE=/app/config.json
       # - MCP_BRIDGE__CONFIG__HTTP_URL=http://10.88.100.170:8888/config.json
       # - MCP_BRIDGE__CONFIG__JSON=
     volumes:
-      - ./config.json:/mcp_bridge/config.json
+      - ./config.json:/app/config.json
     restart: unless-stopped
 
   jaeger:

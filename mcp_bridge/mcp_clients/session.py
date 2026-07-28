@@ -1,12 +1,97 @@
 from datetime import timedelta
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from loguru import logger
-import mcp.types as types
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-from mcp.shared.session import BaseSession, RequestResponder
-from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 from pydantic import AnyUrl
+
+try:
+    from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+except ImportError:  # pragma: no cover - allows minimal environments to import
+    class MemoryObjectReceiveStream:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    class MemoryObjectSendStream:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+try:
+    import mcp.types as types
+    from mcp.shared.session import BaseSession, RequestResponder
+    from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
+except ImportError:  # pragma: no cover - allows the package to import in minimal environments
+    class _FallbackTypes:
+        ClientRequest = Any
+        ClientNotification = Any
+        ClientResult = Any
+        ServerRequest = Any
+        ServerNotification = Any
+        JSONRPCMessage = Any
+        InitializeResult = Any
+        EmptyResult = Any
+        ListResourcesResult = Any
+        ReadResourceResult = Any
+        CallToolResult = Any
+        ListPromptsResult = Any
+        GetPromptResult = Any
+        ListToolsResult = Any
+        ResourceReference = Any
+        PromptReference = Any
+        CompleteResult = Any
+        CreateMessageRequestParams = Any
+        CreateMessageResult = Any
+        LoggingLevel = str
+        SamplingCapability = Any
+        RootsCapability = Any
+        ClientCapabilities = Any
+        Implementation = Any
+        InitializeRequest = Any
+        InitializeRequestParams = Any
+        InitializedNotification = Any
+        ProgressNotification = Any
+        ProgressNotificationParams = Any
+        SetLevelRequest = Any
+        SetLevelRequestParams = Any
+        ListResourcesRequest = Any
+        ReadResourceRequest = Any
+        ReadResourceRequestParams = Any
+        SubscribeRequest = Any
+        SubscribeRequestParams = Any
+        UnsubscribeRequest = Any
+        UnsubscribeRequestParams = Any
+        CallToolRequest = Any
+        CallToolRequestParams = Any
+        ListPromptsRequest = Any
+        GetPromptRequest = Any
+        GetPromptRequestParams = Any
+        CompleteRequest = Any
+        CompleteRequestParams = Any
+        CompletionArgument = Any
+        ListToolsRequest = Any
+        RootsListChangedNotification = Any
+        TextContent = Any
+        CreateMessageRequest = Any
+        CreateMessageResult = Any
+
+    types = _FallbackTypes()
+
+    class BaseSession:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def __class_getitem__(cls, item: Any) -> type["BaseSession"]:
+            return cls
+
+    class RequestResponder:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.request = None
+
+        def __class_getitem__(cls, item: Any) -> type["RequestResponder"]:
+            return cls
+
+    SUPPORTED_PROTOCOL_VERSIONS = []
 
 from mcp_bridge import __version__ as version
 from mcp_bridge.sampling.sampler import handle_sampling_message

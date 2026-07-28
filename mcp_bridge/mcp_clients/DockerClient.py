@@ -1,10 +1,22 @@
 import asyncio
+from typing import Any
+
+from loguru import logger
+
+try:
+    from mcpx.client.transports.docker import docker_client, DockerMCPServer
+except ImportError:  # pragma: no cover - allows the package to import in minimal environments
+    class DockerMCPServer:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    async def docker_client(*args: Any, **kwargs: Any):
+        raise RuntimeError("mcpx SDK is not installed")
 
 from mcp_bridge.mcp_clients.session import McpClientSession
 from mcp_bridge.config import config
-from mcpx.client.transports.docker import docker_client, DockerMCPServer
 from .AbstractClient import GenericMcpClient
-from loguru import logger
 
 
 class DockerClient(GenericMcpClient):

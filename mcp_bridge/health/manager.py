@@ -1,5 +1,8 @@
 from collections import deque
-from .types import UnhealthyEvent
+from typing import Any
+
+from .types import MCPServerHealth, UnhealthyEvent
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 
 __all__ = ["manager"]
 
@@ -19,6 +22,29 @@ class HealthManager:
 
     def is_healthy(self) -> bool:
         return not any(event.severity == "error" for event in self.UnhealthyEvents)
+
+    def get_mcp_server_health(self, client_manager: Any | None = None) -> list[MCPServerHealth]:
+        server_health: list[MCPServerHealth] = []
+        registry = client_manager or ClientManager
+
+        for name, client in registry.get_clients():
+            if client is None:
+                server_health.append(
+                    MCPServerHealth(name=name, status="offline", detail="client not initialized")
+                )
+                continue
+
+            session = getattr(client, "session", None)
+            if session is None:
+                server_health.append(
+                    MCPServerHealth(name=name, status="offline", detail="session not ready")
+                )
+            else:
+                server_health.append(
+                    MCPServerHealth(name=name, status="online", detail=None)
+                )
+
+        return server_health
 
 
 manager: HealthManager = HealthManager()

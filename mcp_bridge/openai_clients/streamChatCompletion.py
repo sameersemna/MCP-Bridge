@@ -1,22 +1,112 @@
 import json
-from typing import Optional
+from typing import Any, Optional
 from fastapi import HTTPException, Request
-from lmos_openai_types import (
-    ChatCompletionMessageToolCall,
-    ChatCompletionRequestMessage,
-    CreateChatCompletionRequest,
-    CreateChatCompletionStreamResponse,
-    Function1,
-)
-from .utils import call_tool, chat_completion_add_tools
+
+try:
+    from lmos_openai_types import (
+        ChatCompletionMessageToolCall,
+        ChatCompletionRequestMessage,
+        CreateChatCompletionRequest,
+        CreateChatCompletionStreamResponse,
+        Function1,
+    )
+except ImportError:  # pragma: no cover - fallback for minimal environments
+    from pydantic import BaseModel, Field
+
+    class Function1(BaseModel):
+        name: str = ""
+        arguments: str = ""
+
+    class ChatCompletionMessageToolCall(BaseModel):
+        id: str = ""
+        type: str = "function"
+        function: Function1 = Field(default_factory=Function1)
+
+    class ChatCompletionRequestMessage(BaseModel):
+        role: str
+        content: str | None = None
+        tool_calls: list[ChatCompletionMessageToolCall] | None = None
+        tool_call_id: str | None = None
+
+    class CreateChatCompletionRequest(BaseModel):
+        stream: bool = False
+        messages: list[ChatCompletionRequestMessage] = Field(default_factory=list)
+        tools: list[Any] = Field(default_factory=list)
+
+    class FinishReason(BaseModel):
+        value: str | None = None
+
+    class StreamDelta(BaseModel):
+        content: str | None = None
+        tool_calls: list[ChatCompletionMessageToolCall] | None = None
+
+    class StreamChoice(BaseModel):
+        delta: StreamDelta = Field(default_factory=StreamDelta)
+        finish_reason: FinishReason | None = None
+
+    class CreateChatCompletionStreamResponse(BaseModel):
+        choices: list[StreamChoice] = Field(default_factory=list)
+
+from .utils import call_tools, chat_completion_add_tools
 from mcp_bridge.models import SSEData
 from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
 from loguru import logger
-from httpx_sse import aconnect_sse
 
-from sse_starlette.sse import EventSourceResponse, ServerSentEvent
+try:
+    from httpx_sse import aconnect_sse
+except ImportError:  # pragma: no cover - fallback for minimal environments
+    async def aconnect_sse(*args: Any, **kwargs: Any):
+        raise RuntimeError("httpx_sse is not installed")
+
+try:
+    from sse_starlette.sse import EventSourceResponse, ServerSentEvent
+except ImportError:  # pragma: no cover - fallback for minimal environments
+    class EventSourceResponse:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any):
+            self.args = args
+            self.kwargs = kwargs
+
+    class ServerSentEvent:  # type: ignore[no-redef]
+        def __init__(self, event: str = "message", data: str = "", id: str | None = None, retry: int | None = None):
+            self.event = event
+            self.data = data
+            self.id = id
+            self.retry = retry
+
+
+def merge_streaming_tool_calls(
+    existing_calls: list[dict[str, str]],
+    deltas: list[Any],
+) -> list[dict[str, str]]:
+    """Merge partial streamed tool-call deltas into a single ordered list."""
+    merged = list(existing_calls)
+
+    for delta in deltas or []:
+        index = getattr(delta, "index", None)
+        if index is None:
+            index = len(merged)
+
+        while len(merged) <= index:
+            merged.append({"id": "", "name": "", "arguments": ""})
+
+        entry = merged[index]
+        entry["id"] = entry.get("id", "") or getattr(delta, "id", "") or ""
+
+        function = getattr(delta, "function", None)
+        if function is None:
+            continue
+
+        name = getattr(function, "name", None)
+        if name:
+            entry["name"] = name
+
+        arguments = getattr(function, "arguments", None)
+        if arguments:
+            entry["arguments"] += arguments
+
+    return merged
 
 
 async def streaming_chat_completions(request: CreateChatCompletionRequest, http_request: Request):
@@ -54,11 +144,9 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
 
         last: Optional[CreateChatCompletionStreamResponse] = None  # last message
 
-        tool_call_name: str = ""
-        tool_call_json: str = ""
         should_forward: bool = True
         response_content: str = ""
-        tool_call_id: str = ""
+        collected_tool_calls: list[dict[str, str]] = []
 
         async with get_client(http_request) as client:
             async with aconnect_sse(
@@ -124,23 +212,12 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                             should_forward = False
 
                     # this manages the incoming tool call schema
-                    # most of this is assertions to please mypy
                     if len(parsed_data.choices) > 0 and parsed_data.choices[0].delta.tool_calls is not None:
                         should_forward = False
-                        assert (
-                            parsed_data.choices[0].delta.tool_calls[0].function is not None
+                        collected_tool_calls = merge_streaming_tool_calls(
+                            collected_tool_calls,
+                            parsed_data.choices[0].delta.tool_calls,
                         )
-
-                        name = parsed_data.choices[0].delta.tool_calls[0].function.name
-                        name = name if name is not None else ""
-                        tool_call_name = name if tool_call_name == "" else tool_call_name
-
-                        call_id = parsed_data.choices[0].delta.tool_calls[0].id
-                        call_id = call_id if call_id is not None else ""
-                        tool_call_id = id if tool_call_id == "" else tool_call_id
-
-                        arg = parsed_data.choices[0].delta.tool_calls[0].function.arguments
-                        tool_call_json += arg if arg is not None else ""
 
                     # forward SSE messages to the client
                     logger.debug(f"{should_forward=}")
@@ -163,9 +240,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
             continue
 
         logger.debug("tool calls found")
-        logger.debug(
-            f"{tool_call_name=} {tool_call_json=}"
-        )  # this should not be error but its easier to debug
+        logger.debug(f"streamed tool calls: {collected_tool_calls}")
 
         # add received message to the history
         msg = ChatCompletionRequestMessage(
@@ -173,41 +248,51 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
             content=response_content,
             tool_calls=[
                 ChatCompletionMessageToolCall(
-                    id=tool_call_id,
+                    id=tool_call.get("id", ""),
                     type="function",
-                    function=Function1(name=tool_call_name, arguments=tool_call_json),
+                    function=Function1(
+                        name=tool_call.get("name", ""),
+                        arguments=tool_call.get("arguments", ""),
+                    ),
                 )
+                for tool_call in collected_tool_calls
             ],
         )  # type: ignore
         request.messages.append(msg)
 
         #### MOST OF THIS IS COPY PASTED FROM CHAT_COMPLETIONS
-        # FIXME: this can probably be done in parallel using asyncio gather
-        tool_call_result = await call_tool(tool_call_name, tool_call_json)
-        if tool_call_result is None:
+        if not collected_tool_calls:
             continue
 
-        logger.debug(
-            f"tool call result for {tool_call_name}: {tool_call_result.model_dump()}"
+        tool_call_results = await call_tools(
+            [(tool_call.get("name", ""), tool_call.get("arguments", "")) for tool_call in collected_tool_calls]
         )
 
-        logger.debug(f"tool call result content: {tool_call_result.content}")
+        for tool_call, tool_call_result in zip(collected_tool_calls, tool_call_results):
+            if tool_call_result is None:
+                continue
 
-        tools_content = [
-            {"type": "text", "text": part.text}
-            for part in filter(lambda x: x.type == "text", tool_call_result.content)
-        ]
-        if len(tools_content) == 0:
-            tools_content = [{"type": "text", "text": "the tool call result is empty"}]
-        request.messages.append(
-            ChatCompletionRequestMessage.model_validate(
-                {
-                    "role": "tool",
-                    "content": tools_content,
-                    "tool_call_id": tool_call_id,
-                }
+            logger.debug(
+                f"tool call result for {tool_call.get('name', '')}: {tool_call_result.model_dump()}"
             )
-        )
+
+            logger.debug(f"tool call result content: {tool_call_result.content}")
+
+            tools_content = [
+                {"type": "text", "text": part.text}
+                for part in filter(lambda x: getattr(x, "type", None) == "text", tool_call_result.content)
+            ]
+            if len(tools_content) == 0:
+                tools_content = [{"type": "text", "text": "the tool call result is empty"}]
+            request.messages.append(
+                ChatCompletionRequestMessage.model_validate(
+                    {
+                        "role": "tool",
+                        "content": tools_content,
+                        "tool_call_id": tool_call.get("id", ""),
+                    }
+                )
+            )
 
         logger.debug("sending next iteration of chat completion request")
 

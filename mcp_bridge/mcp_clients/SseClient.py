@@ -1,10 +1,18 @@
 import asyncio
-from mcp.client.sse import sse_client
+from typing import Any
+
+from loguru import logger
+
+try:
+    from mcp.client.sse import sse_client
+except ImportError:  # pragma: no cover - allows the package to import in minimal environments
+    async def sse_client(*args: Any, **kwargs: Any):
+        raise RuntimeError("mcp SDK is not installed")
+
 from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
 from mcp_bridge.mcp_clients.session import McpClientSession
 from .AbstractClient import GenericMcpClient
-from loguru import logger
 
 
 class SseClient(GenericMcpClient):

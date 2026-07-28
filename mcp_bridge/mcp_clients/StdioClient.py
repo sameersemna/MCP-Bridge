@@ -1,13 +1,24 @@
 import asyncio
+import os
+import shutil
 from typing import Any
-from mcp import StdioServerParameters, stdio_client
+
+from loguru import logger
+
+try:
+    from mcp import StdioServerParameters, stdio_client
+except ImportError:  # pragma: no cover - allows the package to import in minimal environments
+    class StdioServerParameters:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    async def stdio_client(*args: Any, **kwargs: Any):
+        raise RuntimeError("mcp SDK is not installed")
 
 from mcp_bridge.config import config
 from mcp_bridge.mcp_clients.session import McpClientSession
 from .AbstractClient import GenericMcpClient
-from loguru import logger
-import shutil
-import os
 
 
 # Keywords to identify virtual environment variables
@@ -66,7 +77,8 @@ class StdioClient(GenericMcpClient):
                         if config.logging.log_server_pings:
                             logger.debug(f"pinging session for {self.name}")
 
-                        await session.send_ping()
+                        async with self._session_lock:
+                            await session.send_ping()
 
                 except Exception as exc:
                     logger.error(f"ping failed for {self.name}: {exc}")

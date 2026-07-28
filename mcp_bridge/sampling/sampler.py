@@ -1,8 +1,36 @@
+from typing import Any
+
 from loguru import logger
-from mcp import SamplingMessage
-import mcp.types as types
-from lmos_openai_types import CreateChatCompletionResponse
-from mcp.types import CreateMessageRequestParams, CreateMessageResult
+
+try:
+    from lmos_openai_types import CreateChatCompletionResponse
+except ImportError:  # pragma: no cover - allows the package to import in minimal environments
+    class CreateChatCompletionResponse:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+        @classmethod
+        def model_validate_json(cls, value: str) -> "CreateChatCompletionResponse":
+            return cls()
+
+try:
+    from mcp import SamplingMessage
+    import mcp.types as types
+    from mcp.types import CreateMessageRequestParams, CreateMessageResult
+except ImportError:  # pragma: no cover - allows the package to import in minimal environments
+    class SamplingMessage:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    class _FallbackTypes:
+        CreateMessageRequestParams = Any
+        CreateMessageResult = Any
+
+    types = _FallbackTypes()
+    CreateMessageRequestParams = Any
+    CreateMessageResult = Any
 
 from mcp_bridge.config import config
 from mcp_bridge.openai_clients.genericHttpxClient import get_client
