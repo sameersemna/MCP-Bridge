@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -8,7 +9,17 @@ from typing import Any
 from loguru import logger
 
 SENSITIVE_KEYWORDS = ("key", "token", "secret", "password", "authorization")
-LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+
+
+def _default_log_dir() -> Path:
+    repo_root = Path(__file__).resolve().parent.parent
+    configured = os.getenv("MCP_BRIDGE_LOG_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (repo_root / "logs").resolve()
+
+
+LOG_DIR = _default_log_dir()
 
 
 def redact_sensitive_data(value: Any) -> Any:
@@ -83,6 +94,22 @@ class RequestTraceLogger:
             "path": self.http_path,
             "request": self.request_payload,
             "events": self.events,
+            "summary": {
+                "event_count": len(self.events),
+                "last_event_type": self.events[-1]["type"] if self.events else None,
+                "tool_events": sum(
+                    1
+                    for event in self.events
+                    if event["type"] in {
+                        "mcp_tool_calls",
+                        "mcp_tool_result",
+                        "mcp_tool_dispatch_attempt",
+                        "mcp_tool_dispatch_result",
+                        "tool_message",
+                    }
+                ),
+                "llm_responses": sum(1 for event in self.events if event["type"] == "llm_response"),
+            },
         }
         self._path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 

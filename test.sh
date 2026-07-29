@@ -25,7 +25,7 @@ fi
 
 content="Use the fetch MCP tool to retrieve the title of https://shamela.org and respond with only the title."
 content="Use the context7 MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
-content="Use the google-search MCP tool to search for the latest news about AI from July 2026 and summarize the top 3 articles. Also use sequential-thinking to provide a brief analysis of the implications of these news articles on the AI industry."
+content="Use the ddg-search MCP tool to search for the latest news about AI from July 2026 and summarize the top 3 articles. Also use sequential-thinking to provide a brief analysis of the implications of these news articles on the AI industry."
 
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content: $content"
 

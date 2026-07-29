@@ -52,6 +52,7 @@ from mcp_bridge.models import SSEData
 from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
+from mcp_bridge.logging import RequestTraceLogger
 from loguru import logger
 
 try:
@@ -109,12 +110,12 @@ def merge_streaming_tool_calls(
     return merged
 
 
-async def streaming_chat_completions(request: CreateChatCompletionRequest, http_request: Request):
+async def streaming_chat_completions(request: CreateChatCompletionRequest, http_request: Request, trace_logger: RequestTraceLogger | None = None):
     # raise NotImplementedError("Streaming Chat Completion is not supported")
 
     try:
         return EventSourceResponse(
-            content=chat_completions(request, http_request),
+            content=chat_completions(request, http_request, trace_logger),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache"},
         )
@@ -123,12 +124,14 @@ async def streaming_chat_completions(request: CreateChatCompletionRequest, http_
         logger.error(e)
 
 
-async def chat_completions(request: CreateChatCompletionRequest, http_request: Request):
+async def chat_completions(request: CreateChatCompletionRequest, http_request: Request, trace_logger: RequestTraceLogger | None = None):
     """performs a chat completion using the inference server"""
 
     request.stream = True
 
     request = await chat_completion_add_tools(request)
+    if trace_logger is not None:
+        trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
 
     fully_done = False
     while not fully_done:
@@ -259,18 +262,31 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
             ],
         )  # type: ignore
         request.messages.append(msg)
+        if trace_logger is not None:
+            trace_logger.record("assistant_message", message=msg.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True))
 
         #### MOST OF THIS IS COPY PASTED FROM CHAT_COMPLETIONS
         if not collected_tool_calls:
             continue
 
+        if trace_logger is not None:
+            trace_logger.record("mcp_tool_calls", tool_calls=[{"name": tool_call.get("name", ""), "arguments": tool_call.get("arguments", "")} for tool_call in collected_tool_calls])
+
         tool_call_results = await call_tools(
-            [(tool_call.get("name", ""), tool_call.get("arguments", "")) for tool_call in collected_tool_calls]
+            [(tool_call.get("name", ""), tool_call.get("arguments", "")) for tool_call in collected_tool_calls],
+            trace_logger=trace_logger,
         )
 
         for tool_call, tool_call_result in zip(collected_tool_calls, tool_call_results):
             if tool_call_result is None:
                 continue
+
+            if trace_logger is not None:
+                trace_logger.record(
+                    "mcp_tool_result",
+                    tool_name=tool_call.get("name", ""),
+                    result=tool_call_result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) if tool_call_result is not None else None,
+                )
 
             logger.debug(
                 f"tool call result for {tool_call.get('name', '')}: {tool_call_result.model_dump()}"
@@ -293,6 +309,12 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                     }
                 )
             )
+            if trace_logger is not None:
+                trace_logger.record(
+                    "tool_message",
+                    tool_name=tool_call.get("name", ""),
+                    tool_result=tool_call_result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+                )
 
         logger.debug("sending next iteration of chat completion request")
 

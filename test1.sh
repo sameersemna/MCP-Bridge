@@ -56,56 +56,6 @@ cat response.json | jq --raw-output '.choices[0].message.content'
 
 # docker compose logs mcp-bridge
 
-
-
-
-    # "playwright-mcp": {
-    #   "command": "uvx",
-    #   "args": [
-    #     "playwright-mcp"
-    #   ]
-    # },
-    # "context7": {
-    #   "command": "uvx",
-    #   "args": [
-    #     "@upstash/context7-mcp"
-    #   ]
-    # },
-    # "abacus": {
-    #   "command": "uvx",
-    #   "args": [
-    #     "mcp-abacus"
-    #   ]
-    # },
-    # "filesystem": {
-    #   "command": "npx",
-    #   "args": [
-    #     "-y",
-    #     "@modelcontextprotocol/server-filesystem",
-    #     "/home/sameer/projects"
-    #   ]
-    # },
-    # "google-search": {
-		# 	"type": "http",
-		# 	"url": "http://latitude:11403/mcp",
-		# 	"auth": {
-		# 		"type": "none"
-		# 	},
-		# 	"requestTimeout": 10000
-    # },
-    # "google-stitch-proxy": {
-    #   "command": "npx",
-    #   "args": [
-    #     "-y", 
-    #     "@_davideast/stitch-mcp", 
-    #     "serve", 
-    #     "--port", "11401"
-    #   ],
-    #   "env": {
-    #     "STITCH_API_KEY": "API_KEY"
-    #   }
-    # }
-
 # sk-or-v1-REDACTED
 # export OPENROUTER_API_KEY='sk-or-v1-REDACTED'
 # curl https://openrouter.ai/api/v1/chat/completions \

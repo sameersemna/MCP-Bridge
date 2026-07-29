@@ -310,3 +310,21 @@ def test_manager_reports_mcp_server_health() -> None:
     health = manager.get_mcp_server_health(StubRegistry())
 
     assert any(item.name == "offline" and item.status == "offline" for item in health)
+
+
+def test_manager_exposes_latest_mcp_inventory_summary() -> None:
+    manager.last_inventory = {
+        "enabled": ["google-search"],
+        "disabled": ["fetch-old"],
+        "failed": [],
+        "active": ["google-search"],
+    }
+
+    inventory = manager.get_mcp_inventory()
+
+    assert inventory == {
+        "enabled": ["google-search"],
+        "disabled": ["fetch-old"],
+        "failed": [],
+        "active": ["google-search"],
+    }

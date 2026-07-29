@@ -11,6 +11,9 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
 from mcp_bridge.config import config
 
+logger = logging.getLogger(__name__)
+tracer = trace.get_tracer("mcp_bridge")
+
 
 class _TracingState:
     initialized = False
@@ -28,12 +31,25 @@ def setup_tracing(app) -> None:
         trace.set_tracer_provider(provider)
 
         if config.telemetry.enabled:
-            otlp_exporter = OTLPSpanExporter(endpoint=config.telemetry.otel_endpoint)
-            span_processor = BatchSpanProcessor(otlp_exporter)
-            provider.add_span_processor(span_processor)
+            try:
+                otlp_exporter = OTLPSpanExporter(endpoint=config.telemetry.otel_endpoint)
+                span_processor = BatchSpanProcessor(otlp_exporter)
+                provider.add_span_processor(span_processor)
+                logger.info(
+                    "Telemetry enabled for %s via %s",
+                    config.telemetry.service_name,
+                    config.telemetry.otel_endpoint,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Telemetry export could not be initialized for %s: %s; continuing without export",
+                    config.telemetry.otel_endpoint,
+                    exc,
+                )
 
         FastAPIInstrumentor().instrument_app(app)
         HTTPXClientInstrumentor().instrument()
     except Exception:
         app.state._tracing_initialized = False
+        logger.exception("Tracing initialization failed")
         raise

@@ -10,6 +10,9 @@ services:
     network_mode: host
     environment:
       - MCP_BRIDGE__CONFIG__FILE=/app/config.json
+      - MCP_BRIDGE__TELEMETRY__ENABLED=true
+      - MCP_BRIDGE__TELEMETRY__OTEL_ENDPOINT=http://127.0.0.1:4318/v1/traces
+      - MCP_BRIDGE__TELEMETRY__SERVICE_NAME=mcp-bridge
       # - MCP_BRIDGE__CONFIG__HTTP_URL=http://10.88.100.170:8888/config.json
       # - MCP_BRIDGE__CONFIG__JSON=
     volumes:

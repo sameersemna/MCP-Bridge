@@ -14,6 +14,16 @@ from loguru import logger
 import json
 
 
+def _summarize_trace(trace_logger: RequestTraceLogger) -> dict[str, object]:
+    events = trace_logger.events
+    return {
+        "event_count": len(events),
+        "last_event_type": events[-1]["type"] if events else None,
+        "tool_events": sum(1 for event in events if event["type"] in {"mcp_tool_calls", "mcp_tool_result"}),
+        "llm_responses": sum(1 for event in events if event["type"] == "llm_response"),
+    }
+
+
 async def chat_completions(
     request: CreateChatCompletionRequest,
     http_request: Request,
@@ -59,11 +69,18 @@ async def chat_completions(
         request.messages.append(msg)
 
         logger.debug(f"finish reason: {response.choices[0].finish_reason}")
+        if trace_logger is not None:
+            trace_logger.record(
+                "assistant_message",
+                message=msg.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+            )
         if response.choices[0].finish_reason.value in ["stop", "length"]:
             logger.debug("no tool calls found")
             return response
 
         logger.debug("tool calls found")
+        if trace_logger is not None:
+            trace_logger.record("tool_call_decision", finish_reason=response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None)
         tool_call_items = [
             (
                 tool_call.function.name,
@@ -74,7 +91,7 @@ async def chat_completions(
         ]
 
         if tool_call_items:
-            tool_call_results = await call_tools(tool_call_items)
+            tool_call_results = await call_tools(tool_call_items, trace_logger=trace_logger)
             if trace_logger is not None:
                 trace_logger.record("mcp_tool_calls", tool_calls=[{"name": name, "arguments": arguments} for name, arguments in tool_call_items])
             for tool_call, tool_call_result in zip(
@@ -116,5 +133,12 @@ async def chat_completions(
                         }
                     )
                 )
+
+                if trace_logger is not None:
+                    trace_logger.record(
+                        "tool_message",
+                        tool_name=tool_call.function.name,
+                        tool_result=tool_call_result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+                    )
 
                 logger.debug("sending next iteration of chat completion request")

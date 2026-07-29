@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Any, Union
 
 from loguru import logger
@@ -61,14 +62,18 @@ class MCPClientManager:
         async with self._lock:
             self.clients.clear()
             failed_servers: list[tuple[str, str]] = []
+            disabled_servers: list[str] = []
+            enabled_servers: list[str] = []
 
-            disabled_servers = set(getattr(config, "disabled_mcp_servers", set()) or set())
+            configured_disabled_servers = set(getattr(config, "disabled_mcp_servers", set()) or set())
 
             for server_name, server_config in config.mcp_servers.items():
-                if server_name in disabled_servers or _is_disabled_server(server_config):
+                if server_name in configured_disabled_servers or _is_disabled_server(server_config):
+                    disabled_servers.append(server_name)
                     logger.info(f"Skipping disabled MCP server '{server_name}'")
                     continue
 
+                enabled_servers.append(server_name)
                 try:
                     self.clients[server_name] = await self.construct_client(
                         server_name, server_config
@@ -85,24 +90,43 @@ class MCPClientManager:
                     + ", ".join(f"{name} ({reason})" for name, reason in failed_servers)
                 )
 
+            inventory = {
+                "enabled": enabled_servers,
+                "disabled": disabled_servers,
+                "failed": [name for name, _ in failed_servers],
+                "active": list(self.clients.keys()),
+            }
+
+            from mcp_bridge.health.manager import manager as health_manager
+
+            health_manager.last_inventory = inventory
+
+            logger.info(
+                "Effective MCP server inventory: "
+                + json.dumps(inventory, sort_keys=True)
+            )
+
     async def construct_client(self, name: str, server_config: Any) -> client_types:
         logger.debug(f"Constructing client for {server_config}")
 
-        if isinstance(server_config, StdioServerParameters):
-            client = StdioClient(name, server_config)
-            await client.start()
-            return client
+        try:
+            if isinstance(server_config, StdioServerParameters):
+                client = StdioClient(name, server_config)
+                await client.start()
+                return client
 
-        if isinstance(server_config, SSEMCPServer):
-            # TODO: implement sse client
-            client = SseClient(name, server_config)  # type: ignore
-            await client.start()
-            return client
-        
-        if isinstance(server_config, DockerMCPServer):
-            client = DockerClient(name, server_config)
-            await client.start()
-            return client
+            if isinstance(server_config, SSEMCPServer):
+                client = SseClient(name, server_config)  # type: ignore
+                await client.start()
+                return client
+
+            if isinstance(server_config, DockerMCPServer):
+                client = DockerClient(name, server_config)
+                await client.start()
+                return client
+        except Exception as exc:
+            logger.warning(f"MCP client '{name}' could not be initialized: {exc}")
+            raise RuntimeError(f"Unsupported or failed MCP transport for '{name}': {exc}") from exc
 
         raise NotImplementedError("Client Type not supported")
 

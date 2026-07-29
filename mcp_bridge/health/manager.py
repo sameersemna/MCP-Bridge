@@ -13,6 +13,7 @@ class HealthManager:
     UnhealthyEvents: deque[UnhealthyEvent] = deque(
         maxlen=100
     )  # we do not want to memory leak
+    last_inventory: dict[str, list[str]] | None = None
 
     def add_unhealthy_event(self, event: UnhealthyEvent) -> None:
         self.UnhealthyEvents.append(event)
@@ -22,6 +23,9 @@ class HealthManager:
 
     def is_healthy(self) -> bool:
         return not any(event.severity == "error" for event in self.UnhealthyEvents)
+
+    def get_mcp_inventory(self) -> dict[str, list[str]] | None:
+        return self.last_inventory
 
     def get_mcp_server_health(self, client_manager: Any | None = None) -> list[MCPServerHealth]:
         server_health: list[MCPServerHealth] = []

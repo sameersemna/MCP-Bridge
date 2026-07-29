@@ -37,3 +37,7 @@ class HealthCheckResponse(BaseModel):
     mcp_servers: list[MCPServerHealth] = Field(
         default_factory=list, description="Runtime status of configured MCP servers"
     )
+    mcp_inventory: dict[str, list[str]] | None = Field(
+        default=None,
+        description="Latest startup inventory summary for MCP servers",
+    )

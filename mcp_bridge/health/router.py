@@ -18,6 +18,7 @@ async def health():
             status="error",
             unhealthy_events=manager.get_unhealthy_events(),
             mcp_servers=manager.get_mcp_server_health(),
+            mcp_inventory=manager.get_mcp_inventory(),
         )
         # Return JSONResponse with custom status code and serialized content
         return JSONResponse(content=response.model_dump(), status_code=500)
@@ -27,5 +28,6 @@ async def health():
         status="ok",
         unhealthy_events=[],
         mcp_servers=manager.get_mcp_server_health(),
+        mcp_inventory=manager.get_mcp_inventory(),
     )
     return response
