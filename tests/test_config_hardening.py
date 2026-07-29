@@ -213,6 +213,37 @@ def test_get_client_from_tool_does_not_stop_after_first_no_match() -> None:
     assert getattr(result, "name", None) == "match-later"
 
 
+def test_get_client_from_tool_matches_normalized_tool_names() -> None:
+    class NormalizedToolClient:
+        def __init__(self):
+            self.name = "normalized"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[SimpleNamespace(name="google_search")])
+
+    manager = MCPClientManager()
+    manager.clients = {"normalized": NormalizedToolClient()}
+
+    result = asyncio.run(asyncio.wait_for(manager.get_client_from_tool("google-search", timeout=0.2), timeout=0.3))
+
+    assert result is not None
+    assert getattr(result, "name", None) == "normalized"
+
+
+def test_call_tool_returns_error_result_when_no_client_matches(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get_client_from_tool(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(openai_utils.ClientManager, "get_client_from_tool", fake_get_client_from_tool)
+
+    result = asyncio.run(openai_utils.call_tool("missing-tool", "{}"))
+
+    assert result is not None
+    assert result.isError is True
+    assert "No MCP client" in result.content[0].text
+
+
 def test_stdio_client_adds_compatibility_path_to_subprocess_environment() -> None:
     config = SimpleNamespace(
         command=sys.executable,
@@ -278,6 +309,27 @@ def test_call_tools_runs_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert [result["name"] for result in results] == ["alpha", "beta"]
     assert elapsed < 0.09
+
+
+def test_chat_completion_add_tools_does_not_wait_for_every_unavailable_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    class UnavailableSession:
+        name = "unavailable"
+        session = None
+
+        async def _wait_for_session(self, timeout: int | None = None, http_error: bool = True):
+            await asyncio.sleep(timeout if timeout is not None else 0.05)
+            raise TimeoutError("not ready")
+
+    monkeypatch.setattr(openai_utils, "DEFAULT_MCP_SESSION_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(openai_utils.ClientManager, "get_clients", lambda: [("slow", UnavailableSession()), ("fast", UnavailableSession())])
+
+    start = time.perf_counter()
+    request = SimpleNamespace(tools=[])
+    result = asyncio.run(openai_utils.chat_completion_add_tools(request))
+    elapsed = time.perf_counter() - start
+
+    assert result.tools == []
+    assert elapsed < 0.08
 
 
 def test_merge_streaming_tool_calls_accumulates_multiple_calls() -> None:

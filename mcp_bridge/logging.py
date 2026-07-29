@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+
 from loguru import logger
 
 SENSITIVE_KEYWORDS = ("key", "token", "secret", "password", "authorization")
@@ -14,9 +15,28 @@ SENSITIVE_KEYWORDS = ("key", "token", "secret", "password", "authorization")
 def _default_log_dir() -> Path:
     repo_root = Path(__file__).resolve().parent.parent
     configured = os.getenv("MCP_BRIDGE_LOG_DIR")
+    candidates: list[Path] = []
+
     if configured:
-        return Path(configured).expanduser().resolve()
-    return (repo_root / "logs").resolve()
+        candidates.append(Path(configured).expanduser().resolve())
+
+    candidates.extend([
+        Path("/app/logs"),
+        repo_root / "logs",
+        Path("/tmp/mcp-bridge-logs"),
+    ])
+
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            test_file = candidate / ".write_test"
+            test_file.write_text("ok", encoding="utf-8")
+            test_file.unlink(missing_ok=True)
+            return candidate.resolve()
+        except OSError:
+            continue
+
+    return Path("/tmp/mcp-bridge-logs").resolve()
 
 
 LOG_DIR = _default_log_dir()
@@ -70,7 +90,8 @@ class RequestTraceLogger:
         self.events: list[dict[str, Any]] = []
         self._timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         self._path = LOG_DIR / f"{self._timestamp}_{self._sanitize_path(http_path)}.json"
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        self._directory = LOG_DIR
+        self._directory.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _sanitize_path(path: str) -> str:
@@ -111,7 +132,14 @@ class RequestTraceLogger:
                 "llm_responses": sum(1 for event in self.events if event["type"] == "llm_response"),
             },
         }
-        self._path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        try:
+            self._path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        except PermissionError:
+            fallback_dir = Path("/tmp/mcp-bridge-logs")
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            self._directory = fallback_dir
+            self._path = fallback_dir / self._path.name
+            self._path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 
     @property
     def path(self) -> Path:

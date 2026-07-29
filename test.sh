@@ -1,11 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+clear
+
 PORT="${PORT:-11410}"
 MODEL="${MODEL:-deepseek-v4-flash:cloud}"
-TIMEOUT="${TIMEOUT:-180}"
+TIMEOUT="${TIMEOUT:-600}"
 BASE_URL="http://localhost:${PORT}"
 OLLAMA_URL="http://localhost:11434"
+
+rm -f response.json response.md
 
 echo "Checking MCP bridge health at ${BASE_URL}/health..."
 curl -fsS "${BASE_URL}/health" >/dev/null
@@ -25,7 +29,7 @@ fi
 
 content="Use the fetch MCP tool to retrieve the title of https://shamela.org and respond with only the title."
 content="Use the context7 MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
-content="Use the ddg-search MCP tool to search for the latest news about AI from July 2026 and summarize the top 3 articles. Also use sequential-thinking to provide a brief analysis of the implications of these news articles on the AI industry."
+content="Use the ddg-search MCP tool to search for the latest news about AI from Germany specifically in June 2026 and summarize the top 3 articles. Also use sequential-thinking to provide a brief analysis of the implications of these news articles on the AI industry."
 
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content: $content"
 
@@ -41,15 +45,20 @@ dataPost=$(jq -n --arg model "$MODEL" --arg content "$content" '{
 }')
 
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL}..."
-curl --fail --silent --show-error --max-time "$TIMEOUT" --connect-timeout 5 -X POST "${BASE_URL}/v1/chat/completions" \
+# curl --fail --silent --show-error --max-time "$TIMEOUT" --connect-timeout 5 \
+curl -X POST "${BASE_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d "$dataPost" > response.json
 
-echo "Response:"
+echo ''
+echo "-- Response received and saved to response.json ------------------------------------"
 if ! jq -e '.choices[0].message.content != null and (.choices[0].message.content | type == "string") and (.choices[0].message.content | length > 0)' response.json >/dev/null; then
   echo "No usable completion content returned." >&2
   cat response.json >&2
   exit 1
 fi
-jq -r '.choices[0].message.content' response.json
+
+echo "Extracting content from response.json and saving to response.md..."
 jq -r '.choices[0].message.content' response.json > response.md
+
+cat response.md

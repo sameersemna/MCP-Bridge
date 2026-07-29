@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -79,6 +80,7 @@ class GenericMcpClient(ABC):
         self._session_lock = asyncio.Lock()
         self._started = False
         self._maintainer_task = None
+        self._offline = False
 
         logger.debug(f"initializing client class for {name}")
 
@@ -110,15 +112,18 @@ class GenericMcpClient(ABC):
                 if self._is_transport_error(e):
                     logger.warning(f"transport error for {self.name}: {e}; leaving client offline")
                     self.session = None
+                    self._offline = True
                     return
 
                 logger.error(f"failed to maintain session for {self.name}: {type(e)} {e.args}")
                 if self.session is None:
                     logger.warning(f"{self.name} never established a session; leaving client offline")
                     self.session = None
+                    self._offline = True
                     return
 
             self.session = None
+            self._offline = False
             logger.debug(f"restarting session for {self.name} in {reconnect_delay}s")
             await asyncio.sleep(reconnect_delay)
             reconnect_delay = min(reconnect_delay * 2, 5.0)
@@ -130,6 +135,21 @@ class GenericMcpClient(ABC):
 
             self._started = True
             self._maintainer_task = asyncio.create_task(self._session_maintainer())
+
+    async def stop(self) -> None:
+        async with self._start_lock:
+            if not self._started:
+                return
+
+            self._started = False
+            task = self._maintainer_task
+            self._maintainer_task = None
+            self.session = None
+
+            if task is not None and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any] | None, timeout: int | None = None
@@ -244,21 +264,49 @@ class GenericMcpClient(ABC):
             logger.error(f"error listing prompts: {e}")
             return ListPromptsResult(prompts=[])
 
-    async def _wait_for_session(self, timeout: int | None = None, http_error: bool = True):
+    async def _wait_for_session(
+        self,
+        timeout: int | None = None,
+        http_error: bool = True,
+        log_interval: float | None = None,
+        poll_interval: float | None = None,
+    ):
+        if self.session is not None:
+            return
+
         effective_timeout = timeout if timeout is not None else DEFAULT_MCP_SESSION_TIMEOUT_SECONDS
+        effective_log_interval = log_interval if log_interval is not None else 10.0
+        effective_poll_interval = poll_interval if poll_interval is not None else 1.0
+        started_at = asyncio.get_running_loop().time()
+        last_logged_at = started_at
+        warned = False
+
         try:
             async with asyncio.timeout(effective_timeout):
                 while self.session is None:
-                    await asyncio.sleep(1)
-                    logger.debug(f"waiting for session for {self.name}")
+                    if getattr(self, "_offline", False):
+                        raise TimeoutError(f"Could not connect to MCP server \"{self.name}\".")
+
+                    await asyncio.sleep(effective_poll_interval)
+                    now = asyncio.get_running_loop().time()
+                    if not warned and now - last_logged_at >= effective_log_interval:
+                        logger.warning(
+                            f"waiting for session for {self.name} (elapsed={now - started_at:.1f}s)"
+                        )
+                        last_logged_at = now
+                        warned = True
 
         except asyncio.TimeoutError:
+            if not warned:
+                logger.warning(
+                    f"timed out waiting for session for {self.name} after {effective_timeout:.1f}s"
+                )
             if http_error:
                 raise HTTPException(
-                    status_code=500, detail=f"Could not connect to MCP server \"{self.name}\"." 
+                    status_code=500, detail=f"Could not connect to MCP server \"{self.name}\"."
                 )
 
-            raise TimeoutError(f"Could not connect to MCP server \"{self.name}\"." )
+            raise TimeoutError(f"Could not connect to MCP server \"{self.name}\".")
 
         assert self.session is not None, "Session is None"
 

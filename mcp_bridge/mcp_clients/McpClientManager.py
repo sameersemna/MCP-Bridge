@@ -54,6 +54,11 @@ class MCPClientManager:
     clients: dict[str, client_types] = {}
     _lock = asyncio.Lock()
 
+    @staticmethod
+    def _normalize_tool_name(tool: str) -> str:
+        normalized = tool.strip().lower().replace("-", "_")
+        return normalized
+
     async def initialize(self):
         """Initialize the MCP Client Manager and start all clients"""
 
@@ -141,6 +146,8 @@ class MCPClientManager:
         if effective_timeout is None:
             effective_timeout = DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
 
+        normalized_tool = self._normalize_tool_name(tool)
+
         async def _probe(client: client_types):
             try:
                 if not getattr(client, "session", None):
@@ -156,7 +163,7 @@ class MCPClientManager:
                             timeout=effective_timeout,
                         )
                         for client_tool in list_tools.tools:
-                            if getattr(client_tool, "name", None) == tool:
+                            if self._normalize_tool_name(getattr(client_tool, "name", "")) == normalized_tool:
                                 return client
                         return None
 
@@ -168,7 +175,7 @@ class MCPClientManager:
                     timeout=effective_timeout,
                 )
                 for client_tool in list_tools.tools:
-                    if getattr(client_tool, "name", None) == tool:
+                    if self._normalize_tool_name(getattr(client_tool, "name", "")) == normalized_tool:
                         return client
             except asyncio.TimeoutError:
                 client_name = getattr(client, "name", "unknown")

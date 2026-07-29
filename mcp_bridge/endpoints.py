@@ -12,6 +12,7 @@ from mcp_bridge.openai_clients import (
 
 from mcp_bridge.openapi_tags import Tag
 from mcp_bridge.logging import RequestTraceLogger
+import json
 
 router = APIRouter(prefix="/v1", tags=[Tag.openai])
 tracer = trace.get_tracer("mcp_bridge.endpoints")
@@ -41,6 +42,14 @@ async def openai_chat_completions(
         span.set_attribute("mcp_bridge.request.stream", bool(request.stream))
         span.set_attribute("mcp_bridge.request.model", getattr(request, "model", "") or "")
         span.set_attribute("mcp_bridge.request.tool_count", len(getattr(request, "tools", []) or []))
+        span.set_attribute(
+            "mcp_bridge.request.preview",
+            json.dumps(
+                request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+                ensure_ascii=False,
+                default=str,
+            )[:1600],
+        )
 
         trace_logger = RequestTraceLogger(
             request_payload=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
@@ -53,6 +62,15 @@ async def openai_chat_completions(
         else:
             response = await chat_completions(request, http_request, trace_logger)
 
+        if response is not None:
+            span.set_attribute(
+                "mcp_bridge.response.preview",
+                json.dumps(
+                    response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+                    ensure_ascii=False,
+                    default=str,
+                )[:1600],
+            )
         trace_logger.record("outgoing_response", response=response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) if response is not None else None)
         return response
 

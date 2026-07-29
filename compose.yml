@@ -8,6 +8,9 @@ services:
           action: rebuild
     container_name: mcp-bridge
     network_mode: host
+    extra_hosts:
+      - "latitude:192.168.178.94"
+      - "latitude.fritz.box:192.168.178.94"
     environment:
       - MCP_BRIDGE__CONFIG__FILE=/app/config.json
       - MCP_BRIDGE__TELEMETRY__ENABLED=true
@@ -17,6 +20,7 @@ services:
       # - MCP_BRIDGE__CONFIG__JSON=
     volumes:
       - ./config.json:/app/config.json
+      - ./logs:/app/logs
     restart: unless-stopped
 
   jaeger:
