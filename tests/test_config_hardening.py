@@ -6,10 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
 from pydantic import ValidationError
 
 from mcp_bridge.config.file import load_config
-from mcp_bridge.config.final import Settings
+from mcp_bridge.config.final import Settings, SSEMCPServer
 from mcp_bridge.logging import redact_sensitive_data
 from mcp_bridge.mcp_clients.AbstractClient import GenericMcpClient
 from mcp_bridge.mcp_clients.McpClientManager import MCPClientManager
@@ -17,6 +18,7 @@ from mcp_bridge.mcp_clients.StdioClient import StdioClient
 from mcp_bridge.health.manager import manager
 from mcp_bridge.openai_clients import utils as openai_utils
 from mcp_bridge.openai_clients.streamChatCompletion import merge_streaming_tool_calls
+from mcp_bridge.telemetry import setup_tracing
 
 
 def test_load_config_rejects_path_traversal(tmp_path: Path) -> None:
@@ -50,6 +52,52 @@ def test_settings_reject_invalid_inference_base_url() -> None:
 def test_settings_reject_invalid_mcp_server_config() -> None:
     with pytest.raises(ValidationError, match="command|url|image"):
         Settings(mcp_servers={"bad": {"foo": "bar"}})
+
+
+def test_settings_accepts_http_style_mcp_server_config() -> None:
+    settings = Settings(
+        mcp_servers={
+            "google-search": {
+                "type": "http",
+                "url": "http://localhost:11403/mcp",
+                "auth": {"type": "none"},
+                "requestTimeout": 10000,
+            }
+        }
+    )
+
+    server = settings.mcp_servers["google-search"]
+
+    assert server.type == "http"
+    assert server.url == "http://localhost:11403/mcp"
+    assert server.auth == {"type": "none"}
+    assert server.requestTimeout == 10000
+
+
+def test_settings_preserves_disabled_flag_for_stdio_servers() -> None:
+    settings = Settings(
+        mcp_servers={
+            "fetch": {
+                "command": "uvx",
+                "args": ["mcp-server-fetch"],
+                "disabled": True,
+            }
+        }
+    )
+
+    server = settings.mcp_servers["fetch"]
+
+    assert "fetch" in settings.disabled_mcp_servers
+    assert getattr(server, "disabled", None) is None
+
+
+def test_setup_tracing_is_idempotent() -> None:
+    app = FastAPI()
+
+    setup_tracing(app)
+    setup_tracing(app)
+
+    assert getattr(app.state, "_tracing_initialized", False) is True
 
 
 def test_get_client_from_tool_returns_none_when_discovery_times_out() -> None:
@@ -138,6 +186,33 @@ def test_get_client_from_tool_waits_for_session_to_become_ready() -> None:
     assert result is not None
 
 
+def test_get_client_from_tool_does_not_stop_after_first_no_match() -> None:
+    class NoMatchClient:
+        def __init__(self):
+            self.name = "no-match"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[])
+
+    class DelayedMatchClient:
+        def __init__(self):
+            self.name = "match-later"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            await asyncio.sleep(0.05)
+            return SimpleNamespace(tools=[SimpleNamespace(name="alpha")])
+
+    manager = MCPClientManager()
+    manager.clients = {"no-match": NoMatchClient(), "match-later": DelayedMatchClient()}
+
+    result = asyncio.run(asyncio.wait_for(manager.get_client_from_tool("alpha", timeout=0.2), timeout=0.3))
+
+    assert result is not None
+    assert getattr(result, "name", None) == "match-later"
+
+
 def test_stdio_client_adds_compatibility_path_to_subprocess_environment() -> None:
     config = SimpleNamespace(
         command=sys.executable,
@@ -153,6 +228,19 @@ def test_stdio_client_adds_compatibility_path_to_subprocess_environment() -> Non
     compat_dir = str(Path(__file__).resolve().parent.parent / "mcp_bridge" / "compat")
 
     assert compat_dir in pythonpath.split(os.pathsep)
+
+
+def test_session_maintainer_stops_after_initial_startup_failure() -> None:
+    class BrokenClient(GenericMcpClient):
+        def __init__(self) -> None:
+            super().__init__("broken")
+
+        async def _maintain_session(self) -> None:
+            raise RuntimeError("startup failed")
+
+    client = BrokenClient()
+
+    asyncio.run(asyncio.wait_for(client._session_maintainer(), timeout=0.2))
 
 
 def test_call_tool_uses_a_longer_default_timeout() -> None:

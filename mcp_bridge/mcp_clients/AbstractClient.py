@@ -2,6 +2,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Any
 
+import httpx
 from fastapi import HTTPException
 from loguru import logger
 from pydantic import AnyUrl
@@ -85,6 +86,19 @@ class GenericMcpClient(ABC):
     async def _maintain_session(self):
         pass
 
+    @staticmethod
+    def _is_transport_error(exc: Exception) -> bool:
+        if isinstance(exc, ExceptionGroup):
+            return any(GenericMcpClient._is_transport_error(item) for item in exc.exceptions)
+
+        if isinstance(exc, (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout, httpx.WriteError)):
+            return True
+
+        if isinstance(exc, TimeoutError):
+            return True
+
+        return exc.__class__.__name__ in {"HTTPStatusError", "ConnectError", "ReadTimeout", "WriteError"}
+
     async def _session_maintainer(self):
         reconnect_delay = 0.5
         while True:
@@ -93,7 +107,16 @@ class GenericMcpClient(ABC):
             except FileNotFoundError as e:
                 logger.error(f"failed to maintain session for {self.name}: file {e.filename} not found.")
             except Exception as e:
+                if self._is_transport_error(e):
+                    logger.warning(f"transport error for {self.name}: {e}; leaving client offline")
+                    self.session = None
+                    return
+
                 logger.error(f"failed to maintain session for {self.name}: {type(e)} {e.args}")
+                if self.session is None:
+                    logger.warning(f"{self.name} never established a session; leaving client offline")
+                    self.session = None
+                    return
 
             self.session = None
             logger.debug(f"restarting session for {self.name} in {reconnect_delay}s")

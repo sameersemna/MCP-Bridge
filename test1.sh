@@ -59,6 +59,24 @@ cat response.json | jq --raw-output '.choices[0].message.content'
 
 
 
+    # "playwright-mcp": {
+    #   "command": "uvx",
+    #   "args": [
+    #     "playwright-mcp"
+    #   ]
+    # },
+    # "context7": {
+    #   "command": "uvx",
+    #   "args": [
+    #     "@upstash/context7-mcp"
+    #   ]
+    # },
+    # "abacus": {
+    #   "command": "uvx",
+    #   "args": [
+    #     "mcp-abacus"
+    #   ]
+    # },
     # "filesystem": {
     #   "command": "npx",
     #   "args": [

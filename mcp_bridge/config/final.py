@@ -1,12 +1,25 @@
+import warnings
 from typing import Annotated, Any, Literal, Union
 from urllib.parse import urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
+
+warnings.filterwarnings(
+    "ignore",
+    message='Field name "json" in "InitialSettings" shadows an attribute in parent "BaseSettings"',
+    category=UserWarning,
+)
+
+
+class MCPServerConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    disabled: bool | None = Field(default=None, description="Whether this server is disabled")
 
 try:
     from mcp.client.stdio import StdioServerParameters
 except ImportError:  # pragma: no cover - fallback for environments without the SDK installed
-    class StdioServerParameters(BaseModel):
+    class StdioServerParameters(MCPServerConfig):
         model_config = ConfigDict(extra="forbid")
 
         command: str = Field(default="python")
@@ -24,7 +37,7 @@ except ImportError:  # pragma: no cover - fallback for environments without the 
 try:
     from mcpx.client.transports.docker import DockerMCPServer
 except ImportError:  # pragma: no cover - fallback for environments without the SDK installed
-    class DockerMCPServer(BaseModel):
+    class DockerMCPServer(MCPServerConfig):
         model_config = ConfigDict(extra="forbid")
 
         image: str | None = None
@@ -84,10 +97,22 @@ class Sampling(BaseModel):
     ] = Field(default_factory=list)
 
 
-class SSEMCPServer(BaseModel):
+class SSEMCPServer(MCPServerConfig):
     model_config = ConfigDict(extra="forbid")
 
+    type: Literal["http", "sse"] | None = Field(
+        default=None,
+        description="Transport type for the MCP server",
+    )
     url: str = Field(description="URL of the MCP server")
+    auth: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Authentication configuration for the MCP server",
+    )
+    requestTimeout: int | None = Field(
+        default=None,
+        description="Request timeout in milliseconds",
+    )
 
     @field_validator("url")
     @classmethod
@@ -98,6 +123,13 @@ class SSEMCPServer(BaseModel):
         if parsed.scheme not in {"http", "https"}:
             raise ValueError("url must use http or https")
         return value.rstrip("/")
+
+    @field_validator("requestTimeout")
+    @classmethod
+    def validate_request_timeout(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("requestTimeout must be greater than zero")
+        return value
 
 
 MCPServer = Annotated[
@@ -188,6 +220,10 @@ class Settings(BaseSettings):
     mcp_servers: dict[str, MCPServer] = Field(
         default_factory=dict, description="MCP servers configuration"
     )
+    disabled_mcp_servers: set[str] = Field(
+        default_factory=set,
+        description="Names of MCP servers that are disabled in configuration",
+    )
 
     sampling: Sampling = Field(default_factory=Sampling, description="sampling config")
 
@@ -198,4 +234,20 @@ class Settings(BaseSettings):
     security: Security = Field(default_factory=Security, description="security config")
 
     telemetry: Telemetry = Field(default_factory=Telemetry, description="telemetry config")
+
+    @model_validator(mode="before")
+    @classmethod
+    def collect_disabled_mcp_servers(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw_servers = data.get("mcp_servers")
+            if isinstance(raw_servers, dict):
+                disabled_servers = {
+                    name
+                    for name, server_config in raw_servers.items()
+                    if isinstance(server_config, dict) and server_config.get("disabled")
+                }
+                if disabled_servers:
+                    data = dict(data)
+                    data.setdefault("disabled_mcp_servers", disabled_servers)
+        return data
 

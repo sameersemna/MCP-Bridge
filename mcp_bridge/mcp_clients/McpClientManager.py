@@ -33,6 +33,22 @@ DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS = 30.0
 client_types = Union[StdioClient, SseClient, DockerClient]
 
 
+def _is_disabled_server(server_config: Any) -> bool:
+    if isinstance(server_config, dict):
+        return bool(server_config.get("disabled"))
+
+    disabled = getattr(server_config, "disabled", None)
+    if disabled is not None:
+        return bool(disabled)
+
+    if hasattr(server_config, "model_extra") and server_config.model_extra:
+        extra_disabled = server_config.model_extra.get("disabled")
+        if extra_disabled is not None:
+            return bool(extra_disabled)
+
+    return False
+
+
 class MCPClientManager:
     clients: dict[str, client_types] = {}
     _lock = asyncio.Lock()
@@ -46,7 +62,13 @@ class MCPClientManager:
             self.clients.clear()
             failed_servers: list[tuple[str, str]] = []
 
+            disabled_servers = set(getattr(config, "disabled_mcp_servers", set()) or set())
+
             for server_name, server_config in config.mcp_servers.items():
+                if server_name in disabled_servers or _is_disabled_server(server_config):
+                    logger.info(f"Skipping disabled MCP server '{server_name}'")
+                    continue
+
                 try:
                     self.clients[server_name] = await self.construct_client(
                         server_name, server_config
@@ -144,7 +166,7 @@ class MCPClientManager:
             done, pending = await asyncio.wait(
                 probe_tasks,
                 timeout=effective_timeout,
-                return_when=asyncio.FIRST_COMPLETED,
+                return_when=asyncio.ALL_COMPLETED,
             )
         except Exception:
             for task in probe_tasks:

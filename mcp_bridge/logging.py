@@ -1,11 +1,14 @@
 import json
 import sys
 from collections.abc import Mapping
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 SENSITIVE_KEYWORDS = ("key", "token", "secret", "password", "authorization")
+LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
 def redact_sensitive_data(value: Any) -> Any:
@@ -44,3 +47,45 @@ def log_event(message: str, **fields: Any) -> None:
     """Emit a structured event log entry while redacting secrets."""
 
     logger.info(json.dumps(redact_sensitive_data({"message": message, **fields})))
+
+
+class RequestTraceLogger:
+    """Persist a structured trace of a single request lifecycle to a timestamped JSON file."""
+
+    def __init__(self, request_payload: Any, http_path: str, method: str) -> None:
+        self.request_payload = redact_sensitive_data(request_payload)
+        self.http_path = http_path
+        self.method = method
+        self.events: list[dict[str, Any]] = []
+        self._timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        self._path = LOG_DIR / f"{self._timestamp}_{self._sanitize_path(http_path)}.json"
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _sanitize_path(path: str) -> str:
+        sanitized = path.strip("/").replace("/", "__") or "root"
+        return sanitized.replace(" ", "_")
+
+    def record(self, event_type: str, **payload: Any) -> None:
+        self.events.append(
+            {
+                "type": event_type,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                **{k: redact_sensitive_data(v) for k, v in payload.items()},
+            }
+        )
+        self._write()
+
+    def _write(self) -> None:
+        payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "method": self.method,
+            "path": self.http_path,
+            "request": self.request_payload,
+            "events": self.events,
+        }
+        self._path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+
+    @property
+    def path(self) -> Path:
+        return self._path

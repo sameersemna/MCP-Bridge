@@ -98,7 +98,8 @@ Here is an example config.json file:
    "mcp_servers": {
       "fetch": {
         "command": "uvx",
-        "args": ["mcp-server-fetch"]
+        "args": ["mcp-server-fetch"],
+        "disabled": true
       }
    }
 }

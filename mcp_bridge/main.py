@@ -30,11 +30,11 @@ def create_app() -> FastAPI:
         logger.info("Authentication is enabled")
     else:
         logger.info("Authentication is disabled")
-    
+
     # Add CORS middleware
     if config.security.CORS.enabled:
         if config.security.CORS.allow_origins == ["*"]:
-            logger.warning("CORS middleware is enabled with wildcard origins")
+            logger.info("CORS middleware is enabled with wildcard origins")
         else:
             logger.info("CORS middleware is enabled")
 
@@ -53,12 +53,20 @@ def create_app() -> FastAPI:
 
     return app
 
-app = create_app()
+app = None
+
+
+def get_app() -> FastAPI:
+    global app
+    if app is None:
+        app = create_app()
+    return app
+
 
 def run() -> None:
     import uvicorn
 
-    uvicorn.run("mcp_bridge.main:app", host=config.network.host, port=config.network.port, reload=False)
+    uvicorn.run("mcp_bridge.main:get_app", host=config.network.host, port=config.network.port, reload=False)
 
 if __name__ == "__main__":
     run()

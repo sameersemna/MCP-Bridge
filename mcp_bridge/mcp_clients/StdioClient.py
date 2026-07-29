@@ -1,6 +1,7 @@
 import asyncio
 import os
 import shutil
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -43,6 +44,12 @@ class StdioClient(GenericMcpClient):
 
         if config.env is not None:
             env.update(config.env)
+
+        compat_dir = str(Path(__file__).resolve().parent.parent / "compat")
+        pythonpath_entries = [entry for entry in env.get("PYTHONPATH", "").split(os.pathsep) if entry]
+        if compat_dir not in pythonpath_entries:
+            pythonpath_entries.insert(0, compat_dir)
+        env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
 
         own_config.env = env
 

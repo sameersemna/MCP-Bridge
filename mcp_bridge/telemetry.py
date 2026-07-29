@@ -1,3 +1,5 @@
+import logging
+
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -9,18 +11,29 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
 from mcp_bridge.config import config
 
+
+class _TracingState:
+    initialized = False
+
+
 def setup_tracing(app) -> None:
-    resource = Resource(attributes={"service.name": config.telemetry.service_name})
+    if getattr(app.state, "_tracing_initialized", False):
+        return
 
-    provider = TracerProvider(resource=resource)
-    trace.set_tracer_provider(provider)
+    app.state._tracing_initialized = True
 
-    otlp_exporter = OTLPSpanExporter(endpoint=config.telemetry.otel_endpoint)
-    span_processor = BatchSpanProcessor(otlp_exporter)
+    try:
+        resource = Resource(attributes={"service.name": config.telemetry.service_name})
+        provider = TracerProvider(resource=resource)
+        trace.set_tracer_provider(provider)
 
-    if config.telemetry.enabled:
-        # if not enabled do not add the span processor
-        provider.add_span_processor(span_processor)
+        if config.telemetry.enabled:
+            otlp_exporter = OTLPSpanExporter(endpoint=config.telemetry.otel_endpoint)
+            span_processor = BatchSpanProcessor(otlp_exporter)
+            provider.add_span_processor(span_processor)
 
-    FastAPIInstrumentor().instrument_app(app)
-    HTTPXClientInstrumentor().instrument()
+        FastAPIInstrumentor().instrument_app(app)
+        HTTPXClientInstrumentor().instrument()
+    except Exception:
+        app.state._tracing_initialized = False
+        raise
