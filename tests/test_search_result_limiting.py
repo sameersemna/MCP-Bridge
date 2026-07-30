@@ -19,7 +19,7 @@ def test_clamp_search_tool_arguments_leaves_non_search_tools_unchanged():
 
 
 def test_truncate_search_result_text_keeps_only_the_first_requested_results():
-    original = """Found 3 search results:\n\n1. First result\n   URL: https://example.com/1\n   Summary: alpha\n\n2. Second result\n   URL: https://example.com/2\n   Summary: beta\n\n3. Third result\n   URL: https://example.com/3\n   Summary: gamma\n"""
+    original = """Found 3 search results:\n\r1. First result\n\r   URL: https://example.com/1\n\r   Summary: alpha\n\r2. Second result\n\r   URL: https://example.com/2\n\r   Summary: beta\n\r3. Third result\n\r   URL: https://example.com/3\n\r   Summary: gamma\n\r"""
 
     truncated = truncate_search_result_text("search", original, max_results=2)
 

@@ -134,18 +134,18 @@ class SseServerTransport:
             return response
 
         json = await request.json()
-        logger.debug(f"Received JSON: {json}")
+        logger.debug("received POST payload for SSE session")
 
         try:
             message = types.JSONRPCMessage.model_validate(json)
-            logger.debug(f"Validated client message: {message}")
+            logger.debug("validated client message for SSE session")
         except ValidationError as err:
             logger.error(f"Failed to parse message: {err}")
             response = Response("Could not parse message", status_code=400)
             await writer.send(err)
             return response
 
-        logger.debug(f"Sending message to writer: {message}")
+        logger.debug("forwarding client message to SSE writer")
         response = Response("Accepted", status_code=202)
         await writer.send(message)
         return response

@@ -158,9 +158,9 @@ def _build_tool_loop_stop_response(
 ) -> CreateChatCompletionResponse:
     summary_parts: list[str] = []
     if stop_reason == "max_tool_turns":
-        summary_parts.append("The tool loop was stopped because it reached the configured turn limit.")
+        summary_parts.append("Note: The search or tool workflow reached its turn limit before finishing.")
     else:
-        summary_parts.append("The tool loop was stopped before completion.")
+        summary_parts.append("Note: The workflow stopped before it could finish.")
 
     if request_messages:
         tool_messages = []
@@ -170,12 +170,176 @@ def _build_tool_loop_stop_response(
                 tool_messages.append(tool_text)
 
         if tool_messages:
-            summary_parts.append("Latest tool output: " + tool_messages[-1])
+            informative_messages = [
+                message
+                for message in tool_messages
+                if message and not _looks_like_empty_search_fallback(message)
+            ]
+            if informative_messages:
+                compact_summary = _summarize_tool_messages(informative_messages)
+                summary_parts.append(_format_tool_synthesis(compact_summary, stop_reason, tool_messages))
+            else:
+                summary_parts.append(_format_weak_evidence_fallback(stop_reason))
 
     response.choices[0].message.content = " ".join(summary_parts)
     response.choices[0].message.tool_calls = None
     response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
     return response
+
+
+def _looks_like_empty_search_fallback(message: str) -> bool:
+    lowered = message.lower()
+    fallback_markers = (
+        "no results were found",
+        "bot detection",
+        "try rephrasing your search",
+        "try again in a few minutes",
+        "returned no matches",
+    )
+    return any(marker in lowered for marker in fallback_markers)
+
+
+def _has_only_weak_tool_evidence(request_messages: list[ChatCompletionRequestMessage]) -> bool:
+    tool_messages = []
+    for message in request_messages:
+        tool_text = _extract_tool_message_text(message)
+        if tool_text:
+            tool_messages.append(tool_text)
+
+    if not tool_messages:
+        return False
+
+    informative_messages = [
+        message
+        for message in tool_messages
+        if message and not _looks_like_empty_search_fallback(message)
+    ]
+    if informative_messages:
+        return False
+
+    return True
+
+
+def _summarize_tool_messages(messages: list[str]) -> str:
+    if not messages:
+        return ""
+
+    cleaned_messages = []
+    for message in messages:
+        cleaned = _clean_tool_message(message)
+        if cleaned:
+            cleaned_messages.append(cleaned)
+
+    if not cleaned_messages:
+        return ""
+
+    if len(cleaned_messages) == 1:
+        return cleaned_messages[0]
+
+    unique_messages = []
+    seen: set[str] = set()
+    for message in cleaned_messages:
+        normalized = " ".join(message.split())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_messages.append(normalized)
+
+    if len(unique_messages) == 1:
+        return unique_messages[0]
+
+    filtered_messages = []
+    for message in unique_messages:
+        if _is_trivial_summary_fragment(message):
+            continue
+        filtered_messages.append(message)
+
+    if not filtered_messages:
+        return unique_messages[0]
+
+    if len(filtered_messages) == 1:
+        return filtered_messages[0]
+
+    if len(filtered_messages) == 2:
+        return f"{filtered_messages[0]} Also, {filtered_messages[1]}"
+
+    if len(filtered_messages) <= 3:
+        return "; ".join(filtered_messages)
+
+    return "; ".join(filtered_messages[:3]) + " …"
+
+
+def _clean_tool_message(message: str) -> str:
+    cleaned = " ".join(message.split())
+    prefixes = (
+        "result:",
+        "results:",
+        "note:",
+        "summary:",
+        "findings:",
+    )
+    lowered = cleaned.lower()
+    for prefix in prefixes:
+        if lowered.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+
+    if cleaned.startswith("{") and cleaned.endswith("}"):
+        return "structured data returned by a tool"
+
+    if "\n" in cleaned:
+        lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+        if len(lines) > 1:
+            cleaned = "; ".join(lines[:3])
+
+    return cleaned
+
+
+def _is_trivial_summary_fragment(message: str) -> bool:
+    lowered = message.lower().strip()
+    trivial_phrases = (
+        "the tool call result is empty",
+        "the tool result is empty",
+        "empty",
+        "no additional details",
+        "no further details",
+    )
+    return lowered in trivial_phrases or lowered.startswith("result:") or lowered.startswith("results:")
+
+
+def _format_tool_synthesis(summary: str, stop_reason: str, tool_messages: list[str]) -> str:
+    is_search_like = any(_looks_like_search_result(message) for message in tool_messages)
+    if is_search_like:
+        if stop_reason == "max_tool_turns":
+            return "\n\rDisclaimer: I found some search results, but the workflow reached its turn limit before I could fully synthesize them. Evidence gathered so far: " + summary
+        return "\n\rDisclaimer: I collected some search results before stopping. Evidence gathered so far: " + summary
+
+    if stop_reason == "max_tool_turns":
+        return "\n\rDisclaimer: I found several relevant leads, but the workflow reached its turn limit before I could fully synthesize them. Evidence gathered so far: " + summary
+
+    return "\n\rDisclaimer: I collected some information before stopping. Evidence gathered so far: " + summary
+
+
+def _format_weak_evidence_fallback(stop_reason: str) -> str:
+    if stop_reason == "max_tool_turns":
+        return "I wasn't able to gather enough reliable evidence before the workflow reached its turn limit. A narrower or more specific query may produce better results."
+
+    return "I wasn't able to gather enough reliable evidence before stopping. A narrower or more specific query may produce better results."
+
+
+def _looks_like_search_result(message: str) -> bool:
+    lowered = message.lower()
+    search_markers = (
+        "repository:",
+        "search results",
+        "result:",
+        "results:",
+        "repo",
+        "github",
+        "mcp server",
+        "open source",
+    )
+    return any(marker in lowered for marker in search_markers)
 
 
 async def chat_completions(
@@ -208,7 +372,10 @@ async def chat_completions(
                     json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
                 )
             ).text
-            logger.debug(text)
+            logger.debug(
+                "upstream chat completion response received: "
+                f"status={getattr(client, 'last_response_status', 'unknown') if hasattr(client, 'last_response_status') else 'unknown'}"
+            )
             _record_timing(trace_logger, "upstream_llm_request", time.perf_counter() - start_time)
             try:
                 response = CreateChatCompletionResponse.model_validate_json(text)
@@ -218,7 +385,7 @@ async def chat_completions(
                         response=response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
                     )
             except Exception as e:
-                logger.error(f"Error parsing response: {text}")
+                logger.error("error parsing upstream chat completion response")
                 logger.error(e)
                 return None
 
@@ -230,7 +397,11 @@ async def chat_completions(
             )  # type: ignore
             request.messages.append(msg)
 
-            logger.debug(f"finish reason: {response.choices[0].finish_reason}")
+            finish_reason_label = response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None
+            logger.debug(
+                "chat completion finish reason: "
+                f"{finish_reason_label}; tool_calls={bool(getattr(response.choices[0].message, 'tool_calls', None))}"
+            )
             if trace_logger is not None:
                 trace_logger.record(
                     "assistant_message",
@@ -280,6 +451,14 @@ async def chat_completions(
                     request_messages=request.messages,
                 )
 
+            if _has_only_weak_tool_evidence(request.messages):
+                logger.warning("tool evidence is weak or empty; stopping tool loop before another iteration")
+                return _build_tool_loop_stop_response(
+                    response,
+                    stop_reason="max_tool_turns",
+                    request_messages=request.messages,
+                )
+
             tool_turns_completed += 1
 
             if tool_call_items:
@@ -304,7 +483,10 @@ async def chat_completions(
                         continue
 
                     logger.debug(
-                        f"tool call result for {tool_call.function.name}: {tool_call_result.model_dump()}"
+                        "tool call completed: "
+                        f"name={tool_call.function.name}; "
+                        f"parts={len(getattr(tool_call_result, 'content', []) or [])}; "
+                        f"isError={getattr(tool_call_result, 'isError', False)}"
                     )
                     if trace_logger is not None:
                         trace_logger.record(
@@ -313,7 +495,11 @@ async def chat_completions(
                             result=tool_call_result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
                         )
 
-                    logger.debug(f"tool call result content: {tool_call_result.content}")
+                    if getattr(tool_call_result, "content", None):
+                        logger.debug(
+                            "tool call result content preview: "
+                            f"{str(tool_call_result.content)[:400]}"
+                        )
 
                     if getattr(tool_call_result, "isError", False):
                         error_text = next(

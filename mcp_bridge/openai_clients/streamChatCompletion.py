@@ -177,7 +177,8 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                     retry = sse.retry
 
                     logger.debug(
-                        f"event: {event},\ndata: {data},\nid: {id},\nretry: {retry}"
+                        "stream event received: "
+                        f"event={event}; id={id}; retry={retry}; data_len={len(data or '')}"
                     )
 
                     # handle if the SSE stream is done
@@ -196,7 +197,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                             data
                         )
                     except Exception as e:
-                        logger.debug(data)
+                        logger.debug("failed to parse streamed chunk; falling back to error")
                         raise e
 
                     # add the delta to the response content
@@ -242,8 +243,10 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
             fully_done = True
             continue
 
-        logger.debug("tool calls found")
-        logger.debug(f"streamed tool calls: {collected_tool_calls}")
+        logger.debug(
+            "tool calls found in stream; "
+            f"count={len(collected_tool_calls)}"
+        )
 
         # add received message to the history
         msg = ChatCompletionRequestMessage(
@@ -289,10 +292,11 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                 )
 
             logger.debug(
-                f"tool call result for {tool_call.get('name', '')}: {tool_call_result.model_dump()}"
+                f"tool call result for {tool_call.get('name', '')}: {len(getattr(tool_call_result, 'content', []) or [])} content part(s), isError={getattr(tool_call_result, 'isError', False)}"
             )
 
-            logger.debug(f"tool call result content: {tool_call_result.content}")
+            if getattr(tool_call_result, 'content', None):
+                logger.debug(f"tool call result content preview: {str(tool_call_result.content)[:400]}")
 
             tools_content = sanitize_tool_result_content(
                 tool_call.get("name", ""),

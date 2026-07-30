@@ -6,6 +6,7 @@ from mcp_bridge.openai_clients.chatCompletion import (
     DEFAULT_MAX_TOOL_TURNS,
     _build_tool_loop_stop_response,
     _format_tool_loop_stop_message,
+    _has_only_weak_tool_evidence,
     _record_timing,
     should_continue_tool_loop,
 )
@@ -51,6 +52,41 @@ def test_record_timing_emits_elapsed_ms():
     assert trace_logger.events[0]["type"] == "timing"
     assert trace_logger.events[0]["stage"] == "tool_dispatch"
     assert trace_logger.events[0]["elapsed_ms"] >= 0
+
+
+def test_has_only_weak_tool_evidence_detects_empty_search_fallbacks():
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Google blocked by bot detection for this request. Showing fallback web results."}],
+                "tool_call_id": "call_1",
+            }
+        ),
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "No results were found for your search query. Please try rephrasing your search."}],
+                "tool_call_id": "call_2",
+            }
+        ),
+    ]
+
+    assert _has_only_weak_tool_evidence(request_messages) is True
+
+
+def test_has_only_weak_tool_evidence_allows_useful_search_results():
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Repository: example/repo includes an MCP server implementation"}],
+                "tool_call_id": "call_1",
+            }
+        )
+    ]
+
+    assert _has_only_weak_tool_evidence(request_messages) is False
 
 
 def test_format_tool_loop_stop_message_includes_turns_and_limit():
@@ -106,3 +142,322 @@ def test_build_tool_loop_stop_response_replaces_tool_calls_with_summary():
     assert "partial search results" in stop_response.choices[0].message.content
     assert stop_response.choices[0].message.tool_calls is None
     assert stop_response.choices[0].finish_reason == FinishReason1.stop
+
+
+def test_build_tool_loop_stop_response_prefers_earlier_informative_tool_outputs():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_test",
+                                "type": "function",
+                                "function": {"name": "google_search", "arguments": '{"query": "test"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "created": 1,
+            "model": "test-model",
+            "object": "chat.completion",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Earlier result: a useful search result was found"}],
+                "tool_call_id": "call_1",
+            }
+        ),
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "No results were found for your search query. This could be due to DuckDuckGo's bot detection or the query returned no matches. Please try rephrasing your search or try again in a few minutes."}],
+                "tool_call_id": "call_2",
+            }
+        ),
+    ]
+
+    stop_response = _build_tool_loop_stop_response(
+        response,
+        stop_reason="max_tool_turns",
+        request_messages=request_messages,
+    )
+
+    content = stop_response.choices[0].message.content or ""
+    assert "Earlier result: a useful search result was found" in content
+    assert "No results were found" not in content
+
+
+def test_build_tool_loop_stop_response_combines_multiple_informative_tool_outputs():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_test",
+                                "type": "function",
+                                "function": {"name": "google_search", "arguments": '{"query": "test"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "created": 1,
+            "model": "test-model",
+            "object": "chat.completion",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Earlier result: a useful search result was found"}],
+                "tool_call_id": "call_1",
+            }
+        ),
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Another useful result: the source mentions a relevant fact"}],
+                "tool_call_id": "call_2",
+            }
+        ),
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "No results were found for your search query. This could be due to DuckDuckGo's bot detection or the query returned no matches. Please try rephrasing your search or try again in a few minutes."}],
+                "tool_call_id": "call_3",
+            }
+        ),
+    ]
+
+    stop_response = _build_tool_loop_stop_response(
+        response,
+        stop_reason="max_tool_turns",
+        request_messages=request_messages,
+    )
+
+    content = stop_response.choices[0].message.content or ""
+    assert "Earlier result: a useful search result was found" in content
+    assert "Another useful result: the source mentions a relevant fact" in content
+    assert "No results were found" not in content
+    assert "I found some search results" in content
+
+
+def test_build_tool_loop_stop_response_offers_helpful_guidance_when_evidence_is_weak():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_test",
+                                "type": "function",
+                                "function": {"name": "google_search", "arguments": '{"query": "test"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "created": 1,
+            "model": "test-model",
+            "object": "chat.completion",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "No results were found for your search query. Please try rephrasing your search or try again in a few minutes."}],
+                "tool_call_id": "call_1",
+            }
+        )
+    ]
+
+    stop_response = _build_tool_loop_stop_response(
+        response,
+        stop_reason="max_tool_turns",
+        request_messages=request_messages,
+    )
+
+    content = stop_response.choices[0].message.content or ""
+    assert "I wasn't able to gather enough reliable evidence" in content
+    assert "narrower or more specific query" in content
+
+
+def test_build_tool_loop_stop_response_summarizes_tool_evidence_in_plain_language():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_test",
+                                "type": "function",
+                                "function": {"name": "google_search", "arguments": '{"query": "test"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "created": 1,
+            "model": "test-model",
+            "object": "chat.completion",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "The repository includes an MCP server implementation"}],
+                "tool_call_id": "call_1",
+            }
+        ),
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "The project is open source and focused on AI coding assistants"}],
+                "tool_call_id": "call_2",
+            }
+        ),
+    ]
+
+    stop_response = _build_tool_loop_stop_response(
+        response,
+        stop_reason="max_tool_turns",
+        request_messages=request_messages,
+    )
+
+    content = stop_response.choices[0].message.content or ""
+    assert "The repository includes an MCP server implementation" in content
+    assert "The project is open source and focused on AI coding assistants" in content
+    assert " | " not in content
+
+
+def test_build_tool_loop_stop_response_uses_search_context_when_tool_calls_are_search_like():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_test",
+                                "type": "function",
+                                "function": {"name": "searchGitHub", "arguments": '{"query": "test"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "created": 1,
+            "model": "test-model",
+            "object": "chat.completion",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Repository: example/repo with an MCP server implementation"}],
+                "tool_call_id": "call_1",
+            }
+        )
+    ]
+
+    stop_response = _build_tool_loop_stop_response(
+        response,
+        stop_reason="max_tool_turns",
+        request_messages=request_messages,
+    )
+
+    content = stop_response.choices[0].message.content or ""
+    assert "search results" in content.lower()
+    assert "Repository: example/repo" in content
+
+
+def test_build_tool_loop_stop_response_strips_boilerplate_prefixes_from_tool_messages():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_test",
+                                "type": "function",
+                                "function": {"name": "searchGitHub", "arguments": '{"query": "test"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "created": 1,
+            "model": "test-model",
+            "object": "chat.completion",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Result: The repository includes an MCP server implementation"}],
+                "tool_call_id": "call_1",
+            }
+        )
+    ]
+
+    stop_response = _build_tool_loop_stop_response(
+        response,
+        stop_reason="max_tool_turns",
+        request_messages=request_messages,
+    )
+
+    content = stop_response.choices[0].message.content or ""
+    assert "Result:" not in content
+    assert "The repository includes an MCP server implementation" in content

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import sys
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -40,6 +41,31 @@ def get_default_environment() -> dict[str, str]:
             continue
         env[key] = value
     return env
+
+
+def _sanitize_stderr_text(text: str) -> str:
+    sanitized = text.replace("\r", "\n")
+    sanitized = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", sanitized)
+    sanitized = re.sub(r"\x1b\][^\x07]*(?:\x07|\x1b\\)", "", sanitized)
+    sanitized = sanitized.replace("\x00", "")
+    return sanitized.rstrip()
+
+
+def _should_log_stderr_text(text: str) -> bool:
+    lowered = text.lower().strip()
+    if not lowered:
+        return False
+
+    if re.search(r"\b(?:listtoolsrequest|initializerequest|calltoolrequest|listresourcesrequest|listpromptsrequest|pingrequest)\b", lowered):
+        return False
+
+    if re.search(r"\b(?:processing request of type|mcp server running on stdio|initialized|server initialized|ready|listening)\b", lowered):
+        return False
+
+    if any(marker in lowered for marker in ("error", "exception", "traceback", "warning", "failed", "fatal", "panic")):
+        return True
+
+    return False
 
 
 class StdioServerParameters:
@@ -156,9 +182,10 @@ async def stdio_client(server: StdioServerParameters):
                 line = await process.stderr.readline()
                 if not line:
                     break
-                text = line.decode(server.encoding, errors=server.encoding_error_handler).rstrip()
-                if text:
-                    logger.debug(f"stdio server stderr: {text}")
+                text = line.decode(server.encoding, errors=server.encoding_error_handler)
+                sanitized_text = _sanitize_stderr_text(text)
+                if sanitized_text and _should_log_stderr_text(sanitized_text):
+                    logger.debug(f"stdio server stderr: {sanitized_text}")
         except Exception as exc:  # pragma: no cover - defensive fallback
             logger.debug(f"stdio stderr reader stopped: {exc}")
 

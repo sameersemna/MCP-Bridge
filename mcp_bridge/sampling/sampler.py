@@ -59,7 +59,10 @@ async def handle_sampling_message(
 ) -> CreateMessageResult:
     """perform sampling"""
 
-    logger.debug(f"sampling message: {message.modelPreferences}")
+    logger.debug(
+        "sampling message received: "
+        f"model_preferences={getattr(message, 'modelPreferences', None) is not None}"
+    )
     
     # select model
     model = config.sampling.models[0]
@@ -76,9 +79,10 @@ async def handle_sampling_message(
         "stream": False,
     }
 
-    logger.debug(f"request: {request}")
-
-    logger.debug(request)
+    logger.debug(
+        "sampling request prepared: "
+        f"model={request['model']}; message_count={len(request.get('messages', []))}"
+    )
 
     async with get_client() as client:
         resp = await client.post(
@@ -89,7 +93,7 @@ async def handle_sampling_message(
 
     logger.debug("parsing json")
     text = resp.text
-    logger.debug(text)
+    logger.debug("sampling response received from upstream")
 
     response = CreateChatCompletionResponse.model_validate_json(text)
 
