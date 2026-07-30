@@ -76,6 +76,10 @@ def _record_timing(trace_logger: RequestTraceLogger | None, stage: str, elapsed_
     )
 
 
+def _format_tool_loop_stop_message(*, tool_turns_completed: int, max_tool_turns: int) -> str:
+    return f"stopping tool loop after {tool_turns_completed} turn(s); max_tool_turns={max_tool_turns}"
+
+
 def _build_tool_error_response(response: CreateChatCompletionResponse, tool_errors: list[str]) -> CreateChatCompletionResponse:
     error_summary = "; ".join(tool_errors)
     response.choices[0].message.content = (
@@ -178,9 +182,10 @@ async def chat_completions(
                 max_tool_turns=max_tool_turns,
             ):
                 logger.warning(
-                    "stopping tool loop after %s turn(s); max_tool_turns=%s",
-                    tool_turns_completed,
-                    max_tool_turns,
+                    _format_tool_loop_stop_message(
+                        tool_turns_completed=tool_turns_completed,
+                        max_tool_turns=max_tool_turns,
+                    )
                 )
                 return response
 
@@ -258,5 +263,7 @@ async def chat_completions(
                     logger.debug("sending next iteration of chat completion request")
 
                 if tool_errors:
-                    logger.warning("tool call failures detected; stopping tool loop: %s", "; ".join(tool_errors))
+                    logger.warning(
+                        f"tool call failures detected; stopping tool loop: {'; '.join(tool_errors)}"
+                    )
                     return _build_tool_error_response(response, tool_errors)

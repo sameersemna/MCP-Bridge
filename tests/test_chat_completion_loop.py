@@ -1,6 +1,11 @@
 import time
 
-from mcp_bridge.openai_clients.chatCompletion import DEFAULT_MAX_TOOL_TURNS, _record_timing, should_continue_tool_loop
+from mcp_bridge.openai_clients.chatCompletion import (
+    DEFAULT_MAX_TOOL_TURNS,
+    _format_tool_loop_stop_message,
+    _record_timing,
+    should_continue_tool_loop,
+)
 
 
 class DummyTraceLogger:
@@ -43,3 +48,9 @@ def test_record_timing_emits_elapsed_ms():
     assert trace_logger.events[0]["type"] == "timing"
     assert trace_logger.events[0]["stage"] == "tool_dispatch"
     assert trace_logger.events[0]["elapsed_ms"] >= 0
+
+
+def test_format_tool_loop_stop_message_includes_turns_and_limit():
+    message = _format_tool_loop_stop_message(tool_turns_completed=3, max_tool_turns=12)
+
+    assert message == "stopping tool loop after 3 turn(s); max_tool_turns=12"

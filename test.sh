@@ -33,15 +33,19 @@ randomCountry=$(shuf -n 1 -e "Argentina" "Australia" "Brazil" "Canada" "Denmark"
 echo "Randomly selected country: $randomCountry"
 
 instructionsTools="
-# MCP Tools Instructions:
-- Use 'sequential-thinking' MCP Tool to break down your thoughts.
-- Check 'memory' MCP Tool for existing context references.
-- When you are done, use the 'memory' MCP Tool to save your final answer for future reference."
+## MCP Tools Instructions
+NOTE: The following tools are available for use in your responses:
+- *'sequential-thinking'*: Use to break down your thoughts.
+- *'duckduckgo-search'*: Use to search online using DuckDuckGo engine.
+- *'google-search'*: Use to search online using Google, includes search, news, weather, etc.
+- *'fetch'*: Use to fetch information from URL links.
+- *'context7'*: Use to fetch updated documentation of Programming Languages & Frameworks.
+- *'memory'*: Long-term memory for AI Agents. Use for existing context references, and to save text for future reference."
 
 content="Use the 'fetch' MCP tool to retrieve the title of https://shamela.org and respond with only the title."
 content="Use the 'context7' MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
 content="Use the 'duckduckgo-search' MCP tool to search for the latest news about AI from $randomCountry specifically in $randomDate and summarize the top 3 articles. $instructionsTools"
-content="Use the 'duckduckgo-search' MCP tool to search for and generate a report regarding the issue between Abu Iyaad of Salafi Publications and Shaikh Arafat al-Muhammadi. $instructionsTools"
+content="Generate a report regarding the issue between Abu Iyaad of Salafi Publications and Shaikh Arafat al-Muhammadi. $instructionsTools"
 
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content: $content"
 
