@@ -1,6 +1,8 @@
+import logging
 from datetime import timedelta
 from typing import Any, Awaitable, Callable
 
+import anyio
 from loguru import logger
 from pydantic import AnyUrl
 
@@ -123,6 +125,9 @@ class McpClientSession(
             types.ServerRequest,
             types.ServerNotification,
             read_timeout_seconds=read_timeout_seconds,
+        )
+        self._incoming_message_stream_writer, self._incoming_message_stream_reader = (
+            anyio.create_memory_object_stream(100)
         )
 
     async def initialize(self) -> types.InitializeResult:
@@ -324,6 +329,53 @@ class McpClientSession(
             )
         )
 
+    async def _receive_loop(self) -> None:
+        async with self._incoming_message_stream_writer:
+            async for message in self._read_stream:
+                if isinstance(message, Exception):
+                    await self._incoming_message_stream_writer.send(message)
+                elif isinstance(message.root, types.JSONRPCRequest):
+                    validated_request = self._receive_request_type.model_validate(
+                        message.root.model_dump(by_alias=True, mode="json", exclude_none=True)
+                    )
+
+                    responder = RequestResponder(
+                        request_id=message.root.id,
+                        request_meta=validated_request.root.params.meta
+                        if validated_request.root.params
+                        else None,
+                        request=validated_request,
+                        session=self,
+                        on_complete=lambda r: self._in_flight.pop(r.request_id, None),
+                    )
+
+                    self._in_flight[responder.request_id] = responder
+                    await self._received_request(responder)
+                    if not responder._completed:
+                        await self._incoming_message_stream_writer.send(responder)
+                elif isinstance(message.root, types.JSONRPCNotification):
+                    try:
+                        notification = self._receive_notification_type.model_validate(
+                            message.root.model_dump(by_alias=True, mode="json", exclude_none=True)
+                        )
+                        if isinstance(notification.root, types.CancelledNotification):
+                            cancelled_id = notification.root.params.requestId
+                            if cancelled_id in self._in_flight:
+                                await self._in_flight[cancelled_id].cancel()
+                        else:
+                            await self._received_notification(notification)
+                            await self._incoming_message_stream_writer.send(notification)
+                    except Exception as e:
+                        logging.warning("Failed to validate notification: %s. Message was: %s", e, message.root)
+                else:
+                    stream = self._response_streams.pop(message.root.id, None)
+                    if stream:
+                        await stream.send(message.root)
+                    else:
+                        await self._incoming_message_stream_writer.send(
+                            RuntimeError("Received response with an unknown request ID")
+                        )
+
     async def _received_request(
         self, responder: RequestResponder["types.ServerRequest", "types.ClientResult"]
     ) -> None:
@@ -332,6 +384,9 @@ class McpClientSession(
             response = await self.sample(responder.request.root.params)
             client_response = types.ClientResult(**response.model_dump())
             await responder.respond(client_response)
+
+    async def _received_notification(self, notification: types.ServerNotification) -> None:
+        return None
 
     async def sample(self, params: types.CreateMessageRequestParams) -> types.CreateMessageResult:
         logger.info("got sampling request from mcp server")

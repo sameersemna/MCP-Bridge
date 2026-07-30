@@ -7,15 +7,14 @@ from typing import Any
 from loguru import logger
 
 try:
-    from mcp import StdioServerParameters, stdio_client
+    from mcp import StdioServerParameters as _SdkStdioServerParameters
 except ImportError:  # pragma: no cover - allows the package to import in minimal environments
-    class StdioServerParameters:  # type: ignore[no-redef]
+    class _SdkStdioServerParameters:  # type: ignore[no-redef]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.args = args
             self.kwargs = kwargs
 
-    async def stdio_client(*args: Any, **kwargs: Any):
-        raise RuntimeError("mcp SDK is not installed")
+from mcp_bridge.mcp_clients.stdio_transport import StdioServerParameters, stdio_client
 
 from mcp_bridge.config import config
 from mcp_bridge.mcp_clients.session import McpClientSession
@@ -80,15 +79,12 @@ class StdioClient(GenericMcpClient):
 
                 try:
                     while True:
-                        await asyncio.sleep(10)
-                        if config.logging.log_server_pings:
-                            logger.debug(f"pinging session for {self.name}")
-
-                        async with self._session_lock:
-                            await session.send_ping()
-
+                        await asyncio.sleep(3600)
+                except asyncio.CancelledError:
+                    logger.debug(f"session maintainer cancelled for {self.name}")
+                    raise
                 except Exception as exc:
-                    logger.error(f"ping failed for {self.name}: {exc}")
+                    logger.error(f"session maintenance failed for {self.name}: {exc}")
                     self.session = None
                     raise
 

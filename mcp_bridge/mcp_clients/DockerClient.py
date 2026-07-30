@@ -37,14 +37,12 @@ class DockerClient(GenericMcpClient):
 
                 try:
                     while True:
-                        await asyncio.sleep(10)
-                        if config.logging.log_server_pings:
-                            logger.debug(f"pinging session for {self.name}")
-
-                        await session.send_ping()
-
+                        await asyncio.sleep(3600)
+                except asyncio.CancelledError:
+                    logger.debug(f"session maintainer cancelled for {self.name}")
+                    raise
                 except Exception as exc:
-                    logger.error(f"ping failed for {self.name}: {exc}")
+                    logger.error(f"session maintenance failed for {self.name}: {exc}")
                     self.session = None
                     raise
 
