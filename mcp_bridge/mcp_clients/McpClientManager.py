@@ -1,6 +1,7 @@
 import asyncio
 import json
 from typing import Any, Union
+from urllib.parse import urlparse
 
 from loguru import logger
 
@@ -26,12 +27,12 @@ from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
 
 from .DockerClient import DockerClient
-from .SseClient import SseClient
+from .SseClient import HttpClient, SseClient
 from .StdioClient import StdioClient
 
-DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS = 30.0
+DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS = 10.0
 
-client_types = Union[StdioClient, SseClient, DockerClient]
+client_types = Union[StdioClient, SseClient, HttpClient, DockerClient]
 
 
 def _is_disabled_server(server_config: Any) -> bool:
@@ -58,6 +59,29 @@ class MCPClientManager:
     def _normalize_tool_name(tool: str) -> str:
         normalized = tool.strip().lower().replace("-", "_")
         return normalized
+
+    @staticmethod
+    def _get_client_class(server_config: Any) -> type[client_types]:
+        if isinstance(server_config, StdioServerParameters):
+            return StdioClient
+
+        if isinstance(server_config, SSEMCPServer):
+            transport_type = getattr(server_config, "type", None)
+            url = getattr(server_config, "url", "")
+            parsed_url = urlparse(url)
+            path = (parsed_url.path or "").rstrip("/")
+            is_sse_endpoint = path == "/sse" or path.endswith("/sse")
+
+            if transport_type == "sse" or is_sse_endpoint:
+                return SseClient
+            if transport_type == "http":
+                return HttpClient
+            return HttpClient
+
+        if isinstance(server_config, DockerMCPServer):
+            return DockerClient
+
+        raise NotImplementedError("Client Type not supported")
 
     async def initialize(self):
         """Initialize the MCP Client Manager and start all clients"""
@@ -115,18 +139,19 @@ class MCPClientManager:
         logger.debug(f"Constructing client for {server_config}")
 
         try:
-            if isinstance(server_config, StdioServerParameters):
-                client = StdioClient(name, server_config)
+            client_class = self._get_client_class(server_config)
+            if client_class is StdioClient:
+                client = client_class(name, server_config)
                 await client.start()
                 return client
 
-            if isinstance(server_config, SSEMCPServer):
-                client = SseClient(name, server_config)  # type: ignore
+            if client_class in {SseClient, HttpClient}:
+                client = client_class(name, server_config)  # type: ignore[arg-type]
                 await client.start()
                 return client
 
-            if isinstance(server_config, DockerMCPServer):
-                client = DockerClient(name, server_config)
+            if client_class is DockerClient:
+                client = client_class(name, server_config)
                 await client.start()
                 return client
         except Exception as exc:
@@ -153,10 +178,17 @@ class MCPClientManager:
                 if not getattr(client, "session", None):
                     wait_for_session = getattr(client, "_wait_for_session", None)
                     if callable(wait_for_session):
-                        await asyncio.wait_for(
-                            wait_for_session(timeout=int(effective_timeout), http_error=False),
-                            timeout=effective_timeout,
-                        )
+                        configured_request_timeout = None
+                        config = getattr(client, "config", None)
+                        request_timeout = getattr(config, "requestTimeout", None)
+                        if request_timeout is not None:
+                            configured_request_timeout = float(request_timeout) / 1000.0
+
+                        wait_timeout = float(effective_timeout)
+                        if configured_request_timeout is not None:
+                            wait_timeout = max(wait_timeout, configured_request_timeout)
+
+                        await wait_for_session(timeout=int(wait_timeout), http_error=False)
                     else:
                         list_tools = await asyncio.wait_for(
                             client.list_tools(),
@@ -194,24 +226,36 @@ class MCPClientManager:
 
         probe_tasks = [asyncio.create_task(_probe(client)) for client in clients]
         try:
-            done, pending = await asyncio.wait(
-                probe_tasks,
-                timeout=effective_timeout,
-                return_when=asyncio.ALL_COMPLETED,
-            )
+            deadline = asyncio.get_running_loop().time() + effective_timeout
+            while probe_tasks:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    break
+
+                done, pending = await asyncio.wait(
+                    probe_tasks,
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                for task in done:
+                    probe_tasks.remove(task)
+                    result = task.result()
+                    if result is not None:
+                        for pending_task in pending:
+                            pending_task.cancel()
+                        return result
+
+                if not pending:
+                    break
+
+                probe_tasks = list(pending)
         except Exception:
             for task in probe_tasks:
                 task.cancel()
             raise
 
-        for task in done:
-            result = task.result()
-            if result is not None:
-                for pending_task in pending:
-                    pending_task.cancel()
-                return result
-
-        for task in pending:
+        for task in probe_tasks:
             task.cancel()
 
         return None
@@ -226,10 +270,17 @@ class MCPClientManager:
                 if not getattr(client, "session", None):
                     wait_for_session = getattr(client, "_wait_for_session", None)
                     if callable(wait_for_session):
-                        await asyncio.wait_for(
-                            wait_for_session(timeout=int(effective_timeout), http_error=False),
-                            timeout=effective_timeout,
-                        )
+                        configured_request_timeout = None
+                        config = getattr(client, "config", None)
+                        request_timeout = getattr(config, "requestTimeout", None)
+                        if request_timeout is not None:
+                            configured_request_timeout = float(request_timeout) / 1000.0
+
+                        wait_timeout = float(effective_timeout)
+                        if configured_request_timeout is not None:
+                            wait_timeout = max(wait_timeout, configured_request_timeout)
+
+                        await wait_for_session(timeout=int(wait_timeout), http_error=False)
                     else:
                         continue
 

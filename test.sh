@@ -12,9 +12,8 @@ OLLAMA_URL="http://localhost:11434"
 rm -f response.json response.md
 
 echo "Checking MCP bridge health at ${BASE_URL}/health..."
-curl -fsS "${BASE_URL}/health" >/dev/null
-
-echo "Bridge is healthy."
+curl -fsS "${BASE_URL}/health" | jq # >/dev/null
+echo "Bridge is healthy. ----------------------------------------------------------------------------"
 
 # echo "Listing models exposed by the bridge:"
 # curl -fsS "${BASE_URL}/v1/models" | jq '.data[].id'
@@ -27,9 +26,21 @@ else
   exit 1
 fi
 
-content="Use the fetch MCP tool to retrieve the title of https://shamela.org and respond with only the title."
-content="Use the context7 MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
-content="Use the ddg-search MCP tool to search for the latest news about AI from Germany specifically in June 2026 and summarize the top 3 articles. Also use sequential-thinking to provide a brief analysis of the implications of these news articles on the AI industry."
+# randomDate=$(date -d "2025-06-01 + $(( RANDOM % ( $(date -d "2026-06-30" +%s) - $(date -d "2025-06-01" +%s) + 86400 ) / 86400 )) days" "+%Y-%m-%d")
+randomDate=$(date -d "2026-01-01 + $(( RANDOM % 150 )) days" "+%B %d, %Y")
+echo "Randomly selected date: $randomDate"
+randomCountry=$(shuf -n 1 -e "Argentina" "Australia" "Brazil" "Canada" "Denmark" "Egypt" "France" "Germany" "India" "Japan" "Kenya" "Mexico" "Norway" "Peru" "South Korea" "Spain" "Thailand" "United Kingdom" "Vietnam")
+echo "Randomly selected country: $randomCountry"
+
+instructionsTools="
+# MCP Tools Instructions:
+- Use 'sequential-thinking' MCP Tool to break down your thoughts.
+- Check 'memory' MCP Tool for existing context references.
+- When you are done, use the 'memory' MCP Tool to save your final answer for future reference."
+
+content="Use the 'fetch' MCP tool to retrieve the title of https://shamela.org and respond with only the title."
+content="Use the 'context7' MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
+content="Use the 'duckduckgo-search' MCP tool to search for the latest news about AI from $randomCountry specifically in $randomDate and summarize the top 3 articles. $instructionsTools"
 
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content: $content"
 

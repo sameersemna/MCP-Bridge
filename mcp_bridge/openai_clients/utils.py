@@ -1,6 +1,8 @@
 import asyncio
 import inspect
 import json
+import os
+from types import SimpleNamespace
 from typing import Any
 
 from loguru import logger
@@ -9,8 +11,23 @@ from opentelemetry import trace
 from mcp_bridge.logging import RequestTraceLogger
 
 try:
-    from lmos_openai_types import CreateChatCompletionRequest
+    from lmos_openai_types import ChatCompletionRequestMessage, CreateChatCompletionRequest
 except ImportError:  # pragma: no cover - optional dependency support
+    class ChatCompletionRequestMessage:  # type: ignore[no-redef]
+        def __init__(self, role: str, content: Any = None, **kwargs: Any) -> None:
+            self.role = role
+            self.content = content
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+        @classmethod
+        def model_validate(cls, payload: Any) -> "ChatCompletionRequestMessage":
+            if isinstance(payload, cls):
+                return payload
+            if isinstance(payload, dict):
+                return cls(**payload)
+            return cls(role="assistant", content=str(payload))
+
     CreateChatCompletionRequest = Any
 
 try:
@@ -19,19 +36,117 @@ except ImportError:  # pragma: no cover - optional dependency support
     mcp = Any
 
 from mcp_bridge.mcp_clients.AbstractClient import DEFAULT_MCP_SESSION_TIMEOUT_SECONDS
-from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager, DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
 from mcp_bridge.tool_mappers import mcp2openai
+
+def maybe_add_tool_selection_instructions(request: Any) -> Any:
+    tool_names: list[str] = []
+    for tool in getattr(request, "tools", []) or []:
+        if isinstance(tool, dict):
+            function_payload = tool.get("function") or {}
+            if isinstance(function_payload, dict):
+                tool_name = function_payload.get("name") or tool.get("name")
+            else:
+                tool_name = getattr(function_payload, "name", None) or tool.get("name")
+        else:
+            tool_name = getattr(tool, "name", None)
+            if tool_name is None and hasattr(tool, "function"):
+                tool_name = getattr(getattr(tool, "function"), "name", None)
+        if tool_name is not None:
+            tool_names.append(str(tool_name))
+
+    has_github_search_tool = any(name == "searchGitHub" or "github" in name.lower() for name in tool_names)
+    if not has_github_search_tool:
+        return request
+
+    messages = list(getattr(request, "messages", []) or [])
+    if not messages:
+        return request
+
+    text_chunks = []
+    for message in messages:
+        content = getattr(message, "content", None)
+        if isinstance(content, list):
+            text_chunks.extend(str(part) for part in content if part is not None)
+        elif content is not None:
+            text_chunks.append(str(content))
+
+    combined_text = "\n".join(text_chunks).lower()
+    is_code_search_prompt = any(
+        phrase in combined_text
+        for phrase in [
+            "example",
+            "code",
+            "implementation",
+            "repository",
+            "github",
+            "pattern",
+            "snippet",
+            "usage",
+            "library",
+        ]
+    )
+    if not is_code_search_prompt:
+        return request
+
+    if any(getattr(message, "role", None) == "system" and "searchGitHub" in str(getattr(message, "content", "")) for message in messages):
+        return request
+
+    instruction = (
+        "When the user asks for implementation examples, code patterns, or real repository-based examples, "
+        "prefer using the searchGitHub tool before answering from memory. "
+        "Use searchGitHub for concrete code/example searches and cite the result in your answer."
+    )
+
+    system_message = SimpleNamespace(role="system", content=instruction)
+
+    request.messages = [system_message, *messages]
+    return request
+
+
+def get_tool_discovery_timeout_seconds() -> float:
+    raw_value = os.getenv("MCP_BRIDGE_TOOL_DISCOVERY_TIMEOUT_SECONDS")
+    if raw_value is None:
+        return DEFAULT_MCP_SESSION_TIMEOUT_SECONDS
+
+    try:
+        return float(raw_value)
+    except ValueError:
+        logger.warning(
+            f"invalid MCP_BRIDGE_TOOL_DISCOVERY_TIMEOUT_SECONDS value: {raw_value}; using default {DEFAULT_MCP_SESSION_TIMEOUT_SECONDS}"
+        )
+        return DEFAULT_MCP_SESSION_TIMEOUT_SECONDS
+
+
+async def _ensure_client_manager_initialized() -> list[tuple[str, Any]]:
+    clients = ClientManager.get_clients()
+    if clients:
+        return clients
+
+    logger.info("No MCP clients initialized yet; initializing client manager before tool discovery")
+    await ClientManager.initialize()
+    return ClientManager.get_clients()
 
 
 async def chat_completion_add_tools(request: CreateChatCompletionRequest):
     request.tools = []
 
+    tool_discovery_timeout_seconds = get_tool_discovery_timeout_seconds()
+    clients = await _ensure_client_manager_initialized()
+
     async def _discover_tools_for_session(session: Any) -> list[Any]:
+        configured_request_timeout = None
+        config = getattr(session, "config", None)
+        request_timeout = getattr(config, "requestTimeout", None)
+        if request_timeout is not None:
+            configured_request_timeout = float(request_timeout) / 1000.0
+
+        wait_timeout = float(tool_discovery_timeout_seconds)
+        if configured_request_timeout is not None:
+            wait_timeout = max(wait_timeout, configured_request_timeout)
+
         try:
-            await asyncio.wait_for(
-                session._wait_for_session(timeout=DEFAULT_MCP_SESSION_TIMEOUT_SECONDS, http_error=False),
-                timeout=DEFAULT_MCP_SESSION_TIMEOUT_SECONDS,
-            )
+            await session._wait_for_session(timeout=wait_timeout, http_error=False)
         except Exception:
             logger.warning(f"session not ready for {session.name}; skipping tool discovery")
             return []
@@ -41,7 +156,7 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
             return []
 
         try:
-            tools = await asyncio.wait_for(session.session.list_tools(), timeout=DEFAULT_MCP_SESSION_TIMEOUT_SECONDS)
+            tools = await asyncio.wait_for(session.session.list_tools(), timeout=wait_timeout)
         except Exception as exc:
             logger.warning(f"tool discovery failed for {session.name}: {exc}")
             return []
@@ -49,13 +164,14 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
         return [mcp2openai(tool) for tool in tools.tools]
 
     discovered_tools = await asyncio.gather(
-        *(_discover_tools_for_session(session) for _, session in ClientManager.get_clients()),
+        *(_discover_tools_for_session(session) for _, session in clients),
         return_exceptions=False,
     )
 
     for tools in discovered_tools:
         request.tools.extend(tools)
 
+    maybe_add_tool_selection_instructions(request)
     return request
 
 
@@ -80,6 +196,7 @@ def _span_payload_preview(payload: Any, max_len: int = 160) -> str:
 async def call_tool(
     tool_call_name: str, tool_call_json: str, timeout: int | None = None,
     trace_logger: RequestTraceLogger | None = None,
+    client_cache: dict[str, Any] | None = None,
 ) -> Any | None:
     with tracer.start_as_current_span("mcp_bridge.call_tool") as span:
         span.set_attribute("mcp_bridge.tool.name", tool_call_name or "")
@@ -113,9 +230,14 @@ async def call_tool(
         if trace_logger is not None:
             trace_logger.record("mcp_tool_dispatch_attempt", tool_name=tool_call_name, arguments=tool_call_json)
 
-        session = await ClientManager.get_client_from_tool(
-            tool_call_name, timeout=DEFAULT_MCP_SESSION_TIMEOUT_SECONDS
-        )
+        if client_cache is not None and tool_call_name in client_cache:
+            session = client_cache[tool_call_name]
+        else:
+            session = await ClientManager.get_client_from_tool(
+                tool_call_name, timeout=DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
+            )
+            if client_cache is not None:
+                client_cache[tool_call_name] = session
 
         if session is None:
             logger.error(f"no MCP client found for tool '{tool_call_name}'")
@@ -189,6 +311,7 @@ async def call_tool(
 async def call_tools(
     tool_calls: list[tuple[str, str]], timeout: int | None = None,
     trace_logger: RequestTraceLogger | None = None,
+    client_cache: dict[str, Any] | None = None,
 ) -> list[Any]:
     """Execute multiple tool calls concurrently while preserving order."""
 
@@ -203,6 +326,7 @@ async def call_tools(
 
         signature = inspect.signature(call_tool)
         if "trace_logger" in signature.parameters:
+            call_kwargs["client_cache"] = client_cache
             return await call_tool(name, payload, **call_kwargs)
 
         return await call_tool(name, payload, timeout)

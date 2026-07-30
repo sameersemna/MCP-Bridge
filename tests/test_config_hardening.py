@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import sys
 import time
@@ -14,11 +15,14 @@ from mcp_bridge.config.final import Settings, SSEMCPServer
 from mcp_bridge.logging import redact_sensitive_data
 from mcp_bridge.mcp_clients.AbstractClient import GenericMcpClient
 from mcp_bridge.mcp_clients.McpClientManager import MCPClientManager
+from mcp_bridge.mcp_clients.SseClient import SseClient
 from mcp_bridge.mcp_clients.StdioClient import StdioClient
 from mcp_bridge.health.manager import manager
+from mcp_bridge.openai_clients import chatCompletion as chat_completion_module
 from mcp_bridge.openai_clients import utils as openai_utils
 from mcp_bridge.openai_clients.streamChatCompletion import merge_streaming_tool_calls
 from mcp_bridge.telemetry import setup_tracing
+from mcp_bridge.tool_mappers.mcp2openaiConverters import mcp2openai
 
 
 def test_load_config_rejects_path_traversal(tmp_path: Path) -> None:
@@ -74,6 +78,216 @@ def test_settings_accepts_http_style_mcp_server_config() -> None:
     assert server.requestTimeout == 10000
 
 
+def test_transport_selection_uses_sse_client_for_sse_style_urls() -> None:
+    server_config = SSEMCPServer(
+        type="http",
+        url="http://localhost:11403/sse",
+        auth={"type": "none"},
+    )
+
+    client_class = MCPClientManager._get_client_class(server_config)
+
+    assert client_class is SseClient
+
+
+def test_http_transport_supports_jsonrpc_post_handshake(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, payload: dict[str, object]) -> None:
+            self._payload = payload
+            self.headers = {"content-type": "application/json"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aread(self) -> bytes:
+            return json.dumps(self._payload).encode("utf-8")
+
+        @property
+        def text(self) -> str:
+            return json.dumps(self._payload)
+
+    class FakeStream:
+        def __init__(self, response: FakeResponse) -> None:
+            self._response = response
+
+        async def __aenter__(self) -> FakeResponse:
+            return self._response
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, object]] = []
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def stream(self, method: str, url: str, headers: dict[str, str] | None = None, json: object | None = None):
+            self.calls.append((url, method, json))
+            return FakeStream(FakeResponse({"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "demo", "version": "1.0"}}}))
+
+    import mcp_bridge.mcp_clients.SseClient as sse_module
+
+    monkeypatch.setattr(sse_module.httpx, "AsyncClient", lambda *args, **kwargs: FakeClient())
+
+    session = sse_module.HttpMcpSession(url="https://mcp.grep.app")
+
+    response = asyncio.run(session.initialize())
+
+    assert response.protocolVersion == "2024-11-05"
+
+
+def test_http_transport_sends_initialized_notification_with_empty_params(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, payload: dict[str, object]) -> None:
+            self._payload = payload
+            self.headers = {"content-type": "application/json"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aread(self) -> bytes:
+            return json.dumps(self._payload).encode("utf-8")
+
+    class FakeStream:
+        def __init__(self, response: FakeResponse) -> None:
+            self._response = response
+
+        async def __aenter__(self) -> FakeResponse:
+            return self._response
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def stream(self, method: str, url: str, headers: dict[str, str] | None = None, json: object | None = None):
+            self.calls.append({"method": method, "url": url, "payload": json})
+            return FakeStream(FakeResponse({"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "demo", "version": "1.0"}}}))
+
+    import mcp_bridge.mcp_clients.SseClient as sse_module
+
+    client = FakeClient()
+    monkeypatch.setattr(sse_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
+
+    session = sse_module.HttpMcpSession(url="https://mcp.grep.app")
+    asyncio.run(session.initialize())
+
+    notification_payload = next(call["payload"] for call in client.calls if call["payload"].get("method") == "notifications/initialized")
+    assert notification_payload.get("method") == "notifications/initialized"
+    assert notification_payload.get("params") == {}
+
+
+def test_http_transport_treats_empty_notification_response_as_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    class EmptyResponse:
+        status_code = 202
+        headers = {"content-length": "0"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aread(self) -> bytes:
+            return b""
+
+        async def aiter_lines(self):
+            if False:
+                yield ""
+            return
+
+        async def __aenter__(self) -> "EmptyResponse":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def stream(self, method: str, url: str, headers: dict[str, str] | None = None, json: object | None = None):
+            self.calls.append({"method": method, "url": url, "payload": json})
+            return EmptyResponse()
+
+    import mcp_bridge.mcp_clients.SseClient as sse_module
+
+    client = FakeClient()
+    monkeypatch.setattr(sse_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
+
+    session = sse_module.HttpMcpSession(url="https://mcp.grep.app")
+    response = asyncio.run(session._post_jsonrpc({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}))
+
+    assert response == {}
+
+
+def test_http_transport_normalizes_null_params_to_empty_objects(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aread(self) -> bytes:
+            return b'{"jsonrpc":"2.0","id":1,"result":{}}'
+
+    class FakeStream:
+        def __init__(self, response: FakeResponse) -> None:
+            self._response = response
+
+        async def __aenter__(self) -> FakeResponse:
+            return self._response
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def stream(self, method: str, url: str, headers: dict[str, str] | None = None, json: object | None = None):
+            self.calls.append({"method": method, "url": url, "payload": json})
+            return FakeStream(FakeResponse())
+
+    import mcp_bridge.mcp_clients.SseClient as sse_module
+
+    client = FakeClient()
+    monkeypatch.setattr(sse_module.httpx, "AsyncClient", lambda *args, **kwargs: client)
+
+    session = sse_module.HttpMcpSession(url="https://mcp.grep.app")
+    response = asyncio.run(session._send_request("tools/list", None, result_type=SimpleNamespace(model_validate=lambda value: value)))
+
+    assert response == {}
+    assert client.calls[0]["payload"]["params"] == {}
+
+
 def test_settings_preserves_disabled_flag_for_stdio_servers() -> None:
     settings = Settings(
         mcp_servers={
@@ -118,6 +332,46 @@ def test_get_client_from_tool_returns_none_when_discovery_times_out() -> None:
     assert result is None
 
 
+def test_chat_completion_add_tools_initializes_client_manager_when_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeSession:
+        async def list_tools(self):
+            return SimpleNamespace(
+                tools=[
+                    SimpleNamespace(
+                        name="searchGitHub",
+                        description="Search GitHub",
+                        inputSchema={"type": "object"},
+                    )
+                ]
+            )
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.name = "demo"
+            self.config = None
+            self.session = FakeSession()
+
+        async def _wait_for_session(self, *args: object, **kwargs: object) -> None:
+            return None
+
+    async def fake_initialize() -> None:
+        openai_utils.ClientManager.clients = {"demo": FakeClient()}
+
+    monkeypatch.setattr(openai_utils.ClientManager, "initialize", fake_initialize)
+    monkeypatch.setattr(openai_utils.ClientManager, "get_clients", lambda: list(openai_utils.ClientManager.clients.items()))
+
+    request = SimpleNamespace(
+        messages=[SimpleNamespace(role="user", content="Find a GitHub example")],
+        tools=None,
+    )
+
+    result = asyncio.run(openai_utils.chat_completion_add_tools(request))
+
+    assert len(result.tools) == 1
+    tool = result.tools[0]
+    assert getattr(getattr(tool, "function", None), "name", None) == "searchGitHub"
+
+
 def test_get_client_from_tool_uses_default_timeout_when_lookup_hangs() -> None:
     class HangingSession:
         async def list_tools(self):
@@ -157,6 +411,35 @@ def test_get_client_from_tool_returns_fast_when_a_slow_client_is_present() -> No
 
     start = time.perf_counter()
     result = asyncio.run(manager.get_client_from_tool("alpha", timeout=0.1))
+    elapsed = time.perf_counter() - start
+
+    assert result is not None
+    assert elapsed < 0.15
+
+
+def test_get_client_from_tool_does_not_wait_for_unready_clients() -> None:
+    class UnreadyClient:
+        def __init__(self):
+            self.name = "slow"
+            self.session = None
+
+        async def _wait_for_session(self, timeout: int | None = None, http_error: bool = True):
+            await asyncio.sleep(0.2)
+            raise TimeoutError("not ready")
+
+    class FastClient:
+        def __init__(self):
+            self.name = "fast"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[SimpleNamespace(name="alpha")])
+
+    manager = MCPClientManager()
+    manager.clients = {"slow": UnreadyClient(), "fast": FastClient()}
+
+    start = time.perf_counter()
+    result = asyncio.run(asyncio.wait_for(manager.get_client_from_tool("alpha", timeout=0.2), timeout=0.3))
     elapsed = time.perf_counter() - start
 
     assert result is not None
@@ -330,6 +613,34 @@ def test_chat_completion_add_tools_does_not_wait_for_every_unavailable_session(m
 
     assert result.tools == []
     assert elapsed < 0.08
+
+
+def test_mcp2openai_preserves_tool_name_for_search_github() -> None:
+    tool = SimpleNamespace(name="searchGitHub", description="Search GitHub", inputSchema={"type": "object"})
+
+    converted = mcp2openai(tool)
+
+    assert converted.function.name == "searchGitHub"
+    assert "GitHub repositories" in converted.function.description
+
+
+def test_maybe_add_tool_selection_instructions_injects_system_hint_for_github_search() -> None:
+    request = SimpleNamespace(
+        tools=[SimpleNamespace(name="searchGitHub", description="Search GitHub", inputSchema={"type": "object"})],
+        messages=[SimpleNamespace(role="user", content="Find a React useEffect cleanup example")],
+    )
+
+    updated_request = openai_utils.maybe_add_tool_selection_instructions(request)
+
+    assert updated_request.messages[0].role == "system"
+    assert "searchGitHub" in updated_request.messages[0].content
+    assert updated_request.messages[1].role == "user"
+
+
+def test_get_tool_timeout_uses_environment_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCP_BRIDGE_TOOL_TIMEOUT_SECONDS", "45")
+
+    assert chat_completion_module.get_tool_timeout_seconds() == 45
 
 
 def test_merge_streaming_tool_calls_accumulates_multiple_calls() -> None:

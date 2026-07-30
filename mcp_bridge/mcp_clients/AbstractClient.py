@@ -58,8 +58,10 @@ except ImportError:  # pragma: no cover - allows minimal environments to import
 from mcp_bridge.mcp_clients.session import McpClientSession
 from mcp_bridge.models.mcpServerStatus import McpServerStatus
 
-DEFAULT_MCP_TIMEOUT_SECONDS = 30.0
+DEFAULT_MCP_TIMEOUT_SECONDS = 60.0
 DEFAULT_MCP_SESSION_TIMEOUT_SECONDS = 30
+DEFAULT_MCP_SESSION_POLL_INTERVAL_SECONDS = 0.5
+DEFAULT_MCP_SESSION_LOG_INTERVAL_SECONDS = 5.0
 
 
 class GenericMcpClient(ABC):
@@ -274,9 +276,13 @@ class GenericMcpClient(ABC):
         if self.session is not None:
             return
 
-        effective_timeout = timeout if timeout is not None else DEFAULT_MCP_SESSION_TIMEOUT_SECONDS
-        effective_log_interval = log_interval if log_interval is not None else 10.0
-        effective_poll_interval = poll_interval if poll_interval is not None else 1.0
+        configured_timeout = None
+        if hasattr(self, "config") and getattr(self.config, "requestTimeout", None):
+            configured_timeout = float(self.config.requestTimeout) / 1000.0
+
+        effective_timeout = timeout if timeout is not None else configured_timeout if configured_timeout is not None else DEFAULT_MCP_SESSION_TIMEOUT_SECONDS
+        effective_log_interval = log_interval if log_interval is not None else DEFAULT_MCP_SESSION_LOG_INTERVAL_SECONDS
+        effective_poll_interval = poll_interval if poll_interval is not None else DEFAULT_MCP_SESSION_POLL_INTERVAL_SECONDS
         started_at = asyncio.get_running_loop().time()
         last_logged_at = started_at
         warned = False
