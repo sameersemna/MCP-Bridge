@@ -47,7 +47,7 @@ except ImportError:  # pragma: no cover - fallback for minimal environments
     class CreateChatCompletionStreamResponse(BaseModel):
         choices: list[StreamChoice] = Field(default_factory=list)
 
-from .utils import call_tools, chat_completion_add_tools
+from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content
 from mcp_bridge.models import SSEData
 from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
@@ -294,12 +294,10 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
 
             logger.debug(f"tool call result content: {tool_call_result.content}")
 
-            tools_content = [
-                {"type": "text", "text": part.text}
-                for part in filter(lambda x: getattr(x, "type", None) == "text", tool_call_result.content)
-            ]
-            if len(tools_content) == 0:
-                tools_content = [{"type": "text", "text": "the tool call result is empty"}]
+            tools_content = sanitize_tool_result_content(
+                tool_call.get("name", ""),
+                tool_call_result,
+            )
             request.messages.append(
                 ChatCompletionRequestMessage.model_validate(
                     {

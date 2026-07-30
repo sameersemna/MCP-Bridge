@@ -46,6 +46,7 @@ content="Use the 'fetch' MCP tool to retrieve the title of https://shamela.org a
 content="Use the 'context7' MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
 content="Use the 'duckduckgo-search' MCP tool to search for the latest news about AI from $randomCountry specifically in $randomDate and summarize the top 3 articles. $instructionsTools"
 content="Generate a report regarding the issue between Abu Iyaad of Salafi Publications and Shaikh Arafat al-Muhammadi. $instructionsTools"
+content="Generate a report regarding the accusations on the Rulers of UAE made by Bilal as-Salimee, Fawwaz al-Madkhali and Ali al-Hudhayfi al-Yemeni, search both English and Arabic sources, mention the URL links of sources to cross-verify. $instructionsTools"
 
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content: $content"
 

@@ -9,7 +9,7 @@ from lmos_openai_types import (
     ChatCompletionRequestMessage,
 )
 
-from .utils import call_tools, chat_completion_add_tools
+from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content
 from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
@@ -235,14 +235,10 @@ async def chat_completions(
                         )
                         tool_errors.append(f"{tool_call.function.name}: {error_text}")
 
-                    tools_content = [
-                        {"type": "text", "text": part.text}
-                        for part in filter(lambda x: getattr(x, "type", None) == "text", tool_call_result.content)
-                    ]
-                    if len(tools_content) == 0:
-                        tools_content = [
-                            {"type": "text", "text": "the tool call result is empty"}
-                        ]
+                    tools_content = sanitize_tool_result_content(
+                        tool_call.function.name,
+                        tool_call_result,
+                    )
                     request.messages.append(
                         ChatCompletionRequestMessage.model_validate(
                             {

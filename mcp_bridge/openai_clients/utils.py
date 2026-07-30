@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import json
 import os
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -175,7 +176,103 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
     return request
 
 
+DEFAULT_MAX_SEARCH_RESULTS = 5
+
 tracer = trace.get_tracer("mcp_bridge.openai_clients.utils")
+
+
+def _is_search_tool(tool_name: str | None) -> bool:
+    if tool_name is None:
+        return False
+
+    normalized_name = tool_name.lower()
+    return normalized_name == "search" or normalized_name in {"searchgithub", "search_web", "web_search", "websearch"}
+
+
+def get_max_search_results() -> int:
+    raw_value = os.getenv("MCP_BRIDGE_MAX_SEARCH_RESULTS")
+    if raw_value is None:
+        return DEFAULT_MAX_SEARCH_RESULTS
+
+    try:
+        return max(1, int(raw_value))
+    except ValueError:
+        logger.warning(f"invalid MCP_BRIDGE_MAX_SEARCH_RESULTS value: {raw_value}; using default {DEFAULT_MAX_SEARCH_RESULTS}")
+        return DEFAULT_MAX_SEARCH_RESULTS
+
+
+def clamp_search_tool_arguments(tool_name: str | None, arguments: Any) -> Any:
+    if not isinstance(arguments, dict) or not _is_search_tool(tool_name):
+        return arguments
+
+    max_results = get_max_search_results()
+    if "max_results" not in arguments:
+        arguments = dict(arguments)
+        arguments["max_results"] = max_results
+        return arguments
+
+    try:
+        requested_max_results = int(arguments["max_results"])
+    except (TypeError, ValueError):
+        requested_max_results = max_results
+
+    clamped = min(requested_max_results, max_results)
+    if clamped < 1:
+        clamped = 1
+
+    updated_arguments = dict(arguments)
+    updated_arguments["max_results"] = clamped
+    return updated_arguments
+
+
+def truncate_search_result_text(tool_name: str | None, text: str | None, max_results: int | None = None) -> str | None:
+    if not isinstance(text, str) or not _is_search_tool(tool_name):
+        return text
+
+    result_limit = max_results if max_results is not None else get_max_search_results()
+    if result_limit < 1:
+        result_limit = 1
+
+    pattern = re.compile(r"(?m)^\s*(\d+)\.\s")
+    matches = list(pattern.finditer(text))
+    if len(matches) <= result_limit:
+        return text
+
+    kept_parts: list[str] = []
+    for index in range(result_limit):
+        start = matches[index].start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        part = text[start:end].strip()
+        if part:
+            kept_parts.append(part)
+
+    summary = "\n\n".join(kept_parts)
+    return (
+        f"Showing the first {result_limit} search results only; additional results were omitted to avoid overwhelming the tool loop.\n\n"
+        + summary
+    )
+
+
+def sanitize_tool_result_content(tool_name: str | None, tool_call_result: Any, max_results: int | None = None) -> list[dict[str, str]]:
+    if not hasattr(tool_call_result, "content"):
+        return []
+
+    text_parts: list[dict[str, str]] = []
+    for part in getattr(tool_call_result, "content", []):
+        if getattr(part, "type", None) != "text":
+            continue
+
+        original_text = getattr(part, "text", "") or ""
+        sanitized_text = truncate_search_result_text(tool_name, original_text, max_results=max_results)
+        if sanitized_text is None:
+            sanitized_text = original_text
+
+        text_parts.append({"type": "text", "text": sanitized_text})
+
+    if not text_parts:
+        return [{"type": "text", "text": "the tool call result is empty"}]
+
+    return text_parts
 
 
 def _span_payload_preview(payload: Any, max_len: int = 160) -> str:
@@ -280,7 +377,7 @@ async def call_tool(
 
         try:
             span.set_attribute("mcp_bridge.tool.client_name", getattr(session, "name", ""))
-            result = await session.call_tool(tool_call_name, tool_call_args, timeout)
+            result = await session.call_tool(tool_call_name, clamp_search_tool_arguments(tool_call_name, tool_call_args), timeout)
         except Exception as exc:
             logger.error(f"tool dispatch failed for {tool_call_name}: {exc}")
             span.set_attribute("mcp_bridge.tool.client_name", getattr(session, "name", ""))
