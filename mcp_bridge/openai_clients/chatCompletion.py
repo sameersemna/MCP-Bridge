@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from typing import Any
 
@@ -181,7 +182,10 @@ def _build_tool_loop_stop_response(
             else:
                 summary_parts.append(_format_weak_evidence_fallback(stop_reason))
 
-    response.choices[0].message.content = " ".join(summary_parts)
+    content = "\n\n".join(summary_parts)
+    if content:
+        content = content.strip()
+    response.choices[0].message.content = content
     response.choices[0].message.tool_calls = None
     response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
     return response
@@ -234,7 +238,7 @@ def _summarize_tool_messages(messages: list[str]) -> str:
         return ""
 
     if len(cleaned_messages) == 1:
-        return cleaned_messages[0]
+        return _summarize_message_content(cleaned_messages[0])
 
     unique_messages = []
     seen: set[str] = set()
@@ -246,7 +250,7 @@ def _summarize_tool_messages(messages: list[str]) -> str:
         unique_messages.append(normalized)
 
     if len(unique_messages) == 1:
-        return unique_messages[0]
+        return _summarize_message_content(unique_messages[0])
 
     filtered_messages = []
     for message in unique_messages:
@@ -255,18 +259,67 @@ def _summarize_tool_messages(messages: list[str]) -> str:
         filtered_messages.append(message)
 
     if not filtered_messages:
-        return unique_messages[0]
+        return _summarize_message_content(unique_messages[0])
 
     if len(filtered_messages) == 1:
-        return filtered_messages[0]
+        return _summarize_message_content(filtered_messages[0])
 
     if len(filtered_messages) == 2:
-        return f"{filtered_messages[0]} Also, {filtered_messages[1]}"
+        return _summarize_message_content(f"{filtered_messages[0]} Also, {filtered_messages[1]}")
 
     if len(filtered_messages) <= 3:
-        return "; ".join(filtered_messages)
+        return _summarize_message_content("; ".join(filtered_messages))
 
-    return "; ".join(filtered_messages[:3]) + " …"
+    return _summarize_message_content("; ".join(filtered_messages[:3]) + " …")
+
+
+def _summarize_message_content(text: str, *, max_chars: int = 320) -> str:
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return ""
+
+    if "search results" in cleaned.lower():
+        return _extract_search_result_titles(cleaned)
+
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    return cleaned[: max_chars - 1].rstrip() + "…"
+
+
+def _extract_search_result_titles(text: str, *, max_items: int = 3) -> str:
+    normalized = " ".join(text.split())
+    titles: list[str] = []
+    seen_titles: set[str] = set()
+
+    for match in re.finditer(r"(?<!\w)(\d+)\.\s+(.+?)(?=(?:\s+\d+\.\s+)|\s+URL:|\s+Summary:|$)", normalized):
+        title = match.group(2).strip()
+        title = re.sub(r"\s+URL:.*$", "", title)
+        title = re.sub(r"\s+Summary:.*$", "", title)
+        title = re.sub(r"\s{2,}", " ", title)
+        title = title.strip(" -")
+        if not title:
+            continue
+        normalized_title = " ".join(title.split())
+        if normalized_title.lower() in seen_titles:
+            continue
+        seen_titles.add(normalized_title.lower())
+        titles.append(normalized_title)
+        if len(titles) >= max_items:
+            break
+
+    if titles:
+        return "Top findings: " + "; ".join(titles)
+
+    return _compact_text(text)
+
+
+def _compact_text(text: str, *, max_chars: int = 320) -> str:
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    return cleaned[: max_chars - 1].rstrip() + "…"
 
 
 def _clean_tool_message(message: str) -> str:
@@ -310,21 +363,32 @@ def _is_trivial_summary_fragment(message: str) -> bool:
 def _format_tool_synthesis(summary: str, stop_reason: str, tool_messages: list[str]) -> str:
     is_search_like = any(_looks_like_search_result(message) for message in tool_messages)
     if is_search_like:
+        title = "Search results gathered"
         if stop_reason == "max_tool_turns":
-            return "\n\rDisclaimer: I found some search results, but the workflow reached its turn limit before I could fully synthesize them. Evidence gathered so far: " + summary
-        return "\n\rDisclaimer: I collected some search results before stopping. Evidence gathered so far: " + summary
+            intro = "I found some search results, but the workflow reached its turn limit before I could fully synthesize them."
+        else:
+            intro = "I collected some search results before stopping."
+    else:
+        title = "Useful information gathered"
+        if stop_reason == "max_tool_turns":
+            intro = "I found several relevant leads, but the workflow reached its turn limit before I could fully synthesize them."
+        else:
+            intro = "I collected some information before stopping."
 
-    if stop_reason == "max_tool_turns":
-        return "\n\rDisclaimer: I found several relevant leads, but the workflow reached its turn limit before I could fully synthesize them. Evidence gathered so far: " + summary
-
-    return "\n\rDisclaimer: I collected some information before stopping. Evidence gathered so far: " + summary
+    bullets = [
+        intro,
+        "",
+        f"**{title}**",
+        "- " + summary.replace("\n", "\n- ") if summary else "- No additional details were gathered.",
+    ]
+    return "\n".join(bullets)
 
 
 def _format_weak_evidence_fallback(stop_reason: str) -> str:
     if stop_reason == "max_tool_turns":
-        return "I wasn't able to gather enough reliable evidence before the workflow reached its turn limit. A narrower or more specific query may produce better results."
+        return "**No reliable evidence gathered**\n\nI wasn't able to gather enough reliable evidence before the workflow reached its turn limit. A narrower or more specific query may produce better results."
 
-    return "I wasn't able to gather enough reliable evidence before stopping. A narrower or more specific query may produce better results."
+    return "**No reliable evidence gathered**\n\nI wasn't able to gather enough reliable evidence before stopping. A narrower or more specific query may produce better results."
 
 
 def _looks_like_search_result(message: str) -> bool:
@@ -496,9 +560,13 @@ async def chat_completions(
                         )
 
                     if getattr(tool_call_result, "content", None):
+                        preview_text = str(tool_call_result.content)
+                        preview_text = " ".join(preview_text.split())
+                        if len(preview_text) > 400:
+                            preview_text = preview_text[:397].rstrip() + "…"
                         logger.debug(
                             "tool call result content preview: "
-                            f"{str(tool_call_result.content)[:400]}"
+                            f"{preview_text}"
                         )
 
                     if getattr(tool_call_result, "isError", False):

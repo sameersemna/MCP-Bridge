@@ -296,7 +296,11 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
             )
 
             if getattr(tool_call_result, 'content', None):
-                logger.debug(f"tool call result content preview: {str(tool_call_result.content)[:400]}")
+                preview_text = str(tool_call_result.content)
+                preview_text = " ".join(preview_text.split())
+                if len(preview_text) > 400:
+                    preview_text = preview_text[:397].rstrip() + "…"
+                logger.debug(f"tool call result content preview: {preview_text}")
 
             tools_content = sanitize_tool_result_content(
                 tool_call.get("name", ""),
