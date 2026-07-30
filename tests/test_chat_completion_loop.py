@@ -1,7 +1,10 @@
 import time
 
+from lmos_openai_types import ChatCompletionRequestMessage, CreateChatCompletionResponse, FinishReason1
+
 from mcp_bridge.openai_clients.chatCompletion import (
     DEFAULT_MAX_TOOL_TURNS,
+    _build_tool_loop_stop_response,
     _format_tool_loop_stop_message,
     _record_timing,
     should_continue_tool_loop,
@@ -54,3 +57,52 @@ def test_format_tool_loop_stop_message_includes_turns_and_limit():
     message = _format_tool_loop_stop_message(tool_turns_completed=3, max_tool_turns=12)
 
     assert message == "stopping tool loop after 3 turn(s); max_tool_turns=12"
+
+
+def test_build_tool_loop_stop_response_replaces_tool_calls_with_summary():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call_test",
+                                "type": "function",
+                                "function": {"name": "google_search", "arguments": '{"query": "test"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "created": 1,
+            "model": "test-model",
+            "object": "chat.completion",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "partial search results"}],
+                "tool_call_id": "call_test",
+            }
+        )
+    ]
+
+    stop_response = _build_tool_loop_stop_response(
+        response,
+        stop_reason="max_tool_turns",
+        request_messages=request_messages,
+    )
+
+    assert stop_response.choices[0].message.content is not None
+    assert "partial search results" in stop_response.choices[0].message.content
+    assert stop_response.choices[0].message.tool_calls is None
+    assert stop_response.choices[0].finish_reason == FinishReason1.stop

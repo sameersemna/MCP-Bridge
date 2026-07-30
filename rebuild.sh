@@ -13,9 +13,6 @@ echo "Building the MCP bridge completed. Starting..."
 docker compose up -d
 sleep 2
 
-echo ''
-echo "Checking MCP bridge health at http://localhost:11410/health..."
-curl "http://localhost:11410/health" | jq
 # if curl -fsS "http://localhost:11410/health" >/dev/null; then
 #   echo "Bridge is healthy."
 # else

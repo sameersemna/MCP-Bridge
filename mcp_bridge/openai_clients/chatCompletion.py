@@ -7,6 +7,7 @@ from lmos_openai_types import (
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
     ChatCompletionRequestMessage,
+    FinishReason1,
 )
 
 from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content
@@ -80,6 +81,64 @@ def _format_tool_loop_stop_message(*, tool_turns_completed: int, max_tool_turns:
     return f"stopping tool loop after {tool_turns_completed} turn(s); max_tool_turns={max_tool_turns}"
 
 
+def _extract_tool_message_text(message: ChatCompletionRequestMessage) -> str | None:
+    message_root = getattr(message, "root", message)
+    role_value = getattr(getattr(message_root, "role", None), "value", getattr(message_root, "role", None))
+    if role_value != "tool":
+        return None
+
+    content = getattr(message_root, "content", None)
+    if content is None:
+        return None
+
+    if hasattr(content, "root"):
+        content = content.root
+
+    if isinstance(content, list):
+        text_chunks: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text_value = item.get("text")
+                if isinstance(text_value, str) and text_value:
+                    text_chunks.append(text_value)
+            elif hasattr(item, "text"):
+                text_value = getattr(item, "text", None)
+                if isinstance(text_value, str) and text_value:
+                    text_chunks.append(text_value)
+            elif hasattr(item, "root") and hasattr(item.root, "text"):
+                text_value = getattr(item.root, "text", None)
+                if isinstance(text_value, str) and text_value:
+                    text_chunks.append(text_value)
+        if text_chunks:
+            return " ".join(text_chunks[:2])
+
+    if isinstance(content, str):
+        return content
+
+    return None
+
+
+def _normalize_finish_reason(value: str | FinishReason1 | None) -> FinishReason1 | None:
+    if value is None:
+        return None
+
+    if isinstance(value, FinishReason1):
+        return value
+
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip().lower()
+    mapping = {
+        "stop": FinishReason1.stop,
+        "length": FinishReason1.length,
+        "tool_calls": FinishReason1.tool_calls,
+        "content_filter": FinishReason1.content_filter,
+        "function_call": FinishReason1.function_call,
+    }
+    return mapping.get(normalized)
+
+
 def _build_tool_error_response(response: CreateChatCompletionResponse, tool_errors: list[str]) -> CreateChatCompletionResponse:
     error_summary = "; ".join(tool_errors)
     response.choices[0].message.content = (
@@ -87,7 +146,35 @@ def _build_tool_error_response(response: CreateChatCompletionResponse, tool_erro
         + error_summary
     )
     response.choices[0].message.tool_calls = None
-    response.choices[0].finish_reason = None
+    response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
+    return response
+
+
+def _build_tool_loop_stop_response(
+    response: CreateChatCompletionResponse,
+    *,
+    stop_reason: str,
+    request_messages: list[ChatCompletionRequestMessage],
+) -> CreateChatCompletionResponse:
+    summary_parts: list[str] = []
+    if stop_reason == "max_tool_turns":
+        summary_parts.append("The tool loop was stopped because it reached the configured turn limit.")
+    else:
+        summary_parts.append("The tool loop was stopped before completion.")
+
+    if request_messages:
+        tool_messages = []
+        for message in request_messages:
+            tool_text = _extract_tool_message_text(message)
+            if tool_text:
+                tool_messages.append(tool_text)
+
+        if tool_messages:
+            summary_parts.append("Latest tool output: " + tool_messages[-1])
+
+    response.choices[0].message.content = " ".join(summary_parts)
+    response.choices[0].message.tool_calls = None
+    response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
     return response
 
 
@@ -187,7 +274,11 @@ async def chat_completions(
                         max_tool_turns=max_tool_turns,
                     )
                 )
-                return response
+                return _build_tool_loop_stop_response(
+                    response,
+                    stop_reason="max_tool_turns",
+                    request_messages=request.messages,
+                )
 
             tool_turns_completed += 1
 
