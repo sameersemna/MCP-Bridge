@@ -9,7 +9,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir uv httpx
+RUN pip install --no-cache-dir uv httpx 'duckduckgo-mcp-server[browser]'
 
 WORKDIR /app
 COPY pyproject.toml README.md uv.lock ./
@@ -30,4 +30,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()" || exit 1
 
-ENTRYPOINT ["uv", "run", "--no-dev", "python", "-m", "mcp_bridge.main"]
+USER root
+ENTRYPOINT ["sh", "-c", "mkdir -p /app/logs && chmod 0777 /app/logs && exec uv run --no-dev python -m mcp_bridge.main"]

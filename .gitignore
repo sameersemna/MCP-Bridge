@@ -170,3 +170,4 @@ config.json
 tools.json
 response*.*
 logs/
+tmp/

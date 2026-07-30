@@ -26,6 +26,7 @@ services:
     volumes:
       - ./config.json:/app/config.json
       - ./logs:/app/logs
+      - ./tmp:/tmp
     restart: unless-stopped
 
   jaeger:
