@@ -5,7 +5,10 @@ clear
 
 echo "Rebuilding the MCP bridge and starting it up..."
 # docker compose build --no-cache
-docker compose up -d --build --force-recreate
+# docker compose up -d --build --force-recreate
+
+# docker compose up -d --force-recreate --no-deps mcp-bridge
+docker compose up -d --build --force-recreate --no-deps mcp-bridge
 sleep 2
 
 echo ''

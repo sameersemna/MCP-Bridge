@@ -20,6 +20,7 @@ from loguru import logger
 import json
 
 DEFAULT_MAX_TOOL_TURNS = 12
+MIN_MAX_TOOL_TURNS = 12
 DEFAULT_TOOL_TIMEOUT_SECONDS = 60
 
 
@@ -33,6 +34,26 @@ def get_tool_timeout_seconds() -> int:
     except ValueError:
         logger.warning(f"invalid MCP_BRIDGE_TOOL_TIMEOUT_SECONDS value: {raw_value}; using default {DEFAULT_TOOL_TIMEOUT_SECONDS}")
         return DEFAULT_TOOL_TIMEOUT_SECONDS
+
+
+def get_max_tool_turns() -> int:
+    raw_value = os.getenv("MCP_BRIDGE_MAX_TOOL_TURNS")
+    if raw_value is None:
+        return DEFAULT_MAX_TOOL_TURNS
+
+    try:
+        configured_value = int(raw_value)
+    except ValueError:
+        logger.warning(f"invalid MCP_BRIDGE_MAX_TOOL_TURNS value: {raw_value}; using default {DEFAULT_MAX_TOOL_TURNS}")
+        return DEFAULT_MAX_TOOL_TURNS
+
+    if configured_value < MIN_MAX_TOOL_TURNS:
+        logger.warning(
+            f"configured MCP_BRIDGE_MAX_TOOL_TURNS={configured_value} is below the safe minimum {MIN_MAX_TOOL_TURNS}; using {MIN_MAX_TOOL_TURNS}"
+        )
+        return MIN_MAX_TOOL_TURNS
+
+    return configured_value
 
 
 def _summarize_trace(trace_logger: RequestTraceLogger) -> dict[str, object]:
@@ -82,13 +103,18 @@ def _format_tool_loop_stop_message(*, tool_turns_completed: int, max_tool_turns:
     return f"stopping tool loop after {tool_turns_completed} turn(s); max_tool_turns={max_tool_turns}"
 
 
-def _extract_tool_message_text(message: ChatCompletionRequestMessage) -> str | None:
+def _extract_tool_message_text(message: ChatCompletionRequestMessage | Any) -> str | None:
     message_root = getattr(message, "root", message)
-    role_value = getattr(getattr(message_root, "role", None), "value", getattr(message_root, "role", None))
+    if isinstance(message_root, dict):
+        role_value = message_root.get("role")
+        content = message_root.get("content")
+    else:
+        role_value = getattr(getattr(message_root, "role", None), "value", getattr(message_root, "role", None))
+        content = getattr(message_root, "content", None)
+
     if role_value != "tool":
         return None
 
-    content = getattr(message_root, "content", None)
     if content is None:
         return None
 
@@ -115,6 +141,11 @@ def _extract_tool_message_text(message: ChatCompletionRequestMessage) -> str | N
 
     if isinstance(content, str):
         return content
+
+    if isinstance(content, dict):
+        text_value = content.get("text")
+        if isinstance(text_value, str):
+            return text_value
 
     return None
 
@@ -146,6 +177,204 @@ def _build_tool_error_response(response: CreateChatCompletionResponse, tool_erro
         "I wasn't able to complete the request because one or more MCP tool calls failed: "
         + error_summary
     )
+    response.choices[0].message.tool_calls = None
+    response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
+    return response
+
+
+def _should_stop_tool_loop_on_tool_errors(
+    tool_errors: list[str],
+    request_messages: list[ChatCompletionRequestMessage],
+) -> bool:
+    if not tool_errors:
+        return False
+
+    if not request_messages:
+        return True
+
+    evidence_text = "\n".join(
+        _extract_tool_message_text(message) or ""
+        for message in request_messages
+        if getattr(getattr(message, "root", message), "role", None) == "tool"
+    )
+    if not evidence_text.strip():
+        return True
+
+    timeout_error_count = sum(1 for error in tool_errors if "timeout" in error.lower() or "timed out" in error.lower())
+    if timeout_error_count and len(tool_errors) <= 3:
+        return False
+
+    return True
+
+
+def _build_synthesis_request(
+    request: CreateChatCompletionRequest,
+    *,
+    stop_reason: str,
+    request_messages: list[ChatCompletionRequestMessage],
+) -> CreateChatCompletionRequest:
+    synthesis_request = request.model_copy(deep=True)
+    synthesis_request.messages = list(request_messages)
+    synthesis_request.tools = []
+
+    instruction = (
+        "Synthesize the information gathered from the tool results into a helpful final answer. "
+        "Use the evidence already present in the conversation, be concise but complete, and "
+        "avoid mentioning the tool-loop limit unless it is necessary to explain missing information."
+    )
+    if stop_reason == "max_tool_turns":
+        instruction += " The tool workflow stopped early, so if some information is incomplete, say so clearly."
+
+    synthesis_request.messages.append(
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "user",
+                "content": instruction,
+            }
+        )
+    )
+    return synthesis_request
+
+
+async def _try_synthesize_tool_loop_result(
+    client: Any,
+    request: CreateChatCompletionRequest,
+    *,
+    stop_reason: str,
+    request_messages: list[ChatCompletionRequestMessage],
+) -> CreateChatCompletionResponse | None:
+    synthesis_request = _build_synthesis_request(
+        request,
+        stop_reason=stop_reason,
+        request_messages=request_messages,
+    )
+    try:
+        text = (
+            await client.post(
+                "/chat/completions",
+                json=synthesis_request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+            )
+        ).text
+        response = CreateChatCompletionResponse.model_validate_json(text)
+        if response.choices and getattr(response.choices[0].message, "content", None) is not None:
+            response.choices[0].message.tool_calls = None
+            response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
+            return response
+    except Exception as exc:
+        logger.warning(f"tool loop synthesis request failed: {exc}")
+
+    return None
+
+
+def _extract_message_text(message: ChatCompletionRequestMessage | Any) -> str:
+    message_root = getattr(message, "root", message)
+    if isinstance(message_root, dict):
+        content = message_root.get("content")
+    else:
+        content = getattr(message_root, "content", None)
+
+    if content is None:
+        return ""
+
+    if hasattr(content, "root"):
+        content = content.root
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        text_chunks: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text_value = item.get("text")
+                if isinstance(text_value, str) and text_value:
+                    text_chunks.append(text_value)
+            elif hasattr(item, "text"):
+                text_value = getattr(item, "text", None)
+                if isinstance(text_value, str) and text_value:
+                    text_chunks.append(text_value)
+            elif hasattr(item, "root") and hasattr(item.root, "text"):
+                text_value = getattr(item.root, "text", None)
+                if isinstance(text_value, str) and text_value:
+                    text_chunks.append(text_value)
+        return " ".join(text_chunks)
+
+    if isinstance(content, dict):
+        text_value = content.get("text")
+        if isinstance(text_value, str):
+            return text_value
+
+    if hasattr(content, "text"):
+        text_value = getattr(content, "text", None)
+        if isinstance(text_value, str):
+            return text_value
+
+    return ""
+
+
+def _extract_tool_calls(message: ChatCompletionRequestMessage | Any) -> list[Any]:
+    tool_calls = getattr(message, "tool_calls", None)
+    if tool_calls is None:
+        return []
+
+    if hasattr(tool_calls, "root"):
+        tool_calls = tool_calls.root
+
+    if isinstance(tool_calls, list):
+        return tool_calls
+
+    if isinstance(tool_calls, tuple):
+        return list(tool_calls)
+
+    if isinstance(tool_calls, dict):
+        return [tool_calls]
+
+    return []
+
+
+def _should_use_empty_content_fallback(message: ChatCompletionRequestMessage, finish_reason: str | None) -> bool:
+    if finish_reason in {"tool_calls", "function_call"}:
+        return False
+
+    if _extract_tool_calls(message):
+        return False
+
+    return _extract_message_text(message).strip() == ""
+
+
+def _build_empty_content_response(
+    response: CreateChatCompletionResponse,
+    *,
+    request_messages: list[ChatCompletionRequestMessage],
+    stop_reason: str,
+) -> CreateChatCompletionResponse:
+    summary_parts: list[str] = []
+    if stop_reason == "empty_response":
+        summary_parts.append("The model returned an empty completion, so I synthesized the available tool evidence into a concise answer.")
+    else:
+        summary_parts.append("The model returned an empty completion, so I synthesized the available context into a concise answer.")
+
+    if request_messages:
+        tool_messages = []
+        for message in request_messages:
+            tool_text = _extract_tool_message_text(message)
+            if tool_text:
+                tool_messages.append(tool_text)
+
+        if tool_messages:
+            informative_messages = [
+                message for message in tool_messages if message and not _looks_like_empty_search_fallback(message)
+            ]
+            if informative_messages:
+                compact_summary = _summarize_tool_messages(informative_messages)
+                summary_parts.append(_format_tool_synthesis(compact_summary, stop_reason, tool_messages))
+            else:
+                summary_parts.append(_format_weak_evidence_fallback(stop_reason))
+
+    content = "\n\n".join(summary_parts)
+    if content:
+        content = content.strip()
+    response.choices[0].message.content = content
     response.choices[0].message.tool_calls = None
     response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
     return response
@@ -418,7 +647,7 @@ async def chat_completions(
     if trace_logger is not None:
         trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
 
-    max_tool_turns = int(os.getenv("MCP_BRIDGE_MAX_TOOL_TURNS", str(DEFAULT_MAX_TOOL_TURNS)))
+    max_tool_turns = get_max_tool_turns()
     tool_timeout_seconds = get_tool_timeout_seconds()
     tool_turns_completed = 0
     tool_client_cache: dict[str, Any] = {}
@@ -448,12 +677,34 @@ async def chat_completions(
                         "llm_response",
                         response=response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
                     )
+
+                if logger.level("DEBUG").name == "DEBUG":
+                    response_preview = response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True)
+                    compact_preview = json.dumps(response_preview, ensure_ascii=False)[:4000]
+                    logger.debug(f"upstream response preview: {compact_preview}")
+                    if response.choices:
+                        message = response.choices[0].message
+                        logger.debug(
+                            "upstream message summary: "
+                            f"role={getattr(getattr(message, 'root', message), 'role', None)}; "
+                            f"content_len={len(_extract_message_text(message))}; "
+                            f"tool_call_count={len(_extract_tool_calls(message))}; "
+                            f"finish_reason={getattr(response.choices[0].finish_reason, 'value', None)}"
+                        )
             except Exception as e:
                 logger.error("error parsing upstream chat completion response")
                 logger.error(e)
                 return None
 
             msg = response.choices[0].message
+            if _should_use_empty_content_fallback(msg, finish_reason_value := response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None):
+                logger.warning("upstream model returned empty assistant content without tool calls; synthesizing a fallback response from tool evidence")
+                return _build_empty_content_response(
+                    response,
+                    request_messages=request.messages,
+                    stop_reason="empty_response",
+                )
+
             msg = ChatCompletionRequestMessage(
                 role="assistant",
                 content=msg.content,
@@ -484,14 +735,20 @@ async def chat_completions(
             logger.debug("tool calls found")
             if trace_logger is not None:
                 trace_logger.record("tool_call_decision", finish_reason=finish_reason_value)
-            tool_call_items = [
-                (
-                    tool_call.function.name,
-                    tool_call.function.arguments,
-                )
-                for tool_call in response.choices[0].message.tool_calls.root
-                if getattr(tool_call.function, "name", None) is not None
-            ]
+            tool_call_items = []
+            for tool_call in _extract_tool_calls(response.choices[0].message):
+                function = getattr(tool_call, "function", None)
+                if isinstance(function, dict):
+                    name = function.get("name")
+                    arguments = function.get("arguments")
+                else:
+                    name = getattr(function, "name", None)
+                    arguments = getattr(function, "arguments", None)
+
+                if name is None:
+                    continue
+
+                tool_call_items.append((name, arguments))
 
             if not tool_call_items:
                 logger.warning("model returned a tool-like finish reason without tool calls; stopping loop")
@@ -509,6 +766,14 @@ async def chat_completions(
                         max_tool_turns=max_tool_turns,
                     )
                 )
+                synthesized_response = await _try_synthesize_tool_loop_result(
+                    client,
+                    request,
+                    stop_reason="max_tool_turns",
+                    request_messages=request.messages,
+                )
+                if synthesized_response is not None:
+                    return synthesized_response
                 return _build_tool_loop_stop_response(
                     response,
                     stop_reason="max_tool_turns",
@@ -517,6 +782,14 @@ async def chat_completions(
 
             if _has_only_weak_tool_evidence(request.messages):
                 logger.warning("tool evidence is weak or empty; stopping tool loop before another iteration")
+                synthesized_response = await _try_synthesize_tool_loop_result(
+                    client,
+                    request,
+                    stop_reason="max_tool_turns",
+                    request_messages=request.messages,
+                )
+                if synthesized_response is not None:
+                    return synthesized_response
                 return _build_tool_loop_stop_response(
                     response,
                     stop_reason="max_tool_turns",
@@ -536,26 +809,33 @@ async def chat_completions(
                     trace_logger.record("mcp_tool_calls", tool_calls=[{"name": name, "arguments": arguments} for name, arguments in tool_call_items])
 
                 tool_errors: list[str] = []
+                tool_call_messages = _extract_tool_calls(response.choices[0].message)
                 for tool_call, tool_call_result in zip(
-                    response.choices[0].message.tool_calls.root,
+                    tool_call_messages,
                     tool_call_results,
                 ):
+                    function = getattr(tool_call, "function", None)
+                    if isinstance(function, dict):
+                        tool_name = function.get("name", "unknown")
+                    else:
+                        tool_name = getattr(function, "name", "unknown")
+
                     if tool_call_result is None:
                         logger.warning(
-                            f"tool call '{getattr(tool_call.function, 'name', 'unknown')}' returned no result"
+                            f"tool call '{tool_name}' returned no result"
                         )
                         continue
 
                     logger.debug(
                         "tool call completed: "
-                        f"name={tool_call.function.name}; "
+                        f"name={tool_name}; "
                         f"parts={len(getattr(tool_call_result, 'content', []) or [])}; "
                         f"isError={getattr(tool_call_result, 'isError', False)}"
                     )
                     if trace_logger is not None:
                         trace_logger.record(
                             "mcp_tool_result",
-                            tool_name=tool_call.function.name,
+                            tool_name=tool_name,
                             result=tool_call_result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
                         )
 
@@ -578,10 +858,10 @@ async def chat_completions(
                             ),
                             "tool call failed",
                         )
-                        tool_errors.append(f"{tool_call.function.name}: {error_text}")
+                        tool_errors.append(f"{tool_name}: {error_text}")
 
                     tools_content = sanitize_tool_result_content(
-                        tool_call.function.name,
+                        tool_name,
                         tool_call_result,
                     )
                     request.messages.append(
@@ -589,7 +869,7 @@ async def chat_completions(
                             {
                                 "role": "tool",
                                 "content": tools_content,
-                                "tool_call_id": tool_call.id,
+                                "tool_call_id": getattr(tool_call, "id", None) if not isinstance(tool_call, dict) else tool_call.get("id"),
                             }
                         )
                     )
@@ -604,7 +884,26 @@ async def chat_completions(
                     logger.debug("sending next iteration of chat completion request")
 
                 if tool_errors:
+                    should_stop = _should_stop_tool_loop_on_tool_errors(tool_errors, request.messages)
+                    if should_stop:
+                        logger.warning(
+                            f"tool call failures detected; stopping tool loop: {'; '.join(tool_errors)}"
+                        )
+                        return _build_tool_error_response(response, tool_errors)
+
                     logger.warning(
-                        f"tool call failures detected; stopping tool loop: {'; '.join(tool_errors)}"
+                        f"tool call failures detected but partial evidence exists; continuing with synthesis: {'; '.join(tool_errors)}"
                     )
-                    return _build_tool_error_response(response, tool_errors)
+                    synthesized_response = await _try_synthesize_tool_loop_result(
+                        client,
+                        request,
+                        stop_reason="max_tool_turns",
+                        request_messages=request.messages,
+                    )
+                    if synthesized_response is not None:
+                        return synthesized_response
+                    return _build_empty_content_response(
+                        response,
+                        request_messages=request.messages,
+                        stop_reason="empty_response",
+                    )

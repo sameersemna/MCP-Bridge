@@ -64,15 +64,22 @@ Use tools transparently and efficiently to deliver accurate, well-reasoned, up-t
 
 content="Use the 'fetch' MCP tool to retrieve the title of https://shamela.org and respond with only the title."
 content="Use the 'context7' MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
-content="Use the 'duckduckgo-search' MCP tool to search for the latest news about AI from $randomCountry specifically in $randomDate and summarize the top 3 articles. $instructionsTools"
-content="Generate a report regarding the issue between Abu Iyaad of Salafi Publications and Shaikh Arafat al-Muhammadi. $instructionsTools"
+content="Use the 'duckduckgo-search' MCP tool to search for the latest news about AI from $randomCountry specifically in $randomDate and summarize the top 3 articles."
+content="Generate a report regarding the issue between Abu Iyaad of Salafi Publications and Shaikh Arafat al-Muhammadi."
 content="Generate a report regarding the accusations on the Rulers of UAE made by Bilal as-Salimee, Fawwaz al-Madkhali and Ali al-Hudhayfi al-Yemeni, search both English and Arabic sources, mention the URL links of sources to cross-verify."
+content="Objective: Get online references and sources regarding the issue between Abu Iyaad of Salafi Publications and Shaikh Arafat al-Muhammadi, and the accusations on the Rulers of UAE made by Bilal as-Saalimee, Fawwaz al-Madkhali and Ali al-Hudhayfi al-Yemeni. Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
+
+content="*Topic*: Is calling someone a 'Zionist' considered making Takfir? If someone calls a Muslim Ruler as a 'Zionist', does that mean they are making Takfir on the ruler? Is this person considered a Takfiri or Khariji?"
+objective="*Objective*: Get online references and sources regarding a given Islamic Topic, search in Arabic and English sources, give precedence to Salafi stream, get verbatim original Arabic text along with English translations. Cite each source with URL links to cross-verify. Provide a summary of the findings."
+content="$objective
+$content"
 
 systemContent="$instructionsRole
 ---
 $instructionsTools"
 
-echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content: $content"
+echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content:
+$content"
 
 dataPost=$(jq -n --arg model "$MODEL" --arg content "$content" --arg systemContent "$systemContent" '{
   model: $model,

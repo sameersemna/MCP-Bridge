@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import os
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -62,6 +63,36 @@ DEFAULT_MCP_TIMEOUT_SECONDS = 60.0
 DEFAULT_MCP_SESSION_TIMEOUT_SECONDS = 30
 DEFAULT_MCP_SESSION_POLL_INTERVAL_SECONDS = 0.5
 DEFAULT_MCP_SESSION_LOG_INTERVAL_SECONDS = 5.0
+DEFAULT_MCP_TOOL_RETRY_COUNT = 1
+DEFAULT_MCP_TOOL_RETRY_DELAY_SECONDS = 0.25
+
+
+def get_tool_retry_count() -> int:
+    raw_value = os.getenv("MCP_BRIDGE_TOOL_RETRY_COUNT")
+    if raw_value is None:
+        return DEFAULT_MCP_TOOL_RETRY_COUNT
+
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        logger.warning(
+            f"invalid MCP_BRIDGE_TOOL_RETRY_COUNT value: {raw_value}; using default {DEFAULT_MCP_TOOL_RETRY_COUNT}"
+        )
+        return DEFAULT_MCP_TOOL_RETRY_COUNT
+
+
+def get_tool_retry_delay_seconds() -> float:
+    raw_value = os.getenv("MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS")
+    if raw_value is None:
+        return DEFAULT_MCP_TOOL_RETRY_DELAY_SECONDS
+
+    try:
+        return max(0.0, float(raw_value))
+    except ValueError:
+        logger.warning(
+            f"invalid MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS value: {raw_value}; using default {DEFAULT_MCP_TOOL_RETRY_DELAY_SECONDS}"
+        )
+        return DEFAULT_MCP_TOOL_RETRY_DELAY_SECONDS
 
 
 class GenericMcpClient(ABC):
@@ -165,32 +196,48 @@ class GenericMcpClient(ABC):
         if not isinstance(normalized_arguments, dict):
             raise HTTPException(status_code=400, detail="Tool arguments must be a JSON object")
 
-        try:
-            async with asyncio.timeout(timeout):
-                async with self._session_lock:
-                    session = self.session
-                    if session is None:
-                        raise RuntimeError("MCP session is not ready")
-                    return await session.call_tool(
-                        name=name,
-                        arguments=normalized_arguments,
+        retry_count = get_tool_retry_count()
+        retry_delay = get_tool_retry_delay_seconds()
+
+        for attempt in range(retry_count + 1):
+            try:
+                async with asyncio.timeout(timeout):
+                    async with self._session_lock:
+                        session = self.session
+                        if session is None:
+                            raise RuntimeError("MCP session is not ready")
+                        return await session.call_tool(
+                            name=name,
+                            arguments=normalized_arguments,
+                        )
+
+            except asyncio.TimeoutError:
+                if attempt < retry_count:
+                    logger.warning(
+                        f"timed out calling tool {name} on attempt {attempt + 1}; retrying in {retry_delay:.2f}s"
                     )
+                    await asyncio.sleep(retry_delay)
+                    continue
 
-        except asyncio.TimeoutError:
-            logger.error(f"timed out calling tool: {name}")
-            return CallToolResult(
-                content=[
-                    TextContent(type="text", text=f"Timeout Error calling {name}")
-                ],
-                isError=True,
-            )
+                logger.error(f"timed out calling tool: {name}")
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=f"Timeout Error calling {name}")
+                    ],
+                    isError=True,
+                )
 
-        except McpError as e:
-            logger.error(f"error calling {name}: {e}")
-            return CallToolResult(
-                content=[TextContent(type="text", text=f"Error calling {name}: {e}")],
-                isError=True,
-            )
+            except McpError as e:
+                logger.error(f"error calling {name}: {e}")
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error calling {name}: {e}")],
+                    isError=True,
+                )
+
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"Timeout Error calling {name}")],
+            isError=True,
+        )
 
     async def get_prompt(
         self, prompt: str, arguments: dict[str, str] | None

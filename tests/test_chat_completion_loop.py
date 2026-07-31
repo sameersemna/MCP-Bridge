@@ -1,13 +1,23 @@
+import asyncio
 import time
 
-from lmos_openai_types import ChatCompletionRequestMessage, CreateChatCompletionResponse, FinishReason1
+from lmos_openai_types import ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateChatCompletionResponse, FinishReason1
+
+from mcp_bridge.mcp_clients.AbstractClient import CallToolResult, GenericMcpClient, TextContent
 
 from mcp_bridge.openai_clients.chatCompletion import (
     DEFAULT_MAX_TOOL_TURNS,
+    _build_empty_content_response,
+    _build_synthesis_request,
     _build_tool_loop_stop_response,
+    _extract_message_text,
+    _extract_tool_message_text,
     _format_tool_loop_stop_message,
     _has_only_weak_tool_evidence,
     _record_timing,
+    _should_stop_tool_loop_on_tool_errors,
+    _should_use_empty_content_fallback,
+    get_max_tool_turns,
     should_continue_tool_loop,
 )
 
@@ -18,6 +28,39 @@ class DummyTraceLogger:
 
     def record(self, event_type: str, **payload: object) -> None:
         self.events.append({"type": event_type, **payload})
+
+
+def test_call_tool_retries_once_after_timeout(monkeypatch):
+    class DummyClient(GenericMcpClient):
+        async def _maintain_session(self) -> None:
+            return None
+
+    async def run_test() -> None:
+        client = DummyClient("dummy")
+        attempts = 0
+
+        class DummySession:
+            async def call_tool(self, name: str, arguments: dict[str, object]):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise asyncio.TimeoutError()
+                return CallToolResult(content=[TextContent(type="text", text="ok")], isError=False)
+
+        client.session = DummySession()
+
+        async def fake_sleep(_: float) -> None:
+            return None
+
+        monkeypatch.setattr("mcp_bridge.mcp_clients.AbstractClient.asyncio.sleep", fake_sleep)
+
+        result = await client.call_tool("search", {"query": "test"}, timeout=1)
+
+        assert attempts == 2
+        assert result.isError is False
+        assert result.content[0].text == "ok"
+
+    asyncio.run(run_test())
 
 
 def test_should_continue_tool_loop_when_under_limit():
@@ -43,6 +86,29 @@ def test_should_continue_tool_loop_when_tool_calls_are_present_even_if_finish_re
 def test_default_tool_turn_limit_supports_multi_step_tool_workflows():
     assert DEFAULT_MAX_TOOL_TURNS >= 5
     assert should_continue_tool_loop("tool_calls", tool_call_count=1, iteration_count=4, max_tool_turns=DEFAULT_MAX_TOOL_TURNS) is True
+
+
+def test_get_max_tool_turns_clamps_too_low_environment_values(monkeypatch):
+    monkeypatch.setenv("MCP_BRIDGE_MAX_TOOL_TURNS", "4")
+
+    assert get_max_tool_turns() == DEFAULT_MAX_TOOL_TURNS
+
+
+def test_tool_loop_uses_partial_evidence_when_tool_call_times_out():
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Search results gathered from a prior successful call"}],
+                "tool_call_id": "call_1",
+            }
+        )
+    ]
+
+    assert _should_stop_tool_loop_on_tool_errors(
+        ["fetch_content: Timeout Error calling fetch_content"],
+        request_messages,
+    ) is False
 
 
 def test_record_timing_emits_elapsed_ms():
@@ -93,6 +159,104 @@ def test_format_tool_loop_stop_message_includes_turns_and_limit():
     message = _format_tool_loop_stop_message(tool_turns_completed=3, max_tool_turns=12)
 
     assert message == "stopping tool loop after 3 turn(s); max_tool_turns=12"
+
+
+def test_should_use_empty_content_fallback_only_when_there_are_no_tool_calls():
+    empty_message = ChatCompletionRequestMessage.model_validate({"role": "assistant", "content": ""})
+    assert _should_use_empty_content_fallback(empty_message, "stop") is True
+
+    tool_call_message = ChatCompletionRequestMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_test",
+                    "type": "function",
+                    "function": {"name": "search", "arguments": "{}"},
+                }
+            ],
+        }
+    )
+    assert _should_use_empty_content_fallback(tool_call_message, "tool_calls") is False
+
+
+def test_extract_message_text_handles_mapping_messages():
+    message = {"content": [{"type": "text", "text": "hello from a mapping"}]}
+
+    assert _extract_message_text(message) == "hello from a mapping"
+
+
+def test_extract_tool_message_text_handles_mapping_tool_messages():
+    message = {"role": "tool", "content": [{"type": "text", "text": "useful evidence from a mapping"}]}
+
+    assert _extract_tool_message_text(message) == "useful evidence from a mapping"
+
+
+def test_build_empty_content_response_uses_tool_evidence_when_available():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "chatcmpl-test",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "created": 1,
+            "model": "test-model",
+            "object": "chat.completion",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+    )
+    request_messages = [
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "partial search results"}],
+                "tool_call_id": "call_test",
+            }
+        )
+    ]
+
+    fallback_response = _build_empty_content_response(
+        response,
+        request_messages=request_messages,
+        stop_reason="empty_response",
+    )
+
+    content = fallback_response.choices[0].message.content or ""
+    assert "partial search results" in content
+    assert fallback_response.choices[0].message.tool_calls is None
+    assert fallback_response.choices[0].finish_reason == FinishReason1.stop
+
+
+def test_build_synthesis_request_adds_instruction_and_drops_tools():
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "messages": [
+                {"role": "system", "content": "You are helpful."},
+            ],
+            "model": "test-model",
+        }
+    )
+    synthesis_request = _build_synthesis_request(
+        request,
+        stop_reason="max_tool_turns",
+        request_messages=[ChatCompletionRequestMessage.model_validate({"role": "tool", "content": [{"type": "text", "text": "useful evidence"}], "tool_call_id": "call_1"})],
+    )
+
+    assert synthesis_request.tools == []
+    last_message = synthesis_request.messages[-1]
+    last_role = getattr(getattr(last_message, "root", last_message), "role", None)
+    last_role_value = getattr(last_role, "value", last_role)
+    assert last_role_value == "user"
+    last_content = getattr(getattr(last_message, "root", last_message), "content", None)
+    assert "synthesiz" in str(last_content).lower()
 
 
 def test_build_tool_loop_stop_response_replaces_tool_calls_with_summary():
