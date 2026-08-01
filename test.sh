@@ -9,6 +9,9 @@ TIMEOUT="${TIMEOUT:-600}"
 BASE_URL="http://localhost:${PORT}"
 OLLAMA_URL="http://localhost:11434"
 
+# glm-5.2:cloud
+# kimi-k3:cloud
+
 rm -f response.json response.md
 
 echo "Checking MCP bridge health at ${BASE_URL}/health..."
@@ -69,9 +72,17 @@ content="Generate a report regarding the issue between Abu Iyaad of Salafi Publi
 content="Generate a report regarding the accusations on the Rulers of UAE made by Bilal as-Salimee, Fawwaz al-Madkhali and Ali al-Hudhayfi al-Yemeni, search both English and Arabic sources, mention the URL links of sources to cross-verify."
 content="Objective: Get online references and sources regarding the issue between Abu Iyaad of Salafi Publications and Shaikh Arafat al-Muhammadi, and the accusations on the Rulers of UAE made by Bilal as-Saalimee, Fawwaz al-Madkhali and Ali al-Hudhayfi al-Yemeni. Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
 
-content="*Topic*: Is calling someone a 'Zionist' considered making Takfir? If someone calls a Muslim Ruler as a 'Zionist', does that mean they are making Takfir on the ruler? Is this person considered a Takfiri or Khariji?"
 objective="*Objective*: Get online references and sources regarding a given Islamic Topic, search in Arabic and English sources, give precedence to Salafi stream, get verbatim original Arabic text along with English translations. Cite each source with URL links to cross-verify. Provide a summary of the findings."
+content="*Topic*: Is calling someone a 'Zionist' considered making Takfir? If someone calls a Muslim Ruler as a 'Zionist', does that mean they are making Takfir on the ruler? Is this person considered a Takfiri or Khariji?"
+content="*Topic*: Is considering someone a supporter of 'Wahadatul Adyaan' considered making Takfir? If someone calls a Muslim Ruler as such, does that mean they are making Takfir on the ruler? Is this person considered a Takfiri or Khariji?"
+content="*Topic*: Shaikh Nizar ibn Hashim al-Sudani and Shaikh Bilal Abdul Ghani al-Saalimee have called the Rulers of UAE as 'Zionists' (in their Facebook posts) and have accused them of supporting the Jews and the Zionist agenda. This has been spread by them and their followers on Social Media like Facebook, Twitter and Telegram. Is this considered making Takfir on the Rulers of UAE? Is this person considered a Takfiri or Khariji? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
+content="*Topic*: Shaikh Bilal Abdul Ghani al-Saalimee have called the Rulers of UAE and Shaikh Muhammad Ghalib al-Umari as calling to 'Wahadatul Adyaan' (in his Facebook posts), is this considered making Takfir on the Rulers of UAE and Shaikh Muhammad Ghalib al-Umari? Is this person considered a Takfiri or Khariji? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
+content="*Topic*: Shaikh Fawwaz al-Madkhali has criticized the Rulers of UAE using Newspaper articles and reports of western media (in his Facebook posts) and have accused them of supporting the Jews and the Zionist agenda. This has been spread by him and his followers on Social Media like Facebook, Twitter and Telegram. Is this considered making Takfir on the Rulers of UAE? Is this person considered a Takfiri or Khariji? Is it from the Salafi principles to use reports from Newspapers and western media against Muslim rulers? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
+content="*Topic*: Shaikh Fawwaz al-Madkhali, Shaikh Nizar al-Sudani and Shaikh Bilal al-Salimihas criticized the Rulers of UAE, there is another person named Shaikh Ali al-Hudhayfi al-Yemeni in their camp, I want to search for his posts and statements regarding the Rulers of UAE, and see if he has also accused them of supporting the Jews and the Zionist agenda, and if he has also called them as 'Zionists' or supporters of 'Wahadatul Adyaan'. Is this considered making Takfir on the Rulers of UAE? Is this person considered a Takfiri or Khariji? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
+
+content=$(cat content.md)
 content="$objective
+---
 $content"
 
 systemContent="$instructionsRole

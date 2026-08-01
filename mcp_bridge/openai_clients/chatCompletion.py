@@ -201,7 +201,10 @@ def _should_stop_tool_loop_on_tool_errors(
         return True
 
     timeout_error_count = sum(1 for error in tool_errors if "timeout" in error.lower() or "timed out" in error.lower())
-    if timeout_error_count and len(tool_errors) <= 3:
+    if timeout_error_count and evidence_text.strip():
+        return False
+
+    if len(tool_errors) <= 3:
         return False
 
     return True

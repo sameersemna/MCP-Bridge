@@ -184,6 +184,17 @@ class GenericMcpClient(ABC):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
+    async def _reset_session(self, reason: str) -> None:
+        logger.info(f"resetting MCP session for {self.name}: {reason}")
+        self.session = None
+        self._offline = False
+
+        if not self._started:
+            return
+
+        await self.stop()
+        await self.start()
+
     async def call_tool(
         self, name: str, arguments: dict[str, Any] | None, timeout: int | None = None
     ) -> CallToolResult:
@@ -205,6 +216,9 @@ class GenericMcpClient(ABC):
                     async with self._session_lock:
                         session = self.session
                         if session is None:
+                            await self._wait_for_session(timeout=timeout, http_error=False)
+                            session = self.session
+                        if session is None:
                             raise RuntimeError("MCP session is not ready")
                         return await session.call_tool(
                             name=name,
@@ -212,14 +226,16 @@ class GenericMcpClient(ABC):
                         )
 
             except asyncio.TimeoutError:
+                await self._reset_session(f"timeout calling tool {name}")
+
                 if attempt < retry_count:
-                    logger.warning(
+                    logger.debug(
                         f"timed out calling tool {name} on attempt {attempt + 1}; retrying in {retry_delay:.2f}s"
                     )
                     await asyncio.sleep(retry_delay)
                     continue
 
-                logger.error(f"timed out calling tool: {name}")
+                logger.warning(f"timed out calling tool after {retry_count + 1} attempts: {name}")
                 return CallToolResult(
                     content=[
                         TextContent(type="text", text=f"Timeout Error calling {name}")
@@ -228,6 +244,7 @@ class GenericMcpClient(ABC):
                 )
 
             except McpError as e:
+                await self._reset_session(f"error calling tool {name}: {e}")
                 logger.error(f"error calling {name}: {e}")
                 return CallToolResult(
                     content=[TextContent(type="text", text=f"Error calling {name}: {e}")],
