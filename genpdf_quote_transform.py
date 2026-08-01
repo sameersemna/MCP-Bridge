@@ -1,6 +1,13 @@
 import html
+import re
 import sys
 from pathlib import Path
+
+RTL_CHAR_PATTERN = re.compile(r"[\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]")
+
+
+def _is_rtl_text(text: str) -> bool:
+    return bool(RTL_CHAR_PATTERN.search(text))
 
 
 def transform_markdown_quotes(src_path: Path | str, out_path: Path | str) -> None:
@@ -20,11 +27,18 @@ def transform_markdown_quotes(src_path: Path | str, out_path: Path | str) -> Non
             content = "\n".join(part.strip() for part in quote_lines if part.strip())
             if content:
                 paragraphs = [part.strip() for part in content.splitlines() if part.strip()]
-                wrapped = "\n".join(
-                    f'<p dir="rtl" lang="ar">{html.escape(paragraph)}</p>'
-                    for paragraph in paragraphs
-                )
-                out_lines.append('<blockquote class="report-quote" dir="rtl" lang="ar">')
+                if any(_is_rtl_text(paragraph) for paragraph in paragraphs):
+                    wrapped = "\n".join(
+                        f'<p dir="rtl" lang="ar">{html.escape(paragraph)}</p>'
+                        for paragraph in paragraphs
+                    )
+                    out_lines.append('<blockquote class="report-quote" dir="rtl" lang="ar">')
+                else:
+                    wrapped = "\n".join(
+                        f'<p dir="ltr" lang="en">{html.escape(paragraph)}</p>'
+                        for paragraph in paragraphs
+                    )
+                    out_lines.append('<blockquote class="report-quote" dir="ltr" lang="en">')
                 out_lines.append('<div class="report-quote-body">')
                 out_lines.append(wrapped)
                 out_lines.append("</div>")

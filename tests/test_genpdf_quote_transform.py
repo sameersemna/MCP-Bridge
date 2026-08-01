@@ -24,3 +24,19 @@ def test_transform_markdown_quotes_wraps_blockquotes_in_rtl_container(tmp_path: 
     assert '<p dir="rtl" lang="ar">' in rendered
     assert 'Intro' in rendered
     assert 'Tail' in rendered
+
+
+def test_transform_markdown_quotes_leaves_ltr_blockquotes_as_ltr(tmp_path: Path) -> None:
+    input_path = tmp_path / "input.md"
+    output_path = tmp_path / "output.md"
+    input_path.write_text(
+        "Intro\n\n> This is an English quote.\n\nTail\n",
+        encoding="utf-8",
+    )
+
+    transform_markdown_quotes(input_path, output_path)
+
+    rendered = output_path.read_text(encoding="utf-8")
+    assert '<blockquote class="report-quote"' in rendered
+    assert 'dir="rtl"' not in rendered
+    assert '<p dir="ltr" lang="en">' in rendered

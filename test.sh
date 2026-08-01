@@ -35,6 +35,16 @@ echo "Randomly selected date: $randomDate"
 randomCountry=$(shuf -n 1 -e "Argentina" "Australia" "Brazil" "Canada" "Denmark" "Egypt" "France" "Germany" "India" "Japan" "Kenya" "Mexico" "Norway" "Peru" "South Korea" "Spain" "Thailand" "United Kingdom" "Vietnam")
 echo "Randomly selected country: $randomCountry"
 
+FYI="# FYI
+My Location: Berlin, Germany
+My Timezone: Europe/Berlin
+My Date: $(date -d "now" +'%B %d, %Y')
+My Time: $(date -d "now" +'%H:%M:%S (%z)')
+My preferred language: English
+Other languages I can understand: Arabic, Urdu, Hindi, Marathi, German"
+echo "$FYI"
+echo '------------------------------'
+
 # content="Use the 'fetch' MCP tool to retrieve the title of https://shamela.org and respond with only the title."
 # content="Use the 'context7' MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
 # content="Use the 'duckduckgo-search' MCP tool to search for the latest news about AI from $randomCountry specifically in $randomDate and summarize the top 3 articles."
@@ -50,14 +60,16 @@ echo "Randomly selected country: $randomCountry"
 # content="*Topic*: Shaikh Fawwaz al-Madkhali, Shaikh Nizar al-Sudani and Shaikh Bilal al-Salimihas criticized the Rulers of UAE, there is another person named Shaikh Ali al-Hudhayfi al-Yemeni in their camp, I want to search for his posts and statements regarding the Rulers of UAE, and see if he has also accused them of supporting the Jews and the Zionist agenda, and if he has also called them as 'Zionists' or supporters of 'Wahadatul Adyaan'. Is this considered making Takfir on the Rulers of UAE? Is this person considered a Takfiri or Khariji? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
 
 content=$(cat ./prompts/content.md)
-contentShort=$(cat ./prompts/content.md | head -c 250 | tr '\n' ' ')
+contentShort=$(cat ./prompts/content.md | head -c 250)
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content:
 ---
 $contentShort ...
 ---"
 objective=$(cat ./prompts/content.md)
-content="${objective}
+content="${FYI}
 ---
+${objective}
+
 ${content}
 "
 
@@ -94,4 +106,4 @@ fi
 echo "Extracting content from response.json and saving to response.md..."
 jq -r '.choices[0].message.content' response.json > response.md
 
-cat response.md
+cat response.md | head -c 250
