@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_FILE="${1:-$SCRIPT_DIR/response.md}"
-INPUT_FILE_JSON="${1:-$SCRIPT_DIR/response.json}"
+INPUT_FILE_JSON="${2:-$SCRIPT_DIR/response.json}"
 REPORTS_DIR="$SCRIPT_DIR/reports"
 PDF_DIR="$REPORTS_DIR/pdf"
 MD_DIR="$REPORTS_DIR/md"
@@ -42,6 +42,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 TRANSFORMED_INPUT="$TMP_DIR/response.transformed.md"
 python3 "$SCRIPT_DIR/genpdf_quote_transform.py" "$INPUT_FILE" "$TRANSFORMED_INPUT"
 
+HTML_OUTPUT="$PDF_DIR/${TIMESTAMP}_response.html"
 CSS_FILE="$TMP_DIR/styles.css"
 cat > "$CSS_FILE" <<'EOF'
 @page {
@@ -54,7 +55,7 @@ html {
 }
 
 body {
-  font-family: "DejaVu Sans", Arial, sans-serif;
+  font-family: "DejaVu Sans", "Noto Naskh Arabic", "Amiri", "Arial Unicode MS", Arial, sans-serif;
   font-size: 14.5pt;
   line-height: 1.58;
   color: #1f2933;
@@ -120,7 +121,6 @@ th, td {
   padding: 0.45em 0.55em;
   text-align: left;
   vertical-align: top;
-  word-break: break-word;
 }
 
 th {
@@ -147,14 +147,10 @@ blockquote.report-quote {
   overflow: hidden;
   overflow-wrap: break-word;
   word-wrap: break-word;
-  word-break: break-word;
-  line-break: loose;
   white-space: normal;
   hyphens: auto;
-  -webkit-hyphens: auto;
-  text-align: start;
-  direction: inherit;
-  unicode-bidi: plaintext;
+  text-align: right;
+  direction: rtl;
 }
 
 blockquote.report-quote .report-quote-body {
@@ -163,14 +159,10 @@ blockquote.report-quote .report-quote-body {
   max-width: 100%;
   overflow-wrap: break-word;
   word-wrap: break-word;
-  word-break: break-word;
-  line-break: loose;
   white-space: normal;
   hyphens: auto;
-  -webkit-hyphens: auto;
-  text-align: start;
-  direction: inherit;
-  unicode-bidi: plaintext;
+  text-align: right;
+  direction: rtl;
 }
 
 blockquote.report-quote p,
@@ -182,14 +174,10 @@ blockquote.report-quote ol {
   max-width: 100%;
   overflow-wrap: break-word;
   word-wrap: break-word;
-  word-break: break-word;
-  line-break: loose;
   white-space: normal;
   hyphens: auto;
-  -webkit-hyphens: auto;
-  text-align: start;
-  direction: inherit;
-  unicode-bidi: plaintext;
+  text-align: right;
+  direction: rtl;
 }
 
 code,
@@ -200,7 +188,6 @@ pre {
 
 pre {
   padding: 0.6em;
-  overflow-x: auto;
   border-radius: 4px;
 }
 
@@ -218,21 +205,20 @@ pandoc "$TRANSFORMED_INPUT" \
   --from markdown+raw_html \
   --standalone \
   --metadata title="$TITLE" \
-  --pdf-engine=wkhtmltopdf \
-  --pdf-engine-opt=--page-size \
-  --pdf-engine-opt=A4 \
-  --pdf-engine-opt=--margin-top \
-  --pdf-engine-opt=0.9cm \
-  --pdf-engine-opt=--margin-bottom \
-  --pdf-engine-opt=0.9cm \
-  --pdf-engine-opt=--margin-left \
-  --pdf-engine-opt=1.0cm \
-  --pdf-engine-opt=--margin-right \
-  --pdf-engine-opt=1.0cm \
-  --pdf-engine-opt=--zoom \
-  --pdf-engine-opt=1.12 \
+  --metadata charset="utf-8" \
   --css "$CSS_FILE" \
-  -o "$OUTPUT_FILE"
+  -t html5 \
+  -o "$HTML_OUTPUT"
+
+if command -v weasyprint >/dev/null 2>&1; then
+  weasyprint \
+    --stylesheet "$CSS_FILE" \
+    "$HTML_OUTPUT" "$OUTPUT_FILE"
+else
+  echo "WeasyPrint not available; please install it to generate PDFs." >&2
+  exit 1
+fi
 
 echo "PDF saved to: $OUTPUT_FILE"
 echo "Markdown copy saved to: $MARKDOWN_OUTPUT"
+echo "HTML copy saved to: $HTML_OUTPUT"

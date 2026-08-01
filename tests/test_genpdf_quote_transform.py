@@ -12,15 +12,15 @@ def test_transform_markdown_quotes_wraps_blockquotes_in_rtl_container(tmp_path: 
     input_path = tmp_path / "input.md"
     output_path = tmp_path / "output.md"
     input_path.write_text(
-        "Intro\n\n> Arabic text\n> English translation\n\nTail\n",
+        "Intro\n\n> مرحبا بالعالم\n> English translation\n\nTail\n",
         encoding="utf-8",
     )
 
     transform_markdown_quotes(input_path, output_path)
 
     rendered = output_path.read_text(encoding="utf-8")
-    assert '<blockquote class="report-quote" dir="auto" lang="ar">' in rendered
+    assert '<blockquote class="report-quote" dir="rtl" lang="ar">' in rendered
     assert '<div class="report-quote-body">' in rendered
-    assert '<p dir="auto">' in rendered
+    assert '<p dir="rtl" lang="ar">' in rendered
     assert 'Intro' in rendered
     assert 'Tail' in rendered

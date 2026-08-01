@@ -21,9 +21,10 @@ def transform_markdown_quotes(src_path: Path | str, out_path: Path | str) -> Non
             if content:
                 paragraphs = [part.strip() for part in content.splitlines() if part.strip()]
                 wrapped = "\n".join(
-                    f'<p dir="auto">{html.escape(paragraph)}</p>' for paragraph in paragraphs
+                    f'<p dir="rtl" lang="ar">{html.escape(paragraph)}</p>'
+                    for paragraph in paragraphs
                 )
-                out_lines.append('<blockquote class="report-quote" dir="auto" lang="ar">')
+                out_lines.append('<blockquote class="report-quote" dir="rtl" lang="ar">')
                 out_lines.append('<div class="report-quote-body">')
                 out_lines.append(wrapped)
                 out_lines.append("</div>")
