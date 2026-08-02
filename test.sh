@@ -107,3 +107,6 @@ echo "Extracting content from response.json and saving to response.md..."
 jq -r '.choices[0].message.content' response.json > response.md
 
 cat response.md | head -c 250
+
+# bolt://localhost:7687
+# curl http://localhost:7474 neo4j password123

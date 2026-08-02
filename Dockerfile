@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 COPY pyproject.toml README.md uv.lock ./
 COPY mcp_bridge/__init__.py mcp_bridge/__init__.py
-RUN uv pip install --system "duckduckgo-mcp-server[browser]" \
+RUN uv pip install --system "duckduckgo-mcp-server[browser]" neo4j-mcp-server \
     && uv sync --frozen --no-dev
 
 COPY mcp_bridge ./mcp_bridge

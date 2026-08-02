@@ -19,7 +19,7 @@ if [[ ! -f "$INPUT_FILE_JSON" ]]; then
   exit 1
 fi
 
-jsonlint -q "$INPUT_FILE_JSON" || { echo "Invalid JSON in $INPUT_FILE_JSON" >&2; exit 1; }
+# jsonlint -q "$INPUT_FILE_JSON" || { echo "Invalid JSON in $INPUT_FILE_JSON" >&2; exit 1; }
 model=$(jq -r '.model' "$INPUT_FILE_JSON")
 created=$(jq -r '.created' "$INPUT_FILE_JSON")
 jq -r '.usage' "$INPUT_FILE_JSON"
