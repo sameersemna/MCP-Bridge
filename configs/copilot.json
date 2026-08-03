@@ -1,0 +1,69 @@
+[
+	{
+		"name": "AutoOllama",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"models": [
+			{
+				"id": "AutoOllama",
+				"name": "AutoOllama",
+				"url": "http://promaxgb10-6116:11435",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 16000
+			}
+		]
+	},
+	{
+		"name": "Ollama",
+		"vendor": "ollama-models",
+		"url": "http://promaxgb10-6116:11434"
+	},
+	{
+		"name": "OpenRouter",
+		"vendor": "openrouter",
+		"apiKey": "${input:chat.lm.secret.-cb2e192}"
+	},
+	{
+		"name": "Ollama Cloud",
+		"vendor": "customendpoint",
+		"apiKey": "${input:chat.lm.secret.-49b7888d}",
+		"apiType": "chat-completions",
+		"models": [
+			{
+				"id": "deepseek-v4-flash",
+				"name": "DeepSeek V4 Flash (Max Thinking)",
+				"url": "https://ollama.com",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"options": {
+					"think": "max"
+				}
+			},
+			{
+				"id": "deepseek-v4-pro",
+				"name": "DeepSeek V4 Pro (Max Thinking)",
+				"url": "https://ollama.com",
+				"toolCalling": true,
+				"vision": false,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"options": {
+					"think": "max"
+				}
+			},
+			{
+				"id": "minimax-m3",
+				"name": "Minimax M3",
+				"url": "https://ollama.com",
+				"toolCalling": true,
+				"vision": true,
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 16384
+			}
+		]
+	}
+]

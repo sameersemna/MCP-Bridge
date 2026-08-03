@@ -66,3 +66,18 @@ fi
 echo "PDF saved to: $OUTPUT_FILE"
 echo "Markdown copy saved to: $MARKDOWN_OUTPUT"
 echo "HTML copy saved to: $HTML_OUTPUT"
+
+# cp ./prompts/content.md "$MD_DIR/${TIMESTAMP}_prompts_content.md"
+# cp ./prompts/objective.md "$MD_DIR/${TIMESTAMP}_prompts_objective.md"
+# cp ./prompts/system.md "$MD_DIR/${TIMESTAMP}_prompts_system.md"
+
+{ 
+  echo -e "\n=== $TITLE  ===\n"
+  echo -e "\n=== CONTENT ===\n"
+  cat ./prompts/content.md  
+  echo -e "\n=== OBJECTIVE ===\n"
+  cat ./prompts/objective.md
+  echo -e "\n=== SYSTEM ===\n"
+  cat ./prompts/system.md
+} > "$MD_DIR/${TIMESTAMP}_prompt.md"
+

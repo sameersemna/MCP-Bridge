@@ -19,10 +19,17 @@ curl -fsS "${BASE_URL}/health" | jq # >/dev/null
 echo "Bridge is healthy. ---------------------------------"
 
 # echo "Listing models exposed by the bridge:"
-# curl -fsS "${BASE_URL}/v1/models" | jq '.data[].id'
+# curl -fsS "${BASE_URL}/v1/models" | jq > models.json
+# curl -fsS "${BASE_URL}/v1/models" | jq '.data[].id' > models.txt
+# exit
 
 echo "Checking whether ${MODEL} is available in Ollama..."
-if curl -fsS "${OLLAMA_URL}/api/tags" | jq -e --arg model "$MODEL" '.models[] | select(.name == $model)' >/dev/null; then
+# if model name has 'free' in it, then it is a free model and does not need to be pulled from Ollama
+if [[ "$MODEL" == *"/"* ]]; then
+  echo "Model ${MODEL} is being used."
+elif [[ "$MODEL" == *"free"* ]]; then
+  echo "Model ${MODEL} is being used."
+elif curl -fsS "${OLLAMA_URL}/api/tags" | jq -e --arg model "$MODEL" '.models[] | select(.name == $model)' >/dev/null; then
   echo "Model ${MODEL} is available in Ollama."
 else
   echo "Model ${MODEL} was not found in Ollama. Run: ollama pull ${MODEL}" >&2
