@@ -1,0 +1,1369 @@
+{
+  message: {
+    jsonrpc: '2.0',
+    id: 431,
+    result: {
+      tools: [
+        {
+          name: 'check_cookies',
+          description: 'Check the status of Google cookies loaded from your browser export.\n' +
+            '\n' +
+            '    Verifies cookie files exist, shows domain coverage, and reports\n' +
+            '    auto-saved session cookies. Use this to debug CAPTCHA/block issues.\n' +
+            '    ',
+          inputSchema: {
+            properties: {},
+            title: 'check_cookiesArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'check_cookiesOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'open_manual_browser',
+          description: 'Open a visible (headful) browser window so you can manually resolve\n' +
+            '    a Google bot-detection block (CAPTCHA, login, 2FA, consent dialog, ...).\n' +
+            '\n' +
+            '    When this tool is called, the server closes its current headless browser,\n' +
+            '    opens a real visible Chromium window, and waits for you to interact with\n' +
+            '    the page. Once the page is no longer blocked (search results visible,\n' +
+            '    avatar showing, etc.) the system saves the fresh cookies and you can\n' +
+            '    retry your previous request — it will use the updated session.\n' +
+            '\n' +
+            '    When to call this:\n' +
+            '      - You (or a previous tool result) noticed a CAPTCHA or login page\n' +
+            '      - Automatic anti-bot measures failed and you want to take over\n' +
+            '      - Cookies look stale and you want to refresh them via the GUI\n' +
+            "      - You're using this MCP server for the first time and want to log in\n" +
+            '\n' +
+            '    What you can do in the window:\n' +
+            '      - Solve any reCAPTCHA / image challenge\n' +
+            '      - Log into your Google account\n' +
+            '      - Complete 2-step verification / phone check\n' +
+            '      - Accept consent dialogs\n' +
+            '\n' +
+            '    Args:\n' +
+            '        url: The URL to open in the visible browser. Default is Google home\n' +
+            '             which is the right page for logging in.\n' +
+            '        reason: One of the supported reasons for documentation purposes:\n' +
+            '                "captcha", "login", "rate_limit", "consent", "verification",\n' +
+            `                "unknown". Just helps the system log what you're doing.\n` +
+            '        timeout_sec: How long to wait (seconds) before giving up. 0 = use\n' +
+            '                     the server default (MANUAL_INTERVENTION_TIMEOUT_SEC env var,\n' +
+            '                     default 300 = 5 minutes). Set to a higher value for\n' +
+            '                     long 2FA flows, or 0 to wait forever.\n' +
+            '\n' +
+            '    Returns a status message describing the outcome.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              url: {
+                default: 'https://www.google.com',
+                title: 'Url',
+                type: 'string'
+              },
+              reason: { default: 'unknown', title: 'Reason', type: 'string' },
+              timeout_sec: { default: 0, title: 'Timeout Sec', type: 'integer' }
+            },
+            title: 'open_manual_browserArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'open_manual_browserOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'manual_intervention_status',
+          description: 'Report whether a headful intervention window is open, plus info\n' +
+            '    about the most recent one (if any).\n' +
+            '\n' +
+            '    Useful for the LLM to check the state without triggering anything.\n' +
+            '    ',
+          inputSchema: {
+            properties: {},
+            title: 'manual_intervention_statusArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'manual_intervention_statusOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_search',
+          description: 'Search Google and return results with titles, URLs, and snippets.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Search for the best Python web frameworks"\n' +
+            '        - "Find Reddit discussions about home lab setups from the past week"\n' +
+            '        - "Search Stack Overflow for async Python examples"\n' +
+            '        - "Look up recent news about SpaceX in German"\n' +
+            '        - "Get page 2 of results for machine learning tutorials"\n' +
+            '        - "Search Hacker News for posts about Rust programming"\n' +
+            '        - "Find Japanese results about Tokyo restaurants"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The search query string.\n' +
+            '        num_results: Number of results to return (default 5, max 10).\n' +
+            '        time_range: Filter by time. One of: "past_hour", "past_day", "past_week", "past_month", "past_year". Leave empty for no filter.\n' +
+            '        site: Limit results to a specific domain (e.g. "reddit.com", "stackoverflow.com", "github.com", "arxiv.org", "news.ycombinator.com"). Leave empty for all sites.\n' +
+            '        page: Results page number (default 1). Use 2, 3, etc. to get more results.\n' +
+            '        language: Language code for results (e.g. "en", "de", "fr", "es", "ja", "zh"). Leave empty for English.\n' +
+            '        region: Country/region code (e.g. "us", "gb", "de", "fr", "jp"). Leave empty for default.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              num_results: { default: 5, title: 'Num Results', type: 'integer' },
+              time_range: { default: '', title: 'Time Range', type: 'string' },
+              site: { default: '', title: 'Site', type: 'string' },
+              page: { default: 1, title: 'Page', type: 'integer' },
+              language: { default: '', title: 'Language', type: 'string' },
+              region: { default: '', title: 'Region', type: 'string' }
+            },
+            required: [ 'query' ],
+            title: 'google_searchArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_searchOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_news',
+          description: 'Search Google News for recent headlines, articles, and article images.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "What are the latest AI news?"\n' +
+            `        - "Get me today's top headlines"\n` +
+            '        - "Any recent news about the stock market?"\n' +
+            '        - "What happened in the US election?"\n' +
+            '        - "Latest news about climate change"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The news search query string.\n' +
+            '        num_results: Number of results to return (default 5, max 10).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              num_results: { default: 5, title: 'Num Results', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'google_newsArguments',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_scholar',
+          description: 'Search Google Scholar for academic papers, citations, and research.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Find me papers on transformer attention mechanisms"\n' +
+            '        - "Look up academic research about quantum computing"\n' +
+            '        - "Search for citations on CRISPR gene editing"\n' +
+            '        - "Find recent studies about large language models"\n' +
+            '        - "What does the research say about intermittent fasting?"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The academic search query string.\n' +
+            '        num_results: Number of results to return (default 5, max 10).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              num_results: { default: 5, title: 'Num Results', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'google_scholarArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_scholarOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_images',
+          description: 'Search Google Images and return images inline in chat.\n' +
+            '\n' +
+            '    Returns image thumbnails directly in the conversation so you can see them.\n' +
+            '    Also provides source URLs for each image.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Show me images of the Northern Lights"\n' +
+            '        - "Find pictures of modern kitchen designs"\n' +
+            '        - "Search for diagrams of neural network architecture"\n' +
+            '        - "Show me what a DGX Spark looks like"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The image search query string.\n' +
+            '        num_results: Number of image results to return (default 5, max 10).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              num_results: { default: 5, title: 'Num Results', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'google_imagesArguments',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_trends',
+          description: 'Check Google Trends for a topic to see interest over time, related topics, and related queries.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            `        - "What's trending in tech right now?"\n` +
+            '        - "Is Python more popular than JavaScript?"\n' +
+            '        - "Check the trend for electric vehicles"\n' +
+            '        - "What are people searching for about AI?"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The topic or search term to check trends for.\n' +
+            '    ',
+          inputSchema: {
+            properties: { query: { title: 'Query', type: 'string' } },
+            required: [ 'query' ],
+            title: 'google_trendsArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_trendsOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_maps',
+          description: 'Search Google Maps for places, restaurants, businesses, and locations with ratings, prices, addresses, and a map screenshot showing pinned locations.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Find Italian restaurants near Times Square"\n' +
+            '        - "Where are the best coffee shops in Berlin?"\n' +
+            '        - "Search for hotels in Tokyo"\n' +
+            '        - "Find EV charging stations in San Francisco"\n' +
+            '        - "What are the top-rated gyms in London?"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The place search query (e.g. "pizza near Central Park", "hotels in Paris").\n' +
+            '        num_results: Number of results to return (default 5, max 10).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              num_results: { default: 5, title: 'Num Results', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'google_mapsArguments',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_maps_directions',
+          description: 'Get driving/walking/transit/cycling directions between two locations with route info and a map screenshot.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Get directions from Berlin to Munich"\n' +
+            '        - "How do I drive from New York to Boston?"\n' +
+            '        - "Walking directions from the Eiffel Tower to the Louvre"\n' +
+            '        - "Transit route from Shibuya to Akihabara"\n' +
+            `        - "Cycling route from Golden Gate Bridge to Fisherman's Wharf"\n` +
+            '        - "Show me the route from London to Edinburgh"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        origin: Starting location (address, city, or place name).\n' +
+            '        destination: Ending location (address, city, or place name).\n' +
+            '        mode: Travel mode - one of "driving" (default), "walking", "transit", or "cycling".\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              origin: { title: 'Origin', type: 'string' },
+              destination: { title: 'Destination', type: 'string' },
+              mode: { default: 'driving', title: 'Mode', type: 'string' }
+            },
+            required: [ 'origin', 'destination' ],
+            title: 'google_maps_directionsArguments',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_finance',
+          description: 'Look up stock prices, market data, and company information on Google Finance.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            `        - "What's Apple's stock price?"\n` +
+            '        - "How is Tesla stock doing?"\n' +
+            '        - "Look up NVIDIA market cap"\n' +
+            '        - "Get me the stock price for Microsoft"\n' +
+            '        - "How is the S&P 500 doing today?"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: Stock ticker with exchange (e.g. "AAPL:NASDAQ", "TSLA:NASDAQ", "MSFT:NASDAQ", ".INX:INDEXSP") or company name.\n' +
+            '    ',
+          inputSchema: {
+            properties: { query: { title: 'Query', type: 'string' } },
+            required: [ 'query' ],
+            title: 'google_financeArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_financeOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_weather',
+          description: 'Get current weather conditions and forecast for any location.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            `        - "What's the weather in Dubai?"\n` +
+            '        - "Is it going to rain in London today?"\n' +
+            `        - "What's the temperature in New York?"\n` +
+            '        - "Weather forecast for Tokyo this week"\n' +
+            '        - "How hot is it in Dubai right now?"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        location: The city or location to get weather for (e.g. "Dubai", "New York", "London, UK", "Tokyo").\n' +
+            '    ',
+          inputSchema: {
+            properties: { location: { title: 'Location', type: 'string' } },
+            required: [ 'location' ],
+            title: 'google_weatherArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_weatherOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_shopping',
+          description: 'Search Google Shopping for products with prices, stores, ratings, and product images.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Find the cheapest MacBook Air"\n' +
+            '        - "Compare prices for Sony WH-1000XM5 headphones"\n' +
+            '        - "How much does a Nintendo Switch cost?"\n' +
+            '        - "Search for running shoes under $100"\n' +
+            '        - "Find deals on mechanical keyboards"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The product search query string.\n' +
+            '        num_results: Number of results to return (default 5, max 10).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              num_results: { default: 5, title: 'Num Results', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'google_shoppingArguments',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_books',
+          description: 'Search Google Books for books, textbooks, and publications.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Find books about machine learning"\n' +
+            '        - "Search for books by Stephen King"\n' +
+            '        - "What are the best books on Python programming?"\n' +
+            '        - "Find textbooks on linear algebra"\n' +
+            '        - "Look up books about the history of AI"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The book search query string.\n' +
+            '        num_results: Number of results to return (default 5, max 10).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              num_results: { default: 5, title: 'Num Results', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'google_booksArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_booksOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_translate',
+          description: 'Translate text from one language to another using Google Translate.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            `        - "Translate 'hello world' to Japanese"\n` +
+            `        - "How do you say 'thank you' in French?"\n` +
+            '        - "Translate this to Spanish: The weather is nice today"\n' +
+            `        - "What does 'Guten Morgen' mean in English?"\n` +
+            `        - "Translate 'I love programming' to Korean"\n` +
+            '\n' +
+            '    Args:\n' +
+            '        text: The text to translate.\n' +
+            '        to_language: Target language (e.g. "Spanish", "Japanese", "French", "German", "Korean", "Chinese", "Arabic").\n' +
+            '        from_language: Source language (optional, auto-detected if empty).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              text: { title: 'Text', type: 'string' },
+              to_language: { title: 'To Language', type: 'string' },
+              from_language: { default: '', title: 'From Language', type: 'string' }
+            },
+            required: [ 'text', 'to_language' ],
+            title: 'google_translateArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_translateOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_flights',
+          description: 'Search Google Flights for flight options, prices, and travel times.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Find flights from New York to London"\n' +
+            '        - "Search for cheap flights from LA to Tokyo"\n' +
+            '        - "Flights from San Francisco to Paris on March 15"\n' +
+            '        - "Find round trip flights from Chicago to Miami"\n' +
+            '        - "How much are flights from Dubai to Bangkok?"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        origin: Departure city or airport (e.g. "New York", "LAX", "London").\n' +
+            '        destination: Arrival city or airport (e.g. "Tokyo", "SFO", "Paris").\n' +
+            '        date: Departure date (optional, e.g. "March 15", "2025-03-15").\n' +
+            '        return_date: Return date for round trips (optional).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              origin: { title: 'Origin', type: 'string' },
+              destination: { title: 'Destination', type: 'string' },
+              date: { default: '', title: 'Date', type: 'string' },
+              return_date: { default: '', title: 'Return Date', type: 'string' }
+            },
+            required: [ 'origin', 'destination' ],
+            title: 'google_flightsArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_flightsOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_hotels',
+          description: 'Search for hotels and accommodation with thumbnail images, prices, ratings, and booking URLs.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Find hotels in Paris for next weekend"\n' +
+            '        - "Search for cheap hotels in Tokyo"\n' +
+            '        - "Best hotels near Times Square New York"\n' +
+            '        - "Find 5-star hotels in Dubai"\n' +
+            '        - "Hotels in London under $200 per night"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: Hotel search query with location (e.g. "Paris", "Tokyo near Shibuya", "New York March 15-20").\n' +
+            '        num_results: Number of results to return (default 5, max 10).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              num_results: { default: 5, title: 'Num Results', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'google_hotelsArguments',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_lens',
+          description: 'Reverse image search using Google Lens. Identify objects, products, brands, landmarks, text in images, and find visually similar results.\n' +
+            '\n' +
+            '    This gives vision capabilities to text-only models. Supports public image URLs,\n' +
+            '    local file paths, and base64-encoded image data (from drag-and-drop in LM Studio).\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "What is this product? https://example.com/photo.jpg"\n' +
+            '        - "Identify this image: /home/user/photos/image.jpg"\n' +
+            '        - "What is in this image?" (with image dragged into chat)\n' +
+            '        - "What brand is this? [image URL or file path]"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        image_source: A public image URL, local file path, or base64-encoded image data.\n' +
+            '    ',
+          inputSchema: {
+            properties: { image_source: { title: 'Image Source', type: 'string' } },
+            required: [ 'image_source' ],
+            title: 'google_lensArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_lensOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'google_lens_detect',
+          description: 'Detect and identify all objects in an image using OpenCV object detection and Google Lens.\n' +
+            '\n' +
+            '    Unlike google_lens which sends the full image, this tool:\n' +
+            '    1. Uses OpenCV to detect distinct objects/regions in the image\n' +
+            '    2. Crops each object separately\n' +
+            '    3. Sends the original image AND each crop to Google Lens\n' +
+            '    4. Returns identification results for each object\n' +
+            '\n' +
+            '    This is useful when an image contains multiple items (e.g. a monitor AND a hardware device)\n' +
+            '    and you want each identified separately.\n' +
+            '\n' +
+            '    Supports local file paths and base64-encoded image data (from drag-and-drop).\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Detect and identify all objects in this image: /path/to/photo.jpg"\n' +
+            '        - "What are all the items in this photo?" (with image dragged into chat)\n' +
+            '        - "Identify each object separately in /path/to/setup.jpg"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        image_source: Local file path or base64-encoded image data.\n' +
+            '    ',
+          inputSchema: {
+            properties: { image_source: { title: 'Image Source', type: 'string' } },
+            required: [ 'image_source' ],
+            title: 'google_lens_detectArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'google_lens_detectOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'list_images',
+          description: 'List image files in a directory so you can pass them to google_lens.\n' +
+            '\n' +
+            '    This is useful for text-only models that cannot receive images directly.\n' +
+            '    The user saves an image to ~/lens/ (or any folder) and asks you to identify it.\n' +
+            '\n' +
+            '    Default directory: ~/lens/\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "What images are in my lens folder?"\n' +
+            '        - "Identify the latest image"\n' +
+            '        - "Check ~/lens/ for new images"\n' +
+            '        - "What did I save?"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        directory: Folder to scan for images. Defaults to ~/lens/.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              directory: { default: '', title: 'Directory', type: 'string' }
+            },
+            title: 'list_imagesArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'list_imagesOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'ocr_image',
+          description: 'Extract text from an image using local OCR. No internet connection needed.\n' +
+            '\n' +
+            '    Uses RapidOCR (PaddleOCR models on ONNX Runtime) to read text from\n' +
+            '    screenshots, documents, photos of signs, labels, receipts, or any image\n' +
+            '    containing text. Runs entirely locally.\n' +
+            '\n' +
+            '    Supports local file paths and base64-encoded image data (from drag-and-drop).\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Read the text in this image: /path/to/image.jpg"\n' +
+            '        - "OCR this screenshot" (with image dragged into chat)\n' +
+            '        - "What does this document say? /path/to/document.jpg"\n' +
+            '        - "Extract text from this image" (with image dragged into chat)\n' +
+            '\n' +
+            '    Args:\n' +
+            '        image_source: Local file path or base64-encoded image data.\n' +
+            '    ',
+          inputSchema: {
+            properties: { image_source: { title: 'Image Source', type: 'string' } },
+            required: [ 'image_source' ],
+            title: 'ocr_imageArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'ocr_imageOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'transcribe_video',
+          description: 'Download and transcribe a YouTube video (or any video URL) with timestamps.\n' +
+            '\n' +
+            '    Downloads the audio, transcribes it locally using Whisper, and returns a\n' +
+            '    full timestamped transcript. The LLM can then answer questions about the\n' +
+            '    video content and point to specific timestamps.\n' +
+            '\n' +
+            '    Results are cached to disk so repeat requests for the same video are instant.\n' +
+            '\n' +
+            '    Supported model sizes: tiny, base, small, medium, large\n' +
+            '    - tiny: fastest, good for most videos (~75MB, default)\n' +
+            '    - base: better accuracy, slower (~150MB)\n' +
+            '    - small: high accuracy, much slower (~500MB)\n' +
+            '    - medium/large: best accuracy, very slow (~1.5GB/~3GB)\n' +
+            '\n' +
+            '    Models are downloaded automatically on first use.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Transcribe this video: https://youtube.com/watch?v=..."\n' +
+            '        - "What is discussed in this video? https://youtube.com/watch?v=..."\n' +
+            '        - "Summarize this YouTube video: https://..."\n' +
+            '        - "At what timestamp do they talk about X in https://..."\n' +
+            '        - "Explain the concept from 5:30 in this video: https://..."\n' +
+            '\n' +
+            '    Args:\n' +
+            '        url: YouTube URL or any video URL supported by yt-dlp.\n' +
+            '        model_size: Whisper model size (tiny/base/small/medium/large). Default: tiny.\n' +
+            '        language: Language code (e.g. "en", "de", "fr"). Auto-detected if empty.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              url: { title: 'Url', type: 'string' },
+              model_size: { default: 'tiny', title: 'Model Size', type: 'string' },
+              language: { default: '', title: 'Language', type: 'string' }
+            },
+            required: [ 'url' ],
+            title: 'transcribe_videoArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'transcribe_videoOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'search_transcript',
+          description: 'Search inside an already-transcribed video for segments matching a keyword.\n' +
+            '\n' +
+            '    IMPORTANT: This tool searches an EXISTING transcript — it does NOT download\n' +
+            '    or transcribe a video. The video must have been transcribed first with\n' +
+            '    transcribe_video. If the user says "search the transcript for X" or\n' +
+            '    "find where they talk about X", use THIS tool, not transcribe_video.\n' +
+            '\n' +
+            '    Returns matching segments with surrounding context so the LLM can determine\n' +
+            '    the exact start and end timestamps for a topic, then call extract_video_clip.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Search the transcript for memory bandwidth"\n' +
+            '        - "Find where they talk about memory bandwidth in the video"\n' +
+            '        - "What timestamp do they discuss pricing?"\n' +
+            '        - "When do they mention the DGX Spark specs?"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        url: The same video URL used with transcribe_video.\n' +
+            '        query: Keyword or phrase to search for (case-insensitive).\n' +
+            '        model_size: Must match the model_size used for transcription (default: tiny).\n' +
+            '        context_segments: Number of surrounding segments to include (default: 2).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              url: { title: 'Url', type: 'string' },
+              query: { title: 'Query', type: 'string' },
+              model_size: { default: 'tiny', title: 'Model Size', type: 'string' },
+              context_segments: {
+                default: 2,
+                title: 'Context Segments',
+                type: 'integer'
+              }
+            },
+            required: [ 'url', 'query' ],
+            title: 'search_transcriptArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'search_transcriptOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'extract_video_clip',
+          description: 'Extract a video clip by topic from a YouTube video or local file.\n' +
+            '\n' +
+            '    Used after transcribe_video. The LLM reads the transcript, finds the\n' +
+            '    timestamps for the requested topic, and calls this tool to cut the clip.\n' +
+            '    The user just asks "extract the part about X" - no manual timestamps needed.\n' +
+            '\n' +
+            '    A buffer is added before and after to avoid cutting off content.\n' +
+            '    The clip is saved to ~/clips/.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Extract the part where they talk about memory bandwidth"\n' +
+            '        - "Save the segment where they discuss pricing"\n' +
+            '        - "Cut out the section about the hardware specs"\n' +
+            '        - "Get me the intro of this video"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        url: YouTube URL, video URL, or local file path.\n' +
+            '        start_seconds: Start time in seconds (e.g. 150 for 2:30).\n' +
+            '        end_seconds: End time in seconds (e.g. 315 for 5:15).\n' +
+            '        buffer_seconds: Extra seconds before/after the segment (default: 3).\n' +
+            '        output_filename: Optional filename for the clip (without extension).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              url: { title: 'Url', type: 'string' },
+              start_seconds: { title: 'Start Seconds', type: 'number' },
+              end_seconds: { title: 'End Seconds', type: 'number' },
+              buffer_seconds: { default: 3, title: 'Buffer Seconds', type: 'number' },
+              output_filename: { default: '', title: 'Output Filename', type: 'string' }
+            },
+            required: [ 'url', 'start_seconds', 'end_seconds' ],
+            title: 'extract_video_clipArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'extract_video_clipOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'visit_page',
+          description: 'Fetch a web page and return its text content. Use this after google_search to read the actual content of a result.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Read this article for me: https://example.com/article"\n' +
+            '        - "What does this page say? https://..."\n' +
+            '        - "Summarize the content at this URL"\n' +
+            '        - "Go to this link and tell me what it says"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        url: The full URL to visit and extract text from.\n' +
+            '    ',
+          inputSchema: {
+            properties: { url: { title: 'Url', type: 'string' } },
+            required: [ 'url' ],
+            title: 'visit_pageArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'visit_pageOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'transcribe_local',
+          description: 'Transcribe a local audio or video file with timestamps using Whisper.\n' +
+            '\n' +
+            '    Supports any format FFmpeg can decode: mp3, wav, m4a, flac, ogg, aac,\n' +
+            '    mp4, mkv, webm, avi, mov, wma, opus, and more.\n' +
+            '\n' +
+            '    Results are cached — repeat requests for the same file are instant.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Transcribe this recording: /path/to/meeting.mp3"\n' +
+            `        - "What's said in this video? /path/to/lecture.mp4"\n` +
+            '        - "Transcribe ~/Downloads/interview.wav"\n' +
+            '        - "Transcribe the audio file on my desktop"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        file_path: Absolute path to the audio or video file.\n' +
+            '        model_size: Whisper model size (tiny/base/small/medium/large). Default: tiny.\n' +
+            '        language: Language code (e.g. "en", "de", "fr"). Auto-detected if empty.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              file_path: { title: 'File Path', type: 'string' },
+              model_size: { default: 'tiny', title: 'Model Size', type: 'string' },
+              language: { default: '', title: 'Language', type: 'string' }
+            },
+            required: [ 'file_path' ],
+            title: 'transcribe_localArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'transcribe_localOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'convert_media',
+          description: 'Convert audio or video files between formats using FFmpeg.\n' +
+            '\n' +
+            '    Supports all FFmpeg formats: mp3, wav, m4a, flac, ogg, aac, opus,\n' +
+            '    mp4, mkv, webm, avi, mov, gif, and more.\n' +
+            '\n' +
+            '    Common conversions:\n' +
+            '        - Video to audio: mp4 -> mp3\n' +
+            '        - Audio formats: wav -> mp3, flac -> m4a\n' +
+            '        - Video formats: mkv -> mp4, mp4 -> webm\n' +
+            '        - Video to GIF: mp4 -> gif\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Convert this video to mp3: /path/to/video.mp4"\n' +
+            '        - "Convert recording.wav to mp3"\n' +
+            '        - "Make a gif from /path/to/clip.mp4"\n' +
+            '        - "Convert this to m4a: /path/to/song.flac"\n' +
+            '        - "Convert my video to webm"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        input_path: Path to the input file.\n' +
+            '        output_format: Target format (e.g. "mp3", "mp4", "wav", "gif").\n' +
+            '        output_path: Optional output file path. Default: same name, new extension.\n' +
+            '        quality: "low", "medium", or "high". Default: medium.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              input_path: { title: 'Input Path', type: 'string' },
+              output_format: { title: 'Output Format', type: 'string' },
+              output_path: { default: '', title: 'Output Path', type: 'string' },
+              quality: { default: 'medium', title: 'Quality', type: 'string' }
+            },
+            required: [ 'input_path', 'output_format' ],
+            title: 'convert_mediaArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'convert_mediaOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'read_document',
+          description: 'Read and extract text from documents — PDF, Word, and plain text files.\n' +
+            '\n' +
+            '    Supported formats:\n' +
+            '        - PDF (.pdf) — text extraction with pdftotext, OCR fallback for scans\n' +
+            '        - Word (.docx) — paragraph and table text extraction (no extra deps)\n' +
+            '        - Plain text (.txt, .md, .csv, .log, .json, .xml, .yaml, .yml, .ini, .cfg, .toml)\n' +
+            '        - HTML (.html, .htm) — strips tags, returns clean text\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Read this PDF: /path/to/document.pdf"\n' +
+            '        - "What does this document say? /path/to/report.docx"\n' +
+            '        - "Extract text from /path/to/scanned.pdf"\n' +
+            '        - "Read the CSV at /path/to/data.csv"\n' +
+            '        - "Show me the contents of config.yaml"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        file_path: Absolute path to the document file.\n' +
+            '    ',
+          inputSchema: {
+            properties: { file_path: { title: 'File Path', type: 'string' } },
+            required: [ 'file_path' ],
+            title: 'read_documentArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'read_documentOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'fetch_emails',
+          description: 'Fetch emails via IMAP. Works with Gmail, Outlook, Yahoo, iCloud, and any IMAP server.\n' +
+            '\n' +
+            '    For Gmail: use an App Password (not your regular password).\n' +
+            '    Generate at: https://myaccount.google.com/apppasswords\n' +
+            '\n' +
+            '    For Outlook: enable IMAP in settings, use your regular password or app password.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Check my email: user@gmail.com password: xxxx-xxxx-xxxx-xxxx"\n' +
+            '        - "Fetch unread emails from my Gmail"\n' +
+            '        - "Search my inbox for emails about invoice"\n' +
+            '        - "Get my latest 5 emails"\n' +
+            '        - "Show emails from sender@example.com"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        email_address: Your email address.\n' +
+            '        password: Password or app password (Gmail requires app password).\n' +
+            '        imap_server: IMAP server hostname. Auto-detected for Gmail/Outlook/Yahoo if empty.\n' +
+            '        folder: Mailbox folder. Default: INBOX. Common: INBOX, Sent, Drafts, Trash, Spam.\n' +
+            '        search: IMAP search criteria. Default: UNSEEN (unread).\n' +
+            '            Examples: ALL, SEEN, UNSEEN, FROM "sender@example.com",\n' +
+            '            SUBJECT "keyword", SINCE "01-Jan-2024", BEFORE "01-Feb-2024".\n' +
+            '        limit: Maximum number of emails to fetch. Default: 10.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              email_address: { title: 'Email Address', type: 'string' },
+              password: { title: 'Password', type: 'string' },
+              imap_server: { default: '', title: 'Imap Server', type: 'string' },
+              folder: { default: 'INBOX', title: 'Folder', type: 'string' },
+              search: { default: 'UNSEEN', title: 'Search', type: 'string' },
+              limit: { default: 10, title: 'Limit', type: 'integer' }
+            },
+            required: [ 'email_address', 'password' ],
+            title: 'fetch_emailsArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'fetch_emailsOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'paste_text',
+          description: 'Post text to dpaste.org and return a shareable URL.\n' +
+            '\n' +
+            '    Great for sharing code, logs, configs, or any text output.\n' +
+            '    No account or API key needed. Pastes expire automatically.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Paste this code and give me a link"\n' +
+            '        - "Upload this log to a pastebin"\n' +
+            '        - "Share this config file online"\n' +
+            '        - "Create a paste with this error output"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        content: The text content to paste.\n' +
+            '        title: Optional title for the paste.\n' +
+            '        syntax: Syntax highlighting (e.g. "python", "json", "bash"). Default: text.\n' +
+            '        expiry_days: Days until the paste expires (1-365). Default: 7.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              content: { title: 'Content', type: 'string' },
+              title: { default: '', title: 'Title', type: 'string' },
+              syntax: { default: 'text', title: 'Syntax', type: 'string' },
+              expiry_days: { default: 7, title: 'Expiry Days', type: 'integer' }
+            },
+            required: [ 'content' ],
+            title: 'paste_textArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'paste_textOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'shorten_url',
+          description: 'Shorten a long URL using TinyURL. No account or API key needed.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Shorten this URL: https://very-long-url.com/path/..."\n' +
+            '        - "Give me a short link for this"\n' +
+            '        - "Create a tinyurl for https://..."\n' +
+            '\n' +
+            '    Args:\n' +
+            '        url: The URL to shorten.\n' +
+            '    ',
+          inputSchema: {
+            properties: { url: { title: 'Url', type: 'string' } },
+            required: [ 'url' ],
+            title: 'shorten_urlArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'shorten_urlOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'generate_qr',
+          description: 'Generate a QR code image from text, URLs, Wi-Fi credentials, or any data.\n' +
+            '\n' +
+            '    Use cases:\n' +
+            '        - URLs: shareable links, payment pages\n' +
+            '        - Wi-Fi: WIFI:T:WPA;S:NetworkName;P:password;;\n' +
+            '        - Contact info: vCard format\n' +
+            '        - Plain text: any message\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Generate a QR code for https://example.com"\n' +
+            '        - "Create a QR code for my Wi-Fi: SSID=MyNet, password=secret123"\n' +
+            '        - "Make a QR code with this text"\n' +
+            '        - "QR code for my Bitcoin address"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        data: The content to encode in the QR code.\n' +
+            '        output_path: Optional output file path. Default: ~/qr_code.png.\n' +
+            '        size: Image size in pixels (width=height). Default: 400.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              data: { title: 'Data', type: 'string' },
+              output_path: { default: '', title: 'Output Path', type: 'string' },
+              size: { default: 400, title: 'Size', type: 'integer' }
+            },
+            required: [ 'data' ],
+            title: 'generate_qrArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'generate_qrOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'archive_webpage',
+          description: 'Archive a webpage on archive.today (archive.is) for permanent preservation.\n' +
+            '\n' +
+            '    Creates a timestamped snapshot of any webpage. Useful for preserving:\n' +
+            "        - News articles before they're edited or deleted\n" +
+            '        - Social media posts\n' +
+            '        - Product pages with specific prices\n' +
+            '        - Any web content you want to reference later\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Archive this page: https://example.com/article"\n' +
+            '        - "Save this webpage to archive.is"\n' +
+            '        - "Preserve this article before it gets taken down"\n' +
+            '        - "Create an archive snapshot of this URL"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        url: The URL of the webpage to archive.\n' +
+            '    ',
+          inputSchema: {
+            properties: { url: { title: 'Url', type: 'string' } },
+            required: [ 'url' ],
+            title: 'archive_webpageArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'archive_webpageOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'wikipedia',
+          description: 'Look up a Wikipedia article and return its content.\n' +
+            '\n' +
+            '    Returns the article summary or full text. Supports all Wikipedia languages.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Wikipedia: quantum computing"\n' +
+            '        - "Look up Albert Einstein on Wikipedia"\n' +
+            '        - "What does Wikipedia say about the French Revolution?"\n' +
+            '        - "Get the Wikipedia article for Python programming language"\n' +
+            '        - "Wikipedia en español: inteligencia artificial"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: The topic to search for.\n' +
+            '        language: Wikipedia language code (e.g. "en", "de", "fr", "es", "ja"). Default: en.\n' +
+            '        sentences: Number of sentences for summary (0 = full article extract). Default: 0.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              language: { default: 'en', title: 'Language', type: 'string' },
+              sentences: { default: 0, title: 'Sentences', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'wikipediaArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'wikipediaOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'upload_to_s3',
+          description: 'Upload a file to MinIO, AWS S3, or any S3-compatible storage.\n' +
+            '\n' +
+            '    Works with MinIO (self-hosted), AWS S3, DigitalOcean Spaces,\n' +
+            '    Backblaze B2, Cloudflare R2, and any S3-compatible service.\n' +
+            '\n' +
+            '    Credentials can be passed directly or read from environment variables:\n' +
+            '        AWS_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Upload report.pdf to my MinIO bucket"\n' +
+            '        - "Upload this file to S3 bucket my-bucket"\n' +
+            '        - "Store backup.tar.gz in MinIO at backup-bucket/daily/"\n' +
+            '        - "Upload to my DigitalOcean Space"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        file_path: Local file to upload.\n' +
+            '        bucket: Bucket name.\n' +
+            '        key: Object key (path in bucket). Default: filename.\n' +
+            '        endpoint: S3 endpoint URL (e.g. "http://localhost:9000" for MinIO).\n' +
+            '            Falls back to AWS_ENDPOINT_URL env var, then AWS S3 default.\n' +
+            '        access_key: Access key. Falls back to AWS_ACCESS_KEY_ID env var.\n' +
+            '        secret_key: Secret key. Falls back to AWS_SECRET_ACCESS_KEY env var.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              file_path: { title: 'File Path', type: 'string' },
+              bucket: { title: 'Bucket', type: 'string' },
+              key: { default: '', title: 'Key', type: 'string' },
+              endpoint: { default: '', title: 'Endpoint', type: 'string' },
+              access_key: { default: '', title: 'Access Key', type: 'string' },
+              secret_key: { default: '', title: 'Secret Key', type: 'string' }
+            },
+            required: [ 'file_path', 'bucket' ],
+            title: 'upload_to_s3Arguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'upload_to_s3Output',
+            type: 'object'
+          }
+        },
+        {
+          name: 'subscribe',
+          description: 'Subscribe to a content source for automatic monitoring and search.\n' +
+            '\n' +
+            '    Supported source types: news, reddit, hackernews, github, arxiv, youtube, podcast, twitter.\n' +
+            '\n' +
+            '    After subscribing, run check_feeds to fetch content, then search_feeds to query it.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Subscribe to BBC News"\n' +
+            '        - "Follow r/LocalLLaMA on Reddit"\n' +
+            '        - "Monitor Hacker News top stories"\n' +
+            '        - "Watch anthropics/claude-code on GitHub for new releases"\n' +
+            '        - "Subscribe to the YouTube channel @3Blue1Brown"\n' +
+            '        - "Follow @elonmusk on Twitter"\n' +
+            '        - "Subscribe to the machine learning arXiv category"\n' +
+            '        - "Add this podcast: https://feeds.example.com/podcast.xml"\n' +
+            '        - "Subscribe to CNN, NPR, and The Guardian"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        source_type: One of: news, reddit, hackernews, github, arxiv, youtube, podcast, twitter.\n' +
+            '        identifier: Source identifier — depends on type:\n' +
+            '            - news: preset name (bbc, cnn, nyt, guardian, npr, aljazeera, techcrunch, ars, verge, wired, reuters) or a custom RSS URL\n' +
+            '            - reddit: subreddit name (e.g. "LocalLLaMA", "programming")\n' +
+            '            - hackernews: "top", "new", or "best"\n' +
+            '            - github: "owner/repo" (e.g. "anthropics/claude-code")\n' +
+            '            - arxiv: shortcut (ai, ml, cv, nlp, robotics, crypto) or arXiv category like "cs.AI"\n' +
+            '            - youtube: channel handle (@name), URL, or channel ID (UCxxxx)\n' +
+            '            - podcast: RSS feed URL\n' +
+            '            - twitter: username with or without @ (e.g. "elonmusk")\n' +
+            '        name: Optional display name for this subscription.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              source_type: { title: 'Source Type', type: 'string' },
+              identifier: { title: 'Identifier', type: 'string' },
+              name: { default: '', title: 'Name', type: 'string' }
+            },
+            required: [ 'source_type', 'identifier' ],
+            title: 'subscribeArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'subscribeOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'unsubscribe',
+          description: 'Remove a subscription and all its stored content.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Unsubscribe from BBC News"\n' +
+            '        - "Stop following r/LocalLLaMA"\n' +
+            '        - "Remove the YouTube channel @3Blue1Brown"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        source_type: The source type (news, reddit, hackernews, github, arxiv, youtube, podcast, twitter).\n' +
+            '        identifier: The same identifier used when subscribing.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              source_type: { title: 'Source Type', type: 'string' },
+              identifier: { title: 'Identifier', type: 'string' }
+            },
+            required: [ 'source_type', 'identifier' ],
+            title: 'unsubscribeArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'unsubscribeOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'list_subscriptions',
+          description: 'List all active feed subscriptions with item counts.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Show my subscriptions"\n' +
+            '        - "What feeds am I following?"\n' +
+            '        - "List all my monitored sources"\n' +
+            '    ',
+          inputSchema: {
+            properties: {},
+            title: 'list_subscriptionsArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'list_subscriptionsOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'check_feeds',
+          description: 'Check all (or specific) subscriptions for new content. Fetches and stores latest items.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Check my feeds"\n' +
+            `        - "What's new in my subscriptions?"\n` +
+            '        - "Fetch latest news"\n' +
+            '        - "Check Reddit feeds"\n' +
+            '        - "Update all my feed subscriptions"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        source_type: Optionally limit to one type (news, reddit, hackernews, github, arxiv, youtube, podcast, twitter). Leave empty to check all.\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              source_type: { default: '', title: 'Source Type', type: 'string' }
+            },
+            title: 'check_feedsArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'check_feedsOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'search_feeds',
+          description: 'Full-text search across all stored feed content (articles, posts, tweets, transcripts).\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            '        - "Search my feeds for machine learning"\n' +
+            '        - "Find mentions of GPT in my news feeds"\n' +
+            '        - "What have my Reddit feeds said about Rust?"\n' +
+            '        - "Search Twitter feeds for product launch"\n' +
+            '        - "Look for arxiv papers about transformers in my feeds"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        query: Search query (supports FTS5 syntax: AND, OR, NOT, "quoted phrases").\n' +
+            '        source_type: Optionally limit to one type. Leave empty to search everything.\n' +
+            '        limit: Max results to return (default 20).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              query: { title: 'Query', type: 'string' },
+              source_type: { default: '', title: 'Source Type', type: 'string' },
+              limit: { default: 20, title: 'Limit', type: 'integer' }
+            },
+            required: [ 'query' ],
+            title: 'search_feedsArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'search_feedsOutput',
+            type: 'object'
+          }
+        },
+        {
+          name: 'get_feed_items',
+          description: 'Get recent items from feed subscriptions, optionally filtered by source or type.\n' +
+            '\n' +
+            '    Sample prompts that trigger this tool:\n' +
+            `        - "What's new in my feeds?"\n` +
+            '        - "Show me the latest BBC News articles"\n' +
+            '        - "Show recent Reddit posts"\n' +
+            '        - "What are the latest Hacker News stories?"\n' +
+            '        - "Show me recent tweets from my followed accounts"\n' +
+            '        - "Get latest YouTube videos from my subscriptions"\n' +
+            '\n' +
+            '    Args:\n' +
+            '        source: Filter by source name (e.g. "BBC", "LocalLLaMA"). Leave empty for all.\n' +
+            '        source_type: Filter by type (news, reddit, hackernews, github, arxiv, youtube, podcast, twitter). Leave empty for all.\n' +
+            '        limit: Max items to return (default 20).\n' +
+            '    ',
+          inputSchema: {
+            properties: {
+              source: { default: '', title: 'Source', type: 'string' },
+              source_type: { default: '', title: 'Source Type', type: 'string' },
+              limit: { default: 20, title: 'Limit', type: 'integer' }
+            },
+            title: 'get_feed_itemsArguments',
+            type: 'object'
+          },
+          outputSchema: {
+            properties: { result: { title: 'Result', type: 'string' } },
+            required: [ 'result' ],
+            title: 'get_feed_itemsOutput',
+            type: 'object'
+          }
+        }
+      ]
+    }
+  },
+  type: 'message'
+}

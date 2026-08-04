@@ -1,0 +1,84 @@
+name: Autonomous Coding
+version: 1.0.0
+schema: v1
+
+models:
+  - name: Agent
+    provider: openai
+    model: ollama/qwen3.6:27b-q8_0
+    apiBase: http://latitude:11435/v1
+    contextLength: 131072
+    defaultCompletionOptions:
+      temperature: 0.2
+      maxTokens: 8192
+    capabilities:
+      - tool_use
+    roles:
+      - chat
+      - edit
+      - apply
+
+  - name: Chat
+    provider: openai
+    model: ollama/deepseek-r1:32b
+    apiBase: http://latitude:11435/v1
+    contextLength: 131072
+    defaultCompletionOptions:
+      temperature: 0.6
+      maxTokens: 8192
+      reasoning: true
+    roles:
+      - chat
+
+  - name: Autocomplete
+    provider: openai
+    model: qwen2.5:1.5b # ollama/qwen2.5-coder:1.5b-base
+    apiBase: http://latitude:11435/v1
+    contextLength: 4096 # 8192
+    roles:
+      - autocomplete
+    autocompleteOptions:
+      useCache: true
+      maxPromptTokens: 1024
+      debounceDelay: 300
+      transform: false
+
+  - name: Nomic Embed
+    provider: openai
+    model: nomic-embed-text
+    apiBase: http://localhost:11435/v1
+    roles:
+      - embed
+
+defaultModel: Agent
+
+rules:
+  - You are an expert senior software engineer.
+  - You MUST use available tools to modify files directly.
+  - NEVER output changes as descriptions; execute them.
+  - Process tasks immediately without stopping after initial planning.
+  - Prioritize clean, efficient, and well-documented code.
+
+context:
+  - provider: folder
+  - provider: file
+  - provider: terminal
+  - provider: open
+  - provider: diff
+  - provider: search
+
+mcpServers:
+  - name: "local/google-search"
+    url: "http://latitude:11403/sse"
+    type: "sse"
+  - name: "filesystem"
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - "/home/sameer/Shared/Sync/Private/Work/Projects/LMS"
+
+experimental:
+  autoApproveTerminal: true
+  autoApproveDiff: true
+  autoApproveFile: true

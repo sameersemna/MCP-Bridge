@@ -1,0 +1,2027 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "auto/best-coding",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/best-coding",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/best-reasoning",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/best-reasoning",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/best-fast",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/best-fast",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/best-vision",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/best-vision",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/best-chat",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/best-chat",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/best-coding-fast",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/best-coding-fast",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/pro-coding",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/pro-coding",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/pro-reasoning",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/pro-reasoning",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/pro-vision",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/pro-vision",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/pro-chat",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/pro-chat",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/pro-fast",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/pro-fast",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/coding",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/coding",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/fast",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/fast",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/chat",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/chat",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/cheap",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/cheap",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/offline",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/offline",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/smart",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/smart",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/claude-opus",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/claude-opus",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/claude-sonnet",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/claude-sonnet",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/best-free",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/best-free",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/best-chaos",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/best-chaos",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/chaos",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/chaos",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/coding:fast",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/coding:fast",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/coding:cheap",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/coding:cheap",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/coding:free",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/coding:free",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/coding:pro",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/coding:pro",
+      "parent": null,
+      "context_length": 128000,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 8192,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/coding:reliable",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/coding:reliable",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/reasoning",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/reasoning",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 384000,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/reasoning:pro",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/reasoning:pro",
+      "parent": null,
+      "context_length": 128000,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 8192,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/vision",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/vision",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 131072,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/multimodal",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/multimodal",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 131072,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/glm",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/glm",
+      "parent": null,
+      "context_length": 1000000,
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 131072,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/minimax",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/minimax",
+      "parent": null,
+      "context_length": 128000,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 8192,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/mimo",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/mimo",
+      "parent": null,
+      "context_length": 1048576,
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 131072,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/zai",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/zai",
+      "parent": null,
+      "context_length": 128000,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 8192,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/gemma",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/gemma",
+      "parent": null,
+      "context_length": 32768,
+      "max_input_tokens": 32768,
+      "max_output_tokens": 8192,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/llama",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/llama",
+      "parent": null,
+      "context_length": 128000,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 8192,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "auto/gemini",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "combo",
+      "permission": [],
+      "root": "auto/gemini",
+      "parent": null,
+      "context_length": 1000000,
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 65535,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "temperature": true
+      }
+    },
+    {
+      "id": "pepper/pepper-1",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "chipotle",
+      "permission": [],
+      "root": "pepper-1",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "Pepper (Chipotle AI 🌯)",
+      "context_length": 128000
+    },
+    {
+      "id": "ddgw/gpt-5.4-mini",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "duckduckgo-web",
+      "permission": [],
+      "root": "gpt-5.4-mini",
+      "parent": null,
+      "capabilities": {
+        "vision": true,
+        "tool_calling": false,
+        "reasoning": true,
+        "thinking": true,
+        "supportsThinking": true,
+        "effort_tiers": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "context_length": 409600,
+      "max_output_tokens": 131072,
+      "max_input_tokens": 409600,
+      "name": "ddgw/GPT-5.4 Mini"
+    },
+    {
+      "id": "ddgw/gpt-5.4-nano",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "duckduckgo-web",
+      "permission": [],
+      "root": "gpt-5.4-nano",
+      "parent": null,
+      "capabilities": {
+        "vision": true,
+        "tool_calling": false,
+        "reasoning": true,
+        "thinking": true,
+        "supportsThinking": true,
+        "effort_tiers": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "context_length": 409600,
+      "max_output_tokens": 131072,
+      "max_input_tokens": 409600,
+      "name": "GPT-5.4 Nano"
+    },
+    {
+      "id": "ddgw/claude-haiku-4-5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "duckduckgo-web",
+      "permission": [],
+      "root": "claude-haiku-4-5",
+      "parent": null,
+      "capabilities": {
+        "vision": true,
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "name": "Claude Haiku 4.5",
+      "context_length": 200000
+    },
+    {
+      "id": "ddgw/mistral-small-2603",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "duckduckgo-web",
+      "permission": [],
+      "root": "mistral-small-2603",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "name": "Mistral Small 4",
+      "context_length": 128000
+    },
+    {
+      "id": "ddgw/tinfoil/gpt-oss-120b",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "duckduckgo-web",
+      "permission": [],
+      "root": "tinfoil/gpt-oss-120b",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "name": "gpt-oss 120B",
+      "context_length": 400000
+    },
+    {
+      "id": "ddgw/tinfoil/gemma4-31b",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "duckduckgo-web",
+      "permission": [],
+      "root": "tinfoil/gemma4-31b",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "name": "Gemma 4 31B",
+      "context_length": 128000
+    },
+    {
+      "id": "felo/felo-chat",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "felo-web",
+      "permission": [],
+      "root": "felo-chat",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "name": "Felo Chat",
+      "context_length": 128000
+    },
+    {
+      "id": "felo/felo-search",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "felo-web",
+      "permission": [],
+      "root": "felo-search",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "name": "Felo Search",
+      "context_length": 128000
+    },
+    {
+      "id": "felo/felo-scholar",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "felo-web",
+      "permission": [],
+      "root": "felo-scholar",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "name": "Felo Scholar",
+      "context_length": 128000
+    },
+    {
+      "id": "felo/felo-social",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "felo-web",
+      "permission": [],
+      "root": "felo-social",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "name": "Felo Social",
+      "context_length": 128000
+    },
+    {
+      "id": "felo/felo-document",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "felo-web",
+      "permission": [],
+      "root": "felo-document",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": true
+      },
+      "name": "Felo Document",
+      "context_length": 128000
+    },
+    {
+      "id": "aug/sonnet4.6",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "sonnet4.6",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Sonnet 4.6"
+    },
+    {
+      "id": "aug/fable-5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "fable-5",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Claude Fable 5"
+    },
+    {
+      "id": "aug/haiku4.5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "haiku4.5",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Haiku 4.5"
+    },
+    {
+      "id": "aug/sonnet4.5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "sonnet4.5",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Sonnet 4.5"
+    },
+    {
+      "id": "aug/sonnet4.6-500k",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "sonnet4.6-500k",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 500000,
+      "max_input_tokens": 500000,
+      "name": "Sonnet 4.6 (500K)"
+    },
+    {
+      "id": "aug/sonnet5-high",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "sonnet5-high",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Claude Sonnet 5"
+    },
+    {
+      "id": "aug/sonnet5-500k",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "sonnet5-500k",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 500000,
+      "max_input_tokens": 500000,
+      "name": "Claude Sonnet 5 (500K)"
+    },
+    {
+      "id": "aug/opus4.5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "opus4.5",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Opus 4.5"
+    },
+    {
+      "id": "aug/opus4.6",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "opus4.6",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Opus 4.6"
+    },
+    {
+      "id": "aug/opus4.6-500k",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "opus4.6-500k",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 500000,
+      "max_input_tokens": 500000,
+      "name": "Opus 4.6 (500K)"
+    },
+    {
+      "id": "aug/opus4.7",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "opus4.7",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Opus 4.7"
+    },
+    {
+      "id": "aug/opus4.7-500k",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "opus4.7-500k",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 500000,
+      "max_input_tokens": 500000,
+      "name": "Opus 4.7 (500K)"
+    },
+    {
+      "id": "aug/opus4.8",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "opus4.8",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Opus 4.8"
+    },
+    {
+      "id": "aug/gemini-3.1-pro-preview",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gemini-3.1-pro-preview",
+      "parent": null,
+      "capabilities": {
+        "vision": true,
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "supportsThinking": true,
+        "effort_tiers": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "context_length": 1000000,
+      "max_output_tokens": 65535,
+      "max_input_tokens": 1000000,
+      "name": "Gemini 3.1 Pro"
+    },
+    {
+      "id": "aug/gpt5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "GPT-5"
+    },
+    {
+      "id": "aug/gpt5.1",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5.1",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "GPT-5.1"
+    },
+    {
+      "id": "aug/gpt5.2",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5.2",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "GPT-5.2"
+    },
+    {
+      "id": "aug/gpt5.4",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5.4",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "GPT-5.4"
+    },
+    {
+      "id": "aug/gpt5.4-mini",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5.4-mini",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "aug/GPT-5.4 Mini"
+    },
+    {
+      "id": "aug/gpt5.5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5.5",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "GPT-5.5"
+    },
+    {
+      "id": "aug/gpt5.6-luna",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5.6-luna",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "GPT-5.6 Luna"
+    },
+    {
+      "id": "aug/gpt5.6-sol",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5.6-sol",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "GPT-5.6 Sol"
+    },
+    {
+      "id": "aug/gpt5.6-terra",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "gpt5.6-terra",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "GPT-5.6 Terra"
+    },
+    {
+      "id": "aug/glm-5.2",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "glm-5.2",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "supportsThinking": true,
+        "effort_tiers": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "context_length": 1000000,
+      "max_output_tokens": 131072,
+      "max_input_tokens": 1000000,
+      "name": "GLM 5.2"
+    },
+    {
+      "id": "aug/kimi-k2.6",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "kimi-k2.6",
+      "parent": null,
+      "capabilities": {
+        "vision": true,
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "supportsThinking": true,
+        "effort_tiers": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "context_length": 131000,
+      "max_output_tokens": 262144,
+      "max_input_tokens": 131000,
+      "name": "Kimi K2.6"
+    },
+    {
+      "id": "aug/kimi-k2.7",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "kimi-k2.7",
+      "parent": null,
+      "capabilities": {
+        "vision": true,
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "supportsThinking": true,
+        "effort_tiers": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "context_length": 131000,
+      "max_output_tokens": 262144,
+      "max_input_tokens": 131000,
+      "name": "Kimi K2.7 Code"
+    },
+    {
+      "id": "aug/prism-a",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "prism-a",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Prism (Claude + Gemini)"
+    },
+    {
+      "id": "aug/prism-b",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "auggie",
+      "permission": [],
+      "root": "prism-b",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Prism (GPT + Kimi)"
+    },
+    {
+      "id": "oc/big-pickle",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "opencode",
+      "permission": [],
+      "root": "big-pickle",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "supportsThinking": true,
+        "effort_tiers": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "name": "Big Pickle",
+      "context_length": 200000
+    },
+    {
+      "id": "oc/deepseek-v4-flash-free",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "opencode",
+      "permission": [],
+      "root": "deepseek-v4-flash-free",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true,
+        "thinking": true,
+        "supportsThinking": true,
+        "effort_tiers": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "context_length": 1000000,
+      "max_output_tokens": 384000,
+      "max_input_tokens": 1000000,
+      "name": "DeepSeek V4 Flash Free"
+    },
+    {
+      "id": "oc/mimo-v2.5-free",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "opencode",
+      "permission": [],
+      "root": "mimo-v2.5-free",
+      "parent": null,
+      "capabilities": {
+        "vision": true,
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "context_length": 1048576,
+      "max_output_tokens": 131072,
+      "max_input_tokens": 1048576,
+      "name": "mimo-v2.5-free"
+    },
+    {
+      "id": "oc/hy3-free",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "opencode",
+      "permission": [],
+      "root": "hy3-free",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "hy3-free",
+      "context_length": 200000
+    },
+    {
+      "id": "oc/nemotron-3-ultra-free",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "opencode",
+      "permission": [],
+      "root": "nemotron-3-ultra-free",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "nemotron-3-ultra-free",
+      "context_length": 200000
+    },
+    {
+      "id": "oc/north-mini-code-free",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "opencode",
+      "permission": [],
+      "root": "north-mini-code-free",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "north-mini-code-free",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/GPT_5_4",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "GPT_5_4",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 400000,
+      "max_input_tokens": 400000,
+      "name": "GPT-5.4 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/GPT_5_3",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "GPT_5_3",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 400000,
+      "max_input_tokens": 400000,
+      "name": "GPT-5.3 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/GPT_5_2",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "GPT_5_2",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 400000,
+      "max_input_tokens": 400000,
+      "name": "GPT-5.2 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/GPT_5_1",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "GPT_5_1",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 400000,
+      "max_input_tokens": 400000,
+      "name": "GPT-5.1 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/GPT_5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "GPT_5",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 400000,
+      "max_input_tokens": 400000,
+      "name": "GPT-5 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/GPT_o4_mini",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "GPT_o4_mini",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "o4-mini (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/GPT_o3_mini",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "GPT_o3_mini",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "o3-mini (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/gemini_3_pro",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "gemini_3_pro",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 1000000,
+      "max_input_tokens": 1000000,
+      "name": "Gemini 3 Pro (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/gemini_2_5_pro",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "gemini_2_5_pro",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 1000000,
+      "max_input_tokens": 1000000,
+      "name": "Gemini 2.5 Pro (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/gemini_2_0_flash",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "gemini_2_0_flash",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 1000000,
+      "max_input_tokens": 1000000,
+      "name": "Gemini 2.0 Flash (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/gemini_1_5_flash",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "gemini_1_5_flash",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 1000000,
+      "max_input_tokens": 1000000,
+      "name": "Gemini 1.5 Flash (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/CLAUDE_4_6_OPUS",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "CLAUDE_4_6_OPUS",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Claude 4.6 Opus (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/CLAUDE_4_6_SONNET",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "CLAUDE_4_6_SONNET",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Claude 4.6 Sonnet (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/CLAUDE_4_5_HAIKU",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "CLAUDE_4_5_HAIKU",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Claude 4.5 Haiku (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/openrouter_gpt_4_o",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "openrouter_gpt_4_o",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "GPT-4o (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/openrouter_gpt_4_o_mini",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "openrouter_gpt_4_o_mini",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "GPT-4o mini (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/openrouter_grok_4",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "openrouter_grok_4",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "Grok 4 (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/together_deepseek_v3",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "together_deepseek_v3",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "DeepSeek V3 (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/openrouter_deepseek_r1",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "openrouter_deepseek_r1",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "DeepSeek R1 (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/sonar-pro",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "sonar-pro",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "Sonar Pro (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/GPT_4o",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "GPT_4o",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "name": "GPT-4o (The Old LLM 🆓)",
+      "context_length": 200000
+    },
+    {
+      "id": "tllm/claude_opus_4",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "claude_opus_4",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Claude Opus 4 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/claude_sonnet_4",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "claude_sonnet_4",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Claude Sonnet 4 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/claude_haiku_3_5",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "claude_haiku_3_5",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "Claude Haiku 3.5 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/deepseek_v4",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "deepseek_v4",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 200000,
+      "max_input_tokens": 200000,
+      "name": "DeepSeek V4 (The Old LLM 🆓)"
+    },
+    {
+      "id": "tllm/gemini_3_flash",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "theoldllm",
+      "permission": [],
+      "root": "gemini_3_flash",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 1000000,
+      "max_input_tokens": 1000000,
+      "name": "Gemini 3 Flash (The Old LLM 🆓)"
+    },
+    {
+      "id": "mcode/mimo-auto",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "mimocode",
+      "permission": [],
+      "root": "mimo-auto",
+      "parent": null,
+      "capabilities": {
+        "tool_calling": true,
+        "reasoning": true
+      },
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "max_input_tokens": 1000000,
+      "name": "MiMo Auto"
+    },
+    {
+      "id": "veoaifree-web/veo",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "veoaifree-web",
+      "type": "video",
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": false,
+        "thinking": false,
+        "supportsThinking": false
+      },
+      "name": "veoaifree-web/VEO 3.1"
+    },
+    {
+      "id": "veo-free/veo",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "veoaifree-web",
+      "type": "video",
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": false,
+        "thinking": false,
+        "supportsThinking": false
+      },
+      "name": "veo-free/VEO 3.1"
+    },
+    {
+      "id": "veoaifree-web/seedance",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "veoaifree-web",
+      "type": "video",
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": false,
+        "thinking": false,
+        "supportsThinking": false
+      },
+      "name": "veoaifree-web/Seedance"
+    },
+    {
+      "id": "veo-free/seedance",
+      "object": "model",
+      "created": 1785797717,
+      "owned_by": "veoaifree-web",
+      "type": "video",
+      "capabilities": {
+        "tool_calling": false,
+        "reasoning": false,
+        "thinking": false,
+        "supportsThinking": false
+      },
+      "name": "veo-free/Seedance"
+    }
+  ]
+}

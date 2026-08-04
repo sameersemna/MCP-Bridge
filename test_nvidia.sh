@@ -4,7 +4,7 @@ set -euo pipefail
 models=(
     # "ai21labs/jamba-1.5-large-instruct"
     # "deepseek-ai/deepseek-v4-flash"
-    # "deepseek-ai/deepseek-v4-pro" #
+    "deepseek-ai/deepseek-v4-pro" ##
     # "ibm/granite-3.0-3b-a800m-instruct"
     # "ibm/granite-3.0-8b-instruct"
     # "meta/llama-3.1-70b-instruct"
@@ -16,7 +16,6 @@ models=(
     # "meta/llama2-70b"
     # "microsoft/kosmos-2"
     # "microsoft/phi-3.5-moe-instruct"
-    "minimaxai/minimax-m3" #
     # "mistralai/codestral-22b-instruct-v0.1"
     # "mistralai/mistral-7b-instruct-v0.3"
     # "mistralai/mistral-large"
@@ -41,7 +40,7 @@ models=(
     # "nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1"
     # "nvidia/llama-3.2-nv-embedqa-1b-v1"
     # "nvidia/llama-3.3-nemotron-super-49b-v1"
-    "nvidia/llama-3.3-nemotron-super-49b-v1.5" #
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5" ##
     # "nvidia/llama-nemotron-embed-1b-v2"
     # "nvidia/llama-nemotron-embed-vl-1b-v2"
     # "nvidia/llama3-chatqa-1.5-70b"
@@ -51,7 +50,7 @@ models=(
     # "nvidia/nemotron-3-nano-30b-a3b"
     # "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     # "nvidia/nemotron-3-super-120b-a12b"
-    "nvidia/nemotron-3-ultra-550b-a55b" #
+    # "nvidia/nemotron-3-ultra-550b-a55b" #
     # "nvidia/nemotron-3.5-content-safety"
     # "nvidia/nemotron-4-340b-instruct"
     # "nvidia/nemotron-4-340b-reward"
@@ -70,17 +69,18 @@ models=(
     # "nvidia/riva-translate-4b-instruct-v1.1"
     # "nvidia/riva-translate-4b-instruct-v2"
     # "nvidia/vila"
-    "openai/gpt-oss-120b" #
+    "openai/gpt-oss-120b" ##
     # "openai/gpt-oss-20b"
-    "poolside/laguna-xs-2.1" #
-    "stepfun-ai/step-3.7-flash" #
-    "thinkingmachines/inkling" #
+    # "stepfun-ai/step-3.7-flash" #
+    # "thinkingmachines/inkling" #
     # "writer/palmyra-creative-122b"
     # "writer/palmyra-fin-70b-32k"
     # "writer/palmyra-med-70b"
     # "writer/palmyra-med-70b-32k"
-    "z-ai/glm-5.2" #
+    "z-ai/glm-5.2" ##
     # "zyphra/zamba2-7b-instruct"
+    "poolside/laguna-xs-2.1" ##
+    "minimaxai/minimax-m3" ##
 )
 
 # loop through the models and run test.sh for each one

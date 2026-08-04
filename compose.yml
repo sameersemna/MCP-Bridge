@@ -11,7 +11,10 @@ services:
     extra_hosts:
       - "latitude:192.168.178.94"
       - "latitude.fritz.box:192.168.178.94"
-    environment:
+    environment:    
+      - OPENAI_STREAMING=false
+      - STREAM=false
+      - FORCE_NON_STREAMING=true
       - MCP_BRIDGE__CONFIG__FILE=/app/config.json
       - MCP_BRIDGE__TELEMETRY__ENABLED=true
       - MCP_BRIDGE__TELEMETRY__OTEL_ENDPOINT=http://127.0.0.1:4318/v1/traces
