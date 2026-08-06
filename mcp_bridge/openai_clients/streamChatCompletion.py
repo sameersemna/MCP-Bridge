@@ -120,8 +120,14 @@ async def streaming_chat_completions(request: CreateChatCompletionRequest, http_
             headers={"Cache-Control": "no-cache"},
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(e)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to start streaming chat completion: {e}",
+        ) from e
 
 
 async def chat_completions(request: CreateChatCompletionRequest, http_request: Request, trace_logger: RequestTraceLogger | None = None):

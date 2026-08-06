@@ -1,9 +1,11 @@
 #!/bin/bash
 set -euo pipefail
+clear
+echo "Start...."
 
 models=(
     # "ai21labs/jamba-1.5-large-instruct"
-    # "deepseek-ai/deepseek-v4-flash"
+    "deepseek-ai/deepseek-v4-flash"
     "deepseek-ai/deepseek-v4-pro" ##
     # "ibm/granite-3.0-3b-a800m-instruct"
     # "ibm/granite-3.0-8b-instruct"
@@ -98,6 +100,14 @@ for model in "${models[@]}"; do
     echo "Running test.sh with model: $model"
     MODEL="$model" bash test.sh
     sleep 2
+
+    # check if response.md exists and is not empty
+    if [[ -s response.md ]]; then
+        echo "Response.md exists and is not empty for model: $model"
+    else
+        echo "Response.md does not exist or is empty for model: $model ====> Skipping PDF generation for model: $model"
+        continue
+    fi
 
     echo "Generating PDF report for model: $model"
     bash genpdf.sh

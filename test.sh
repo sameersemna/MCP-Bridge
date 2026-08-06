@@ -15,7 +15,7 @@ OLLAMA_URL="http://localhost:11434"
 rm -f response.json response.md
 
 echo "Checking MCP bridge health at ${BASE_URL}/health..."
-curl -fsS "${BASE_URL}/health" | jq # >/dev/null
+curl -fsS "${BASE_URL}/health" | jq '.mcp_servers[] | select((.status == "online")) | .name' # >/dev/null
 echo "Bridge is healthy. ---------------------------------"
 
 # echo "Listing models exposed by the bridge:"
@@ -49,8 +49,8 @@ My Date: $(date -d "now" +'%B %d, %Y')
 My Time: $(date -d "now" +'%H:%M:%S (%z)')
 My preferred language: English
 Other languages I can understand: Arabic, Urdu, Hindi, Marathi, German"
-echo "$FYI"
-echo '------------------------------'
+# echo "$FYI"
+# echo '------------------------------'
 
 # content="Use the 'fetch' MCP tool to retrieve the title of https://shamela.org and respond with only the title."
 # content="Use the 'context7' MCP tool to retrieve the documentation of the latest version of Laravel, as to what has changed from the previous version."
@@ -66,6 +66,7 @@ echo '------------------------------'
 # content="*Topic*: Shaikh Fawwaz al-Madkhali has criticized the Rulers of UAE using Newspaper articles and reports of western media (in his Facebook posts) and have accused them of supporting the Jews and the Zionist agenda. This has been spread by him and his followers on Social Media like Facebook, Twitter and Telegram. Is this considered making Takfir on the Rulers of UAE? Is this person considered a Takfiri or Khariji? Is it from the Salafi principles to use reports from Newspapers and western media against Muslim rulers? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
 # content="*Topic*: Shaikh Fawwaz al-Madkhali, Shaikh Nizar al-Sudani and Shaikh Bilal al-Salimihas criticized the Rulers of UAE, there is another person named Shaikh Ali al-Hudhayfi al-Yemeni in their camp, I want to search for his posts and statements regarding the Rulers of UAE, and see if he has also accused them of supporting the Jews and the Zionist agenda, and if he has also called them as 'Zionists' or supporters of 'Wahadatul Adyaan'. Is this considered making Takfir on the Rulers of UAE? Is this person considered a Takfiri or Khariji? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
 
+systemContent=$(cat ./prompts/system.md)
 content=$(cat ./prompts/content.md)
 contentShort=$(cat ./prompts/content.md | head -c 250)
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content:
@@ -73,14 +74,12 @@ echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} wi
 $contentShort ...
 ---"
 objective=$(cat ./prompts/content.md)
-content="${FYI}
+content="${objective}
+
+${content}"
+systemContent="${systemContent}
 ---
-${objective}
-
-${content}
-"
-
-systemContent=$(cat ./prompts/system.md)
+${FYI}"
 dataPost=$(jq -n --arg model "$MODEL" --arg content "$content" --arg systemContent "$systemContent" '{
   model: $model,
   stream: false,
@@ -107,7 +106,7 @@ echo "-- Response received and saved to response.json --------------------------
 if ! jq -e '.choices[0].message.content != null and (.choices[0].message.content | type == "string") and (.choices[0].message.content | length > 0)' response.json >/dev/null; then
   echo "No usable completion content returned." >&2
   cat response.json >&2
-  exit 1
+  exit 0
 fi
 
 echo "Extracting content from response.json and saving to response.md..."

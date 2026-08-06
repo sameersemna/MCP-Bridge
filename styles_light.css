@@ -1,45 +1,24 @@
+
 @page {
   size: A4;
   margin: 0.9cm;
-  background-color: #12161a; /* Core dark background */
 }
 
-
-:root {
-  /* Dark Theme Values (Muted tones to prevent glare) */
-  --bg-main: #12161a;         /* Soft dark slate */
-  --bg-table-th: #1f2933;     /* Muted dark gray for table headers */
-  --bg-table-even: #18222f;   /* Alternate row dark background */
-  --bg-quote-code: #18222f;   /* Code and blockquote background */
-  
-  --text-body: #e4e7eb;       /* Off-white text to reduce contrast fatigue */
-  --text-headings: #f5f7fa;   /* Brighter white for distinct headings */
-  --text-quote: #9fb3c8;      /* Readable blue-gray for quotes */
-  
-  --border-heading-primary: #334e68;
-  --border-heading-secondary: #323f4b;
-  --border-table: #486581;
-}
-
-/* 2. REFACTORED CSS USING VARIABLES */
 html {
   font-size: 100%;
-  background-color: var(--bg-main); /* Fallback wrapper protection */
 }
 
 body {
   font-family: "DejaVu Sans", "Noto Naskh Arabic", "Amiri", "Arial Unicode MS", Arial, sans-serif;
   font-size: 12pt;
   line-height: 1.5;
-  color: var(--text-body);
-  background-color: var(--bg-main);
+  color: #1f2933;
   margin: 0;
   text-align: justify;
-  transition: background-color 0.3s, color 0.3s, border-color 0.3s; /* Smooth visual transition */
 }
 
 h1, h2, h3, h4, h5, h6 {
-  color: var(--text-headings);
+  color: #102a43;
   margin-top: 1.05em;
   margin-bottom: 0.45em;
   line-height: 1.2;
@@ -47,7 +26,7 @@ h1, h2, h3, h4, h5, h6 {
 
 h1.title, h1 {
   font-size: 18pt;
-  border-bottom: 2px solid var(--border-heading-primary);
+  border-bottom: 2px solid #d9e2ec;
   padding-bottom: 0.25em;
   margin-top: 0.2em;
   margin-bottom: 0.65em;
@@ -55,7 +34,7 @@ h1.title, h1 {
 
 h2 {
   font-size: 16pt;
-  border-bottom: 1px solid var(--border-heading-secondary);
+  border-bottom: 1px solid #e5e7eb;
   padding-bottom: 0.15em;
 }
 
@@ -92,29 +71,29 @@ tr {
 }
 
 th, td {
-  border: 1px solid var(--border-table);
+  border: 1px solid #cbd5e1;
   padding: 0.45em 0.55em;
   text-align: left;
   vertical-align: top;
 }
 
 th {
-  background-color: var(--bg-table-th);
+  background-color: #f1f5f9;
   font-weight: 600;
 }
 
 tr:nth-child(even) td {
-  background-color: var(--bg-table-even);
+  background-color: #fcfdff;
 }
 
 blockquote.report-quote {
   margin: 0.8em 0;
   padding: 0.55em 0.8em 0.55em 1em;
-  border-right: 4px solid var(--border-heading-primary);
+  border-right: 4px solid #d9e2ec;
   border-left: none;
   border-radius: 0 4px 4px 0;
-  color: var(--text-quote);
-  background: var(--bg-quote-code);
+  color: #486581;
+  background: #f8fafc;
   display: block;
   width: 100%;
   max-width: 100%;
@@ -162,8 +141,7 @@ blockquote.report-quote ol {
 code,
 pre {
   font-family: "DejaVu Sans Mono", Consolas, monospace;
-  background: var(--bg-quote-code);
-  color: var(--text-body);
+  background: #f8fafc;
 }
 
 pre {
@@ -174,19 +152,6 @@ pre {
 img {
   max-width: 100%;
   height: auto;
-  /* Slight opacity tweak reduces eye-strain on bright images in dark mode */
-  opacity: 0.9; 
-}
-
-@media (prefers-color-scheme: dark) {
-  img {
-    opacity: 0.85;
-  }
-}
-
-/* Ensure links remain visible */
-a {
-    color: #4da6ff;
 }
 
 * {

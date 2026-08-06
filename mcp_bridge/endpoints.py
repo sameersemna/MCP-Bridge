@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 from opentelemetry import trace
@@ -62,7 +62,13 @@ async def openai_chat_completions(
         else:
             response = await chat_completions(request, http_request, trace_logger)
 
-        if response is not None:
+        if response is None:
+            # Defense in depth: no code path should produce a null response, but
+            # guard against it so clients never see an HTTP 200 with a null body.
+            trace_logger.record("outgoing_response", response=None)
+            raise HTTPException(status_code=502, detail="Chat completion produced no response")
+
+        if not request.stream:
             span.set_attribute(
                 "mcp_bridge.response.preview",
                 json.dumps(
@@ -71,7 +77,7 @@ async def openai_chat_completions(
                     default=str,
                 )[:1600],
             )
-        trace_logger.record("outgoing_response", response=response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) if response is not None else None)
+            trace_logger.record("outgoing_response", response=response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True))
         return response
 
 

@@ -3,7 +3,7 @@ import re
 import time
 from typing import Any
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from lmos_openai_types import (
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
@@ -659,20 +659,24 @@ async def chat_completions(
         while True:
             start_time = time.perf_counter()
             # logger.debug(request.model_dump_json())
-            text = (
-                await client.post(
-                    "/chat/completions",
-                    #content=request.model_dump_json(
-                    #    exclude_defaults=True, exclude_none=True, exclude_unset=True
-                    #),
-                    json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
-                )
-            ).text
-            logger.debug(
-                "upstream chat completion response received: "
-                f"status={getattr(client, 'last_response_status', 'unknown') if hasattr(client, 'last_response_status') else 'unknown'}"
+            upstream_response = await client.post(
+                "/chat/completions",
+                #content=request.model_dump_json(
+                #    exclude_defaults=True, exclude_none=True, exclude_unset=True
+                #),
+                json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
             )
+            text = upstream_response.text
+            logger.debug(f"upstream chat completion response received: status={upstream_response.status_code}")
             _record_timing(trace_logger, "upstream_llm_request", time.perf_counter() - start_time)
+
+            if upstream_response.status_code >= 400:
+                logger.error(f"upstream inference server returned status {upstream_response.status_code}: {text[:2000]}")
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Upstream inference server returned status {upstream_response.status_code}",
+                )
+
             try:
                 response = CreateChatCompletionResponse.model_validate_json(text)
                 if trace_logger is not None:
@@ -694,10 +698,22 @@ async def chat_completions(
                             f"tool_call_count={len(_extract_tool_calls(message))}; "
                             f"finish_reason={getattr(response.choices[0].finish_reason, 'value', None)}"
                         )
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.error("error parsing upstream chat completion response")
                 logger.error(e)
-                return None
+                raise HTTPException(
+                    status_code=502,
+                    detail="Failed to parse upstream chat completion response",
+                ) from e
+
+            if not response.choices:
+                logger.error("upstream chat completion response contained no choices")
+                raise HTTPException(
+                    status_code=502,
+                    detail="Upstream chat completion response contained no choices",
+                )
 
             msg = response.choices[0].message
             if _should_use_empty_content_fallback(msg, finish_reason_value := response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None):
