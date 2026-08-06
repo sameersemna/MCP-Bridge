@@ -28,7 +28,7 @@ html {
 }
 
 body {
-  font-family: "DejaVu Sans", "Noto Naskh Arabic", "Amiri", "Arial Unicode MS", Arial, sans-serif;
+  font-family: "DejaVu Sans", "Noto Naskh Arabic", "Noto Nastaliq Urdu", "Amiri", "Arial Unicode MS", Arial, sans-serif;
   font-size: 12pt;
   line-height: 1.5;
   color: var(--text-body);

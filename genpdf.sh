@@ -74,10 +74,8 @@ echo "HTML copy saved to: $HTML_OUTPUT"
 { 
   echo -e "\n=== $TITLE  ===\n"
   echo -e "\n=== CONTENT ===\n"
-  cat ./prompts/content.md  
-  echo -e "\n=== OBJECTIVE ===\n"
-  cat ./prompts/objective.md
+  cat ./prompts/compressed/content.md
   echo -e "\n=== SYSTEM ===\n"
-  cat ./prompts/system.md
+  cat ./prompts/compressed/system.md
 } > "$MD_DIR/${TIMESTAMP}_prompt.md"
 
