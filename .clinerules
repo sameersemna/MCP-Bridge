@@ -1,0 +1,311 @@
+# MCP-Bridge Project Rules
+
+## Project Overview
+
+MCP-Bridge is a Python FastAPI application that bridges the OpenAI API to MCP (Model Context Protocol) tools, allowing any OpenAI-compatible client to use MCP tools without explicit MCP support.
+
+### Architecture Summary
+- **FastAPI** application served via **uvicorn**
+- **MCP Clients**: StdioClient, SseClient, DockerClient (abstract base: AbstractClient)
+- **OpenAI Clients**: Chat completion, streaming, completion via httpx
+- **Config Chain**: File → HTTP URL → Environment Variable JSON → Final validated config
+- **Tool Mappers**: Bidirectional conversion between MCP tool format ↔ OpenAI tool format
+- **SSE Bridge**: Exposes MCP tools via SSE protocol for external MCP-compatible clients
+- **Health System**: Manager-based health checks for MCP servers
+- **Sampling System**: Model selector with intelligence/cost/speed scoring
+
+### Key Dependencies
+- **Python 3.10+** (uses `|` union syntax, `match` statements)
+- **FastAPI** with lifespan context
+- **httpx** for async HTTP
+- **Pydantic v2** for data models and config
+- **MCP SDK** (`mcp` package)
+- **uv** for dependency management
+- **Docker** for deployment
+
+---
+
+## Coding Standards
+
+### General Principles
+- **ALWAYS** use async/await for any I/O operations. The entire codebase is async-first.
+- **NEVER** use `// TODO`, placeholders, or partial implementations. Write complete, production-ready code.
+- Write explicit type annotations for all function parameters and return types.
+- Use Pydantic v2 models for all data structures, request/response schemas, and configuration.
+- Follow the existing module structure — never create files in unexpected locations.
+
+### Python Style & Conventions
+- Use Python 3.10+ syntax: `str | None` (not `Optional[str]`), `match/case` where appropriate.
+- Imports order: standard library → third-party → local (with blank line separators).
+- Use relative imports within the `mcp_bridge` package (e.g., `from ..config import X`).
+- Module-level `__all__` should be defined when exposing public API surface.
+- Class names: `PascalCase`. Functions/methods: `snake_case`. Constants: `UPPER_SNAKE_CASE`.
+- Private methods/attributes prefixed with single underscore `_`.
+- Use `@staticmethod` for utility methods that don't need `self`.
+
+### Type Hints
+- Every function signature must have complete type annotations.
+- Use `from __future__ import annotations` at the top of files to enable PEP 604 syntax.
+- Use `TypedDict` for dictionary-like config structures when Pydantic is overkill.
+- Use `Protocol` for structural subtyping / duck typing interfaces.
+- Always type `self` return as `None` for `__init__` methods.
+
+### Async Patterns
+```python
+async def my_function(param: str) -> ResultType:
+    result = await some_async_call()
+    return result
+```
+- Use `asyncio.gather()` for concurrent operations.
+- Use `asyncio.create_task()` for fire-and-forget background operations.
+- Always use `async with` context managers for MCP client sessions.
+- Handle task cancellation with `asyncio.CancelledError` in cleanup code.
+- Use `await` on async generators to properly close them.
+
+### Error Handling
+- Define custom exception classes in the relevant module.
+- Use Pydantic validation errors for input validation.
+- Wrap MCP client errors, HTTP errors, and parsing errors consistently.
+- Log errors with appropriate severity before raising/re-raising.
+- Use `raise from` to chain exceptions and preserve traceback context.
+- For network/config timeouts, use `asyncio.timeout()` or `asyncio.wait_for()`.
+- Graceful degradation: if MCP server is unavailable, report it as tool error rather than crashing.
+
+### Logging
+- Use the project's logging module: `from mcp_bridge.logging import logger` (or `log`).
+- Structured logging with context: `logger.info("message", extra={"key": "value"})`.
+- Log levels: DEBUG for detailed flow, INFO for normal operations, WARNING for recoverable issues, ERROR for failures.
+- Always log the MCP server name when logging tool calls.
+- Never log API keys or secrets. Use `[REDACTED]` for sensitive values.
+
+---
+
+## Architecture & Design Patterns
+
+### Configuration System
+Config is loaded in priority order, later sources override earlier ones:
+1. `MCP_BRIDGE__CONFIG__FILE` → local JSON file
+2. `MCP_BRIDGE__CONFIG__HTTP_URL` → HTTP-downloaded JSON
+3. `MCP_BRIDGE__CONFIG__JSON` → inline JSON env var
+4. Final validated config via Pydantic model
+
+**IMPORTANT**: Config values support environment variable substitution using `${VAR_NAME}` syntax in JSON strings (handled by `env_subst.py`).
+
+### MCP Client Pattern
+All MCP clients extend `AbstractClient` and implement:
+- `__init__(name, config)` — receives server name and config dict
+- `start()` — initializes the client session
+- `stop()` — cleanly shuts down the client session
+- Session management via `async with` context manager from MCP SDK
+
+Client types:
+- `StdioClient` — for local MCP servers (stdin/stdout transport)
+- `SseClient` — for remote MCP servers (SSE transport)
+- `DockerClient` — for MCP servers running in Docker containers
+
+### McpClientManager Singleton
+- Manages lifecycle of all MCP client instances.
+- Provides `get_client(name)` for accessing specific clients.
+- Provides `get_all_tools()` to aggregate tools from all servers.
+- Provides `get_available_servers()` to list active servers.
+- Initialize at startup, clean up at shutdown via `lifespan.py`.
+
+### Tool Mapper Pattern
+- `mcp2openaiConverters.py`: Converts MCP tool schemas → OpenAI-compatible function-calling format.
+- `openai2mcpConverters.py`: Converts OpenAI tool call requests → MCP tool call format.
+- Both converters should handle type mapping, parameter validation, and error formatting.
+
+### OpenAI Client Layer
+- `genericHttpxClient.py` — base async HTTP client for inference servers.
+- `chatCompletion.py` — handles non-streaming chat completions with tool call loops.
+- `streamChatCompletion.py` — handles streaming chat completions.
+- `completion.py` — handles text completions (without tools).
+- All use httpx `AsyncClient` with proper timeout and connection pooling.
+
+### API Endpoints Structure
+- `/v1/chat/completions` — Main chat completion endpoint (OpenAI-compatible).
+- `/v1/completions` — Text completion endpoint.
+- `/mcp-server/sse` — SSE bridge for external MCP clients.
+- `/api/...` — MCP management endpoints (tools, resources, prompts listing).
+- `/health/...` — Health check endpoints.
+
+### SSE Bridge
+- Exposes a full MCP server over SSE transport.
+- Allows external MCP-compatible clients (like mcp-cli) to connect.
+- Uses `sse_transport.py` for the SSE protocol implementation.
+
+### Sampling System
+- Models are configured with `intelligence`, `cost`, and `speed` scores (0.0–1.0).
+- `modelSelector.py` selects the best model based on the create messages request.
+- `sampler.py` handles the create message sampling request from MCP servers.
+
+---
+
+## Project Structure
+
+```
+mcp_bridge/
+├── __init__.py
+├── auth.py                    # API key authentication
+├── endpoints.py               # FastAPI endpoint definitions
+├── lifespan.py                # App lifecycle: startup/shutdown
+├── logging.py                 # Logging configuration
+├── main.py                    # FastAPI app creation
+├── openapi_tags.py            # OpenAPI tag metadata
+├── routers.py                 # API router registration
+├── telemetry.py               # Telemetry (if enabled)
+├── compat/                    # Backward compatibility shims
+│   ├── remote_mcp_server.py
+│   └── sitecustomize.py
+├── config/                    # Configuration chain
+│   ├── __init__.py
+│   ├── env_subst.py           # ${VAR} substitution
+│   ├── file.py                # File-based config source
+│   ├── final.py               # Final validated config model
+│   ├── http.py                # HTTP-based config source
+│   └── initial.py             # Initial config deserialization
+├── health/                    # Health check system
+│   ├── __init__.py
+│   ├── manager.py
+│   ├── router.py
+│   └── types.py
+├── mcp_clients/               # MCP server client implementations
+│   ├── AbstractClient.py      # Abstract base class
+│   ├── DockerClient.py        # Docker-container MCP client
+│   ├── McpClientManager.py    # Singleton client manager
+│   ├── session.py             # MCP session helpers
+│   ├── SseClient.py           # SSE transport MCP client
+│   ├── stdio_transport.py     # Stdio transport helpers
+│   └── StdioClient.py         # Stdio transport MCP client
+├── mcp_server/                # SSE bridge server
+│   ├── __init__.py
+│   ├── server.py              # MCP server definition
+│   ├── sse_transport.py       # SSE transport implementation
+│   └── sse.py                 # SSE endpoint code
+├── mcpManagement/             # MCP server management
+│   ├── __init__.py
+│   ├── prompts.py             # Prompt listing/handling
+│   ├── resources.py           # Resource listing/handling
+│   ├── router.py              # Management API routes
+│   ├── server.py              # Management endpoints
+│   └── tools.py               # Tool listing/execution
+├── models/                    # Pydantic data models
+│   ├── __init__.py
+│   ├── chatCompletionStreamResponse.py
+│   └── mcpServerStatus.py
+├── openai_clients/            # OpenAI API interaction
+│   ├── __init__.py
+│   ├── chatCompletion.py      # Non-streaming chat completions
+│   ├── completion.py          # Text completions
+│   ├── genericHttpxClient.py  # Base async HTTP client
+│   ├── streamChatCompletion.py # Streaming chat completions
+│   ├── streamCompletion.py    # Streaming text completions
+│   └── utils.py               # Shared utilities
+├── sampling/                  # Sampling / model selection
+│   ├── modelSelector.py       # Model selection logic
+│   └── sampler.py             # Sampling request handler
+└── tool_mappers/              # Bidirectional tool format converters
+    ├── __init__.py
+    ├── mcp2openaiConverters.py
+    └── openai2mcpConverters.py
+tests/
+├── test_chat_completion_loop.py
+├── test_config_hardening.py
+├── test_genpdf_engine.py
+├── test_genpdf_quote_transform.py
+├── test_mcp_client_timeout_recovery.py
+├── test_request_logging.py
+├── test_request_trace_logging.py
+├── test_search_result_limiting.py
+├── test_stdio_transport.py
+├── test_tool_loop_error_policy.py
+└── test_wait_for_session.py
+```
+
+---
+
+## Testing Standards
+
+### Test Framework
+- Use **pytest** as the test runner.
+- Test files are in the `tests/` directory with `test_` prefix.
+- Use descriptive test function names: `test_feature_under_test_scenario`.
+
+### Test Patterns
+- Use `pytest.mark.asyncio` for async test functions.
+- Use `pytest.fixture` for shared setup (e.g., mock MCP clients, config fixtures).
+- Use `unittest.mock.patch` / `pytest.monkeypatch` for mocking external dependencies.
+- Prefer dependency injection in production code to make testing easier.
+
+### What to Test
+- MCP client timeout and recovery behavior.
+- Tool loop error handling policies (error vs continue vs stop).
+- Config loading from different sources with environment variable substitution.
+- Bidirectional tool format conversion correctness.
+- Streaming and non-streaming chat completion flows.
+- Request logging middleware behavior.
+- Edge cases: empty tool lists, invalid config, network failures, tool call errors.
+
+---
+
+## Deployment & Operations
+
+### Docker
+- Multi-stage Dockerfile for smaller images.
+- Configuration via environment variables or mounted config file.
+- Exposes port 9090 (configurable via `network.port`).
+- Use `docker-bake.hcl` for multi-platform builds.
+
+### Helm Chart
+- Available at `charts/mcp-bridge/`.
+- Supports ConfigMap-based configuration.
+- Standard Kubernetes deployment with service.
+
+### Manual Deployment
+- Use `uv sync` to install dependencies.
+- Create `config.json` in project root or set `MCP_BRIDGE__CONFIG__*` env vars.
+- Run with `uv run mcp_bridge/main.py`.
+
+### API Key Authentication
+- Configured via `security.auth` section in config.
+- Enabled with `"enabled": true` and a list of `api_keys`.
+- Pass API key as `Authorization: Bearer <key>` header.
+- If `api_key` field is empty/missing, auth is skipped.
+
+---
+
+## Important Gotchas
+
+1. **Soft Deprecated**: Open WebUI v0.6.31+ has native MCP support. MCP-Bridge is in maintenance mode and looking for maintainers.
+2. **Async Cleanup**: Always ensure MCP clients are properly stopped in `lifespan.py` shutdown — leaked client processes will accumulate.
+3. **Config Priority**: Later config sources override earlier ones. File → HTTP → Env JSON → Final validation. Be careful with partial overrides.
+4. **Port Range**: Use ports 3000-3009 for development servers. Kill existing processes on a port before reusing it.
+5. **API Compatibility**: The `/v1/chat/completions` endpoint is designed to be a drop-in replacement for OpenAI's API. Do not break compatibility.
+6. **Tool Call Loop**: The chat completion flow involves multiple rounds: request → LLM generates tool calls → execute tools → return results to LLM → final response. Handle the loop correctly.
+7. **Streaming Complexity**: Streaming chat completions with tool calls require careful state management — can't stream tool call results until they're complete.
+8. **MCP SDK Version**: Keep the MCP SDK version in `pyproject.toml` in sync with Python 3.10+ compatibility requirements.
+9. **Environment Variable Substitution**: Config values containing `${VAR_NAME}` are automatically substituted from the environment. Escape literal `${}` with `\${}`.
+10. **SSE Transport**: The SSE endpoint exposes ALL configured MCP tools to external clients. Ensure appropriate access controls when auth is enabled.
+
+---
+
+## Workflow Guidelines
+
+### Adding a New Feature
+1. Check if the feature belongs in an existing module or requires a new one.
+2. For new endpoints, add the route in the appropriate `*_router.py` or register in `routers.py`.
+3. Update OpenAPI documentation tags in `openapi_tags.py`.
+4. Add config model fields in `config/final.py` if configuration is needed.
+5. Write tests that cover success and failure paths.
+
+### Adding a New MCP Server Config
+- Add the MCP server entry in the `mcp_servers` config section with `command` and `args`.
+- Optionally set `disabled: true` to skip loading.
+- Optionally set Docker-specific config for `DockerClient`.
+- Optionally set SSE URL for `SseClient`.
+
+### Debugging
+- Set `"logging": {"log_level": "DEBUG"}` in config for verbose output.
+- Check health endpoints at `/health` for MCP server status.
+- Use the OpenAPI docs at `/docs` for interactive API testing.
+- Test SSE bridge with `npx @wong2/mcp-cli --sse http://localhost:8000/mcp-server/sse`.
