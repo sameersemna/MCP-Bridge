@@ -66,17 +66,13 @@ Other languages I can understand: Arabic, Urdu, Hindi, Marathi, German"
 # content="*Topic*: Shaikh Fawwaz al-Madkhali has criticized the Rulers of UAE using Newspaper articles and reports of western media (in his Facebook posts) and have accused them of supporting the Jews and the Zionist agenda. This has been spread by him and his followers on Social Media like Facebook, Twitter and Telegram. Is this considered making Takfir on the Rulers of UAE? Is this person considered a Takfiri or Khariji? Is it from the Salafi principles to use reports from Newspapers and western media against Muslim rulers? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
 # content="*Topic*: Shaikh Fawwaz al-Madkhali, Shaikh Nizar al-Sudani and Shaikh Bilal al-Salimihas criticized the Rulers of UAE, there is another person named Shaikh Ali al-Hudhayfi al-Yemeni in their camp, I want to search for his posts and statements regarding the Rulers of UAE, and see if he has also accused them of supporting the Jews and the Zionist agenda, and if he has also called them as 'Zionists' or supporters of 'Wahadatul Adyaan'. Is this considered making Takfir on the Rulers of UAE? Is this person considered a Takfiri or Khariji? Search both English and Arabic sources, mention the URL links of sources to cross-verify. Provide a summary of the findings."
 
-systemContent=$(cat ./prompts/system.md)
-content=$(cat ./prompts/content.md)
-contentShort=$(cat ./prompts/content.md | head -c 250)
+systemContent=$(cat ./prompts/compressed/system.md)
+content=$(cat ./prompts/compressed/content.md)
+contentShort=$(cat ./prompts/compressed/content.md | head -c 300)
 echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content:
 ---
 $contentShort ...
 ---"
-objective=$(cat ./prompts/content.md)
-content="${objective}
-
-${content}"
 systemContent="${systemContent}
 ---
 ${FYI}"
