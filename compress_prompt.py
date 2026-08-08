@@ -54,6 +54,7 @@ DEFAULT_NVIDIA_BASE = "https://integrate.api.nvidia.com/v1"
 DEFAULT_MODEL = "deepseek-ai/deepseek-v4-flash"
 DEFAULT_NVIDIA_KEY = os.environ.get("NVIDIA_API_KEY", "")
 DEFAULT_TEMPERATURE = 0.1
+DEFAULT_SEED = 42
 DEFAULT_MAX_TOKENS = 4096
 
 

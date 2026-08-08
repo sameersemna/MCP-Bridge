@@ -20,11 +20,15 @@ models=()
 #     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 # )
 
-# get all free models from OpenRouter
 openrouter_free_models=$(curl -s -X GET \
-  'https://openrouter.ai/api/v1/models' \
-  -H "Authorization: Bearer $API_KEY" | \
-  jq '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0")) | .id')
+  'http://localhost:11410/v1/models' | \
+  jq -r '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0")) | .id')
+
+# get all free models from OpenRouter
+# openrouter_free_models=$(curl -s -X GET \
+#   'https://openrouter.ai/api/v1/models' \
+#   -H "Authorization: Bearer $API_KEY" | \
+#   jq '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0")) | .id')
 echo "OpenRouter free models: ${openrouter_free_models}"
 for model in ${openrouter_free_models}; do
     echo "Adding OpenRouter free model: $model"
@@ -35,6 +39,15 @@ sleep 5
 
 # loop through the models and run test.sh for each one
 for model in "${models[@]}"; do
+    # echo "---------------------------------------------"
+    # echo "Testing Open Router model: $model"
+    # curl https://openrouter.ai/api/v1/chat/completions   -H "Authorization: Bearer $API_KEY"   -H "Content-Type: application/json"   -d '{
+    #     "model": "'$model'",
+    #     "messages": [{"role": "user", "content": "Hello!"}]
+    # }' | jq
+    # echo "---------------------------------------------"
+    # continue
+
     echo "Running test.sh with model: $model"
     MODEL="$model" bash test.sh
     sleep 2
