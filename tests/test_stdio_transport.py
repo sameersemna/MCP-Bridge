@@ -25,3 +25,27 @@ def test_should_log_stderr_text_ignores_common_startup_status_lines() -> None:
     assert _should_log_stderr_text("MCP Server running on stdio") is False
     assert _should_log_stderr_text("Processing request of type") is False
     assert _should_log_stderr_text("Server initialized") is False
+
+
+def test_should_log_stderr_text_ignores_benign_pydantic_settings_warning() -> None:
+    warning = (
+        "IncompleteFieldDefinitionWarning: Field 'lifespan' has an incomplete definition: "
+        "its annotation contains an unresolved forward reference, so settings sources may "
+        "fail to correctly resolve its value. Call `model_rebuild()` on the model where the "
+        "field is defined, once all the referenced types are defined."
+    )
+    assert _should_log_stderr_text(warning) is False
+
+
+def test_should_log_stderr_text_ignores_warnings_warn_source_fragment() -> None:
+    # The source-code snippet line in a Python warning traceback carries no
+    # diagnostic value on its own and should not be surfaced.
+    assert _should_log_stderr_text("  warnings.warn(") is False
+    assert _should_log_stderr_text("    warnings.warn(") is False
+
+
+def test_should_log_stderr_text_keeps_real_warnings() -> None:
+    assert _should_log_stderr_text("WARNING failed to start server") is True
+    assert _should_log_stderr_text("WARNING: connection refused") is True
+    # The actual warning message line (with file:line: category) is still kept.
+    assert _should_log_stderr_text("file.py:123: UserWarning: some message") is True

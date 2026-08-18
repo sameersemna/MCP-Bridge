@@ -51,6 +51,21 @@ def _sanitize_stderr_text(text: str) -> str:
     return sanitized.rstrip()
 
 
+# Known-benign warnings emitted by third-party MCP servers on startup that
+# should not be surfaced as errors. These are informational and cannot be
+# fixed from MCP-Bridge (they originate inside the subprocess's dependencies).
+_BENIGN_WARNING_PATTERNS = (
+    r"incompletefielddefinitionwarning",
+    r"unresolved forward reference",
+    r"call `model_rebuild\(\)`",
+    # Source-code snippet line shown in a Python warning traceback, e.g.
+    #   file.py:123: UserWarning: some message
+    #     warnings.warn(
+    # The snippet line carries no diagnostic value on its own.
+    r"^\s*warnings\.warn\(",
+)
+
+
 def _should_log_stderr_text(text: str) -> bool:
     lowered = text.lower().strip()
     if not lowered:
@@ -60,6 +75,9 @@ def _should_log_stderr_text(text: str) -> bool:
         return False
 
     if re.search(r"\b(?:processing request of type|mcp server running on stdio|initialized|server initialized|ready|listening)\b", lowered):
+        return False
+
+    if any(re.search(pattern, lowered) for pattern in _BENIGN_WARNING_PATTERNS):
         return False
 
     if any(marker in lowered for marker in ("error", "exception", "traceback", "warning", "failed", "fatal", "panic")):

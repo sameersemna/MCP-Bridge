@@ -148,6 +148,97 @@ def fetch_models(endpoint, api_key, timeout):
     return models
 
 
+def _parse_sse_content(body):
+    """Reconstruct message content from a text/event-stream chat response.
+
+    Some backends return SSE chunks even when streaming wasn't requested.
+    Returns (content, finish_reason, error_message).
+    """
+    content_parts = []
+    finish_reason = None
+    error = None
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith(":") or not line.startswith("data:"):
+            continue
+        data = line[len("data:"):].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(chunk, dict) and chunk.get("error"):
+            err = chunk["error"]
+            error = err.get("message") if isinstance(err, dict) else str(err)
+            continue
+        choices = chunk.get("choices") if isinstance(chunk, dict) else None
+        if not choices or not isinstance(choices[0], dict):
+            continue
+        choice = choices[0]
+        delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else {}
+        piece = delta.get("content")
+        if piece:
+            content_parts.append(piece)
+        if choice.get("finish_reason"):
+            finish_reason = choice["finish_reason"]
+    return "".join(content_parts), finish_reason, error
+
+
+def _extract_response(status, body):
+    """Validate a chat-completion response beyond just its HTTP status.
+
+    Some gateways (combo/proxy backends) return HTTP 200 with a JSON body that
+    still signals failure, e.g. a top-level ``error`` object, no ``choices``,
+    a ``finish_reason`` of ``"error"``, or empty message content. Treat all of
+    those as failures instead of trusting the status code alone.
+
+    Some proxies also append trailing bytes after a otherwise-valid JSON
+    document (e.g. duplicate provider attempts), or return SSE chunks even
+    for non-streaming requests; both are tolerated here rather than treated
+    as a hard parse failure.
+    """
+    if status != 200:
+        return False, None, body[:500]
+
+    parsed = None
+    try:
+        parsed, _end = json.JSONDecoder().raw_decode(body.strip())
+    except (json.JSONDecodeError, ValueError):
+        parsed = None
+
+    if parsed is None:
+        content, finish_reason, sse_error = _parse_sse_content(body)
+        if sse_error:
+            return False, None, sse_error
+        if finish_reason == "error":
+            return False, None, f"finish_reason=error: {content or body[:300]}"
+        if content and content.strip():
+            return True, content, None
+        return False, None, f"invalid/empty response body: {body[:300]}"
+
+    if isinstance(parsed, dict) and parsed.get("error"):
+        err = parsed["error"]
+        msg = err.get("message") if isinstance(err, dict) else str(err)
+        return False, None, msg or "response contains an 'error' field"
+
+    choices = parsed.get("choices") if isinstance(parsed, dict) else None
+    if not choices:
+        return False, None, f"response has no 'choices': {body[:300]}"
+
+    choice = choices[0] if isinstance(choices[0], dict) else {}
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    content = message.get("content")
+    finish_reason = choice.get("finish_reason")
+
+    if finish_reason == "error":
+        return False, None, f"finish_reason=error: {content or body[:300]}"
+    if not content or not str(content).strip():
+        return False, None, f"empty content in response (finish_reason={finish_reason}): {body[:300]}"
+
+    return True, content, None
+
+
 def probe_model(endpoint, api_key, model_id, prompt, timeout, max_tokens):
     url = f"{endpoint}/chat/completions"
     headers = build_headers(api_key)
@@ -170,12 +261,8 @@ def probe_model(endpoint, api_key, model_id, prompt, timeout, max_tokens):
             break
     elapsed = time.monotonic() - started
 
-    if status == 200:
-        try:
-            parsed = json.loads(body)
-            content = parsed["choices"][0]["message"]["content"]
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-            content = body[:300]
+    ok, content, error = _extract_response(status, body)
+    if ok:
         return {
             "model": model_id,
             "ok": True,
@@ -188,7 +275,7 @@ def probe_model(endpoint, api_key, model_id, prompt, timeout, max_tokens):
         "ok": False,
         "status": status,
         "elapsed": elapsed,
-        "error": body[:500],
+        "error": error,
     }
 
 
@@ -214,6 +301,10 @@ def _status_text(result):
     if result.get("status") is None:
         return "ERROR"
     return f"HTTP {result['status']}"
+
+
+def _status_icon(result):
+    return "✓" if result["ok"] else "✗"
 
 
 def _error_text(result):
@@ -267,14 +358,14 @@ def write_markdown(results, endpoint, out_dir):
     lines.append("")
     lines.append("| Result | Count |")
     lines.append("|--------|-------|")
-    lines.append(f"| Passed | {passed} |")
-    lines.append(f"| Failed | {total - passed} |")
+    lines.append(f"| ✓ Passed | {passed} |")
+    lines.append(f"| ✗ Failed | {total - passed} |")
     lines.append("")
 
     lines.append("## Per-Model Results")
     lines.append("")
-    lines.append("| Model | Status | HTTP | Elapsed (s) | Content | Error |")
-    lines.append("|-------|--------|------|-------------|---------|-------|")
+    lines.append("| | Model | Status | HTTP | Elapsed (s) | Content | Error |")
+    lines.append("|---|-------|--------|------|-------------|---------|-------|")
     for r in results:
         content = _content_text(r)
         if len(content) > 60:
@@ -283,7 +374,7 @@ def write_markdown(results, endpoint, out_dir):
         if len(error) > 60:
             error = error[:60] + "…"
         lines.append(
-            f"| {r['model']} | {_status_text(r)} | "
+            f"| {_status_icon(r)} | {r['model']} | {_status_text(r)} | "
             f"{r.get('status') if r.get('status') is not None else ''} | "
             f"{r['elapsed']:.2f} | {content} | {error} |"
         )
@@ -293,7 +384,7 @@ def write_markdown(results, endpoint, out_dir):
         lines.append("## Failed Models")
         lines.append("")
         for r in failed:
-            lines.append(f"- **{r['model']}** (HTTP {r.get('status')}): {_error_text(r)}")
+            lines.append(f"- ✗ **{r['model']}** (HTTP {r.get('status')}): {_error_text(r)}")
         lines.append("")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

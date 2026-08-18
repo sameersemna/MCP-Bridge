@@ -1,14 +1,7 @@
-import warnings
 from typing import Annotated, Any, Literal, Union
 from urllib.parse import urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
-
-warnings.filterwarnings(
-    "ignore",
-    message='Field name "json" in "InitialSettings" shadows an attribute in parent "BaseSettings"',
-    category=UserWarning,
-)
 
 
 class MCPServerConfig(BaseModel):

@@ -10,6 +10,7 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _build_empty_content_response,
     _build_synthesis_request,
     _build_tool_loop_stop_response,
+    _context_budget_exceeded,
     _extract_message_text,
     _extract_tool_message_text,
     _format_tool_loop_stop_message,
@@ -17,6 +18,7 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _record_timing,
     _should_stop_tool_loop_on_tool_errors,
     _should_use_empty_content_fallback,
+    get_max_context_tokens,
     get_max_tool_turns,
     should_continue_tool_loop,
 )
@@ -92,6 +94,68 @@ def test_get_max_tool_turns_clamps_too_low_environment_values(monkeypatch):
     monkeypatch.setenv("MCP_BRIDGE_MAX_TOOL_TURNS", "4")
 
     assert get_max_tool_turns() == DEFAULT_MAX_TOOL_TURNS
+
+
+def test_get_max_context_tokens_uses_default_when_unset(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", raising=False)
+
+    assert get_max_context_tokens() == 60000
+
+
+def test_get_max_context_tokens_reads_environment(monkeypatch):
+    monkeypatch.setenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", "50000")
+
+    assert get_max_context_tokens() == 50000
+
+
+def test_get_max_context_tokens_clamps_too_low_environment_values(monkeypatch):
+    monkeypatch.setenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", "100")
+
+    assert get_max_context_tokens() == 1000
+
+
+def test_context_budget_exceeded_when_prompt_tokens_over_budget():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": {"prompt_tokens": 70000, "completion_tokens": 10, "total_tokens": 70010},
+        }
+    )
+
+    assert _context_budget_exceeded(response, 60000) is True
+
+
+def test_context_budget_not_exceeded_when_under_budget():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": {"prompt_tokens": 30000, "completion_tokens": 10, "total_tokens": 30010},
+        }
+    )
+
+    assert _context_budget_exceeded(response, 60000) is False
+
+
+def test_context_budget_not_exceeded_when_usage_missing():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+        }
+    )
+
+    assert _context_budget_exceeded(response, 60000) is False
 
 
 def test_tool_loop_uses_partial_evidence_when_tool_call_times_out():

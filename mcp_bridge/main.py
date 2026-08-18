@@ -66,7 +66,13 @@ def get_app() -> FastAPI:
 def run() -> None:
     import uvicorn
 
-    uvicorn.run("mcp_bridge.main:get_app", host=config.network.host, port=config.network.port, reload=False)
+    uvicorn.run(
+        "mcp_bridge.main:get_app",
+        host=config.network.host,
+        port=config.network.port,
+        reload=False,
+        factory=True,
+    )
 
 if __name__ == "__main__":
     run()

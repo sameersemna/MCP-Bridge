@@ -2,6 +2,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, Json
 from typing import Optional
 
+import warnings
+
+# The `json` field below intentionally shadows `BaseSettings.json`. It is a
+# documented public env var (MCP_BRIDGE__CONFIG__JSON) and cannot be renamed.
+# Suppress the pydantic warning at its source, before the model is instantiated.
+warnings.filterwarnings(
+    "ignore",
+    message='Field name "json" in "InitialSettings" shadows an attribute in parent "BaseSettings"',
+    category=UserWarning,
+)
+
 __all__ = ["initial_settings"]
 
 

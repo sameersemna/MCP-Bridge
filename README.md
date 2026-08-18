@@ -130,6 +130,18 @@ If you want to use the tools inside of [claude desktop](https://claude.ai/downlo
 
 To add new MCP servers, edit the config.json file.
 
+### Tool-loop environment variables
+
+The tool-calling loop can be tuned with the following environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MCP_BRIDGE_MAX_TOOL_TURNS` | `12` | Maximum number of tool-calling iterations per request. |
+| `MCP_BRIDGE_MAX_CONTEXT_TOKENS` | `60000` | Safety cap on the accumulated prompt context (in tokens) for a single request. When exceeded, the tool loop stops and a final answer is synthesized. Prevents runaway loops where the model keeps issuing tool calls and the context grows unboundedly. |
+| `MCP_BRIDGE_TOOL_TIMEOUT_SECONDS` | `60` | Per-tool-call timeout in seconds. |
+| `MCP_BRIDGE_TOOL_RETRY_COUNT` | `0` | Number of retries for a timed-out tool call. |
+| `MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS` | `0.25` | Delay between tool-call retries. |
+
 ### API Key Authentication
 
 MCP-Bridge supports API key authentication to secure your server. To enable this feature, add something like this to your `config.json` file:

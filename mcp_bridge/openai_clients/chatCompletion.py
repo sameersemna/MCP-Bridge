@@ -22,6 +22,32 @@ import json
 DEFAULT_MAX_TOOL_TURNS = 12
 MIN_MAX_TOOL_TURNS = 12
 DEFAULT_TOOL_TIMEOUT_SECONDS = 60
+# Safety cap on the accumulated prompt context (in tokens) for a single
+# tool-calling request. Prevents runaway loops where the model keeps issuing
+# tool calls and the context grows unboundedly (e.g. 3+ hour requests).
+DEFAULT_MAX_CONTEXT_TOKENS = 60000
+
+
+def get_max_context_tokens() -> int:
+    raw_value = os.getenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS")
+    if raw_value is None:
+        return DEFAULT_MAX_CONTEXT_TOKENS
+
+    try:
+        configured_value = int(raw_value)
+    except ValueError:
+        logger.warning(
+            f"invalid MCP_BRIDGE_MAX_CONTEXT_TOKENS value: {raw_value}; using default {DEFAULT_MAX_CONTEXT_TOKENS}"
+        )
+        return DEFAULT_MAX_CONTEXT_TOKENS
+
+    if configured_value < 1000:
+        logger.warning(
+            f"configured MCP_BRIDGE_MAX_CONTEXT_TOKENS={configured_value} is below the safe minimum 1000; using 1000"
+        )
+        return 1000
+
+    return configured_value
 
 
 def get_tool_timeout_seconds() -> int:
@@ -97,6 +123,20 @@ def _record_timing(trace_logger: RequestTraceLogger | None, stage: str, elapsed_
         stage=stage,
         elapsed_ms=round(elapsed_seconds * 1000, 2),
     )
+
+
+def _context_budget_exceeded(
+    response: CreateChatCompletionResponse,
+    max_context_tokens: int,
+) -> bool:
+    """Return True if the accumulated prompt context exceeds the budget."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return False
+    prompt_tokens = getattr(usage, "prompt_tokens", None)
+    if not isinstance(prompt_tokens, int):
+        return False
+    return prompt_tokens > max_context_tokens
 
 
 def _format_tool_loop_stop_message(*, tool_turns_completed: int, max_tool_turns: int) -> str:
@@ -227,6 +267,8 @@ def _build_synthesis_request(
     )
     if stop_reason == "max_tool_turns":
         instruction += " The tool workflow stopped early, so if some information is incomplete, say so clearly."
+    elif stop_reason == "max_context_tokens":
+        instruction += " The tool workflow stopped early because the conversation context grew too large, so if some information is incomplete, say so clearly."
 
     synthesis_request.messages.append(
         ChatCompletionRequestMessage.model_validate(
@@ -392,6 +434,8 @@ def _build_tool_loop_stop_response(
     summary_parts: list[str] = []
     if stop_reason == "max_tool_turns":
         summary_parts.append("Note: The search or tool workflow reached its turn limit before finishing.")
+    elif stop_reason == "max_context_tokens":
+        summary_parts.append("Note: The search or tool workflow stopped early because the conversation context grew too large.")
     else:
         summary_parts.append("Note: The workflow stopped before it could finish.")
 
@@ -812,6 +856,27 @@ async def chat_completions(
                 return _build_tool_loop_stop_response(
                     response,
                     stop_reason="max_tool_turns",
+                    request_messages=request.messages,
+                )
+
+            max_context_tokens = get_max_context_tokens()
+            if _context_budget_exceeded(response, max_context_tokens):
+                prompt_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", None)
+                logger.warning(
+                    f"tool loop context budget exceeded ({prompt_tokens} > {max_context_tokens} tokens); "
+                    "stopping tool loop and synthesizing a final answer"
+                )
+                synthesized_response = await _try_synthesize_tool_loop_result(
+                    client,
+                    request,
+                    stop_reason="max_context_tokens",
+                    request_messages=request.messages,
+                )
+                if synthesized_response is not None:
+                    return synthesized_response
+                return _build_tool_loop_stop_response(
+                    response,
+                    stop_reason="max_context_tokens",
                     request_messages=request.messages,
                 )
 
