@@ -2,6 +2,16 @@
 set -euo pipefail
 # clear
 
+# ANSI color codes for terminal output
+C_RESET=$'\033[0m'
+C_BOLD=$'\033[1m'
+C_RED=$'\033[31m'
+C_GREEN=$'\033[32m'
+C_YELLOW=$'\033[33m'
+C_BLUE=$'\033[34m'
+C_MAGENTA=$'\033[35m'
+C_CYAN=$'\033[36m'
+
 PORT="${PORT:-11410}"
 MODEL="${MODEL:-deepseek-v4-flash:cloud}"
 TIMEOUT="${TIMEOUT:-600}"
@@ -13,33 +23,33 @@ OLLAMA_URL="http://localhost:11434"
 
 rm -f response.json response.md
 
-echo "Checking MCP bridge health at ${BASE_URL}/health..."
+echo "${C_CYAN}Checking MCP bridge health at ${BASE_URL}/health...${C_RESET}"
 curl -fsS "${BASE_URL}/health" | jq '.mcp_servers[] | select((.status == "online")) | .name' # >/dev/null
-echo "Bridge is healthy. ---------------------------------"
+echo "${C_GREEN}Bridge is healthy. ---------------------------------${C_RESET}"
 
 # echo "Listing models exposed by the bridge:"
 # curl -fsS "${BASE_URL}/v1/models" | jq > models.json
 # curl -fsS "${BASE_URL}/v1/models" | jq '.data[].id' > models.txt
 # exit
 
-echo "Checking whether ${MODEL} is available in Ollama..."
+echo "${C_CYAN}Checking whether ${MODEL} is available in Ollama...${C_RESET}"
 # if model name has 'free' in it, then it is a free model and does not need to be pulled from Ollama
 if [[ "$MODEL" == *"/"* ]]; then
-  echo "Model ${MODEL} is being used."
+  echo "${C_GREEN}Model ${MODEL} is being used.${C_RESET}"
 elif [[ "$MODEL" == *"free"* ]]; then
-  echo "Model ${MODEL} is being used."
+  echo "${C_GREEN}Model ${MODEL} is being used.${C_RESET}"
 elif curl -fsS "${OLLAMA_URL}/api/tags" | jq -e --arg model "$MODEL" '.models[] | select(.name == $model)' >/dev/null; then
-  echo "Model ${MODEL} is available in Ollama."
+  echo "${C_GREEN}Model ${MODEL} is available in Ollama.${C_RESET}"
 else
-  echo "Model ${MODEL} was not found in Ollama. Run: ollama pull ${MODEL}" >&2
+  echo "${C_RED}Model ${MODEL} was not found in Ollama. Run: ollama pull ${MODEL}${C_RESET}" >&2
   exit 1
 fi
 
 # randomDate=$(date -d "2025-06-01 + $(( RANDOM % ( $(date -d "2026-06-30" +%s) - $(date -d "2025-06-01" +%s) + 86400 ) / 86400 )) days" "+%Y-%m-%d")
 randomDate=$(date -d "2026-01-01 + $(( RANDOM % 150 )) days" "+%B %d, %Y")
-echo "Randomly selected date: $randomDate"
+echo "${C_CYAN}Randomly selected date:${C_RESET} ${C_BOLD}$randomDate${C_RESET}"
 randomCountry=$(shuf -n 1 -e "Argentina" "Australia" "Brazil" "Canada" "Denmark" "Egypt" "France" "Germany" "India" "Japan" "Kenya" "Mexico" "Norway" "Peru" "South Korea" "Spain" "Thailand" "United Kingdom" "Vietnam")
-echo "Randomly selected country: $randomCountry"
+echo "${C_CYAN}Randomly selected country:${C_RESET} ${C_BOLD}$randomCountry${C_RESET}"
 
 FYI="# FYI
 My Location: Berlin, Germany
@@ -68,7 +78,7 @@ Other languages I can understand: Arabic, Urdu, Hindi, Marathi, German"
 systemContent=$(cat ./prompts/compressed/system.md)
 content=$(cat ./prompts/compressed/content.md)
 contentShort=$(cat ./prompts/compressed/content.md | head -c 300)
-echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content:
+echo "${C_CYAN}Sending prompt to ${BASE_URL}/v1/chat/completions using model ${MODEL} with content:${C_RESET}
 ---
 $contentShort ...
 ---"
@@ -90,22 +100,35 @@ dataPost=$(jq -n --arg model "$MODEL" --arg content "$content" --arg systemConte
   "temperature": 0.1
 }')
 
-echo "Sending request to ${BASE_URL}/v1/chat/completions using model ${MODEL}..."
+echo "${C_CYAN}CURL request to ${BASE_URL}/v1/chat/completions using model ${MODEL}...${C_RESET}"
 # curl --fail --silent --show-error --max-time "$TIMEOUT" --connect-timeout 5 \
 curl -X POST "${BASE_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d "$dataPost" > response.json
 
 echo ''
-echo "-- Response received and saved to response.json ------------------------------------"
+echo "${C_GREEN}-- Response received and saved to response.json from model ${MODEL} ------------------------------------${C_RESET}"
 if ! jq -e '.choices[0].message.content != null and (.choices[0].message.content | type == "string") and (.choices[0].message.content | length > 0)' response.json >/dev/null; then
-  echo "No usable completion content returned." >&2
+  echo "${C_RED}No usable completion content returned from model ${MODEL}.${C_RESET}" >&2
   cat response.json >&2
   exit 0
 fi
 
-echo "Extracting content from response.json and saving to response.md..."
+echo "${C_CYAN}Extracting content from response.json and saving to response.md from model ${MODEL}...${C_RESET}"
 jq -r '.choices[0].message.content' response.json > response.md
+
+# Some reasoning models (e.g. Liquid LFM2.5) advertise `tools` support but do not
+# emit structured OpenAI `tool_calls`. Instead they write pseudo tool-call markers
+# as plain text inside `content` (e.g. `<|tool_call_start|>`, `<tool_call>`,
+# `<function=...>`). The bridge cannot execute these, so skip such models.
+if grep -qE '<\|tool_call|<tool_call|<function=|<\|function' response.md; then
+  echo "${C_YELLOW}WARNING: Model ${MODEL} emitted pseudo tool-call markers as plain text${C_RESET}" >&2
+  echo "${C_YELLOW}         (e.g. <|tool_call_start|> / <tool_call> / <function=...>).${C_RESET}" >&2
+  echo "${C_YELLOW}         This model does not support structured tool calls via the bridge.${C_RESET}" >&2
+  echo "${C_YELLOW}         Skipping model ${MODEL}.${C_RESET}" >&2
+  rm -f response.md
+  exit 0
+fi
 
 cat response.md | head -c 250
 

@@ -682,6 +682,27 @@ def _looks_like_search_result(message: str) -> bool:
     return any(marker in lowered for marker in search_markers)
 
 
+_PSEUDO_TOOL_CALL_PATTERN = re.compile(
+    r"<\|?(?:tool_call|function_call|function)[=>|_]|<invoke\b",
+    re.IGNORECASE,
+)
+
+
+def _contains_pseudo_tool_call_markers(text: str) -> bool:
+    """Return True if the model emitted tool calls as plain text instead of
+    structured ``tool_calls``.
+
+    Some reasoning models (e.g. Liquid LFM2.5) advertise ``tools`` support but do
+    not emit OpenAI-style ``tool_calls``. They instead write markers such as
+    ``<|tool_call_start|>``, ``<tool_call>``, ``<function=...>``, or Anthropic-style
+    ``<invoke name="...">`` directly into the assistant ``content``. The bridge
+    cannot execute these, so we detect and reject them.
+    """
+    if not text:
+        return False
+    return bool(_PSEUDO_TOOL_CALL_PATTERN.search(text))
+
+
 async def chat_completions(
     request: CreateChatCompletionRequest,
     http_request: Request,
@@ -792,6 +813,21 @@ async def chat_completions(
                 else None
             )
             if finish_reason_value in ["stop", "length"]:
+                assistant_text = _extract_message_text(msg)
+                if _contains_pseudo_tool_call_markers(assistant_text):
+                    logger.warning(
+                        "model emitted pseudo tool-call markers as plain text "
+                        "(e.g. <|tool_call_start|> / <tool_call> / <function=...>); "
+                        "model does not support structured tool calls via the bridge"
+                    )
+                    raise HTTPException(
+                        status_code=502,
+                        detail=(
+                            "The model does not support structured tool calls and "
+                            "emitted tool-call markers as plain text. Use a model "
+                            "with native tool-call support."
+                        ),
+                    )
                 logger.debug("no tool calls found")
                 return response
 

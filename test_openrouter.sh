@@ -20,9 +20,10 @@ models=()
 #     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 # )
 
+# jq -r '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0")) | .id')
 openrouter_free_models=$(curl -s -X GET \
   'http://localhost:11410/v1/models' | \
-  jq -r '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0")) | .id')
+  jq -r '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0") and ((.supported_parameters // []) | index("tools") != null) and ((.reasoning.mandatory // false) != true)) | .id')
 
 # get all free models from OpenRouter
 # openrouter_free_models=$(curl -s -X GET \
@@ -31,7 +32,7 @@ openrouter_free_models=$(curl -s -X GET \
 #   jq '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0")) | .id')
 echo "OpenRouter free models: ${openrouter_free_models}"
 for model in ${openrouter_free_models}; do
-    echo "Adding OpenRouter free model: $model"
+    # echo "Adding OpenRouter free model: $model"
     models+=("$model")
 done
 # exit 0
@@ -53,6 +54,8 @@ for model in "${models[@]}"; do
     echo "Running test.sh with model: $model"
     MODEL="$model" bash test.sh
     sleep 2
+    echo ''
+    echo "---------------------------------------------"
 
     # check if response.md exists and is not empty
     if [[ -s response.md ]]; then
