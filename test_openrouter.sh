@@ -39,7 +39,9 @@ sleep 5
 
 # loop through the models and run test.sh for each one
 for model in "${models[@]}"; do
-    # echo "---------------------------------------------"
+    echo ""
+    echo "---------------------------------------------"
+    echo "---------------------------------------------"
     # echo "Testing Open Router model: $model"
     # curl https://openrouter.ai/api/v1/chat/completions   -H "Authorization: Bearer $API_KEY"   -H "Content-Type: application/json"   -d '{
     #     "model": "'$model'",

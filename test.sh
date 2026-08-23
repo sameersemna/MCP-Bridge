@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-
-clear
+# clear
 
 PORT="${PORT:-11410}"
 MODEL="${MODEL:-deepseek-v4-flash:cloud}"
