@@ -158,8 +158,15 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
 
         try:
             tools = await asyncio.wait_for(session.session.list_tools(), timeout=wait_timeout)
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"tool discovery timed out for {session.name} after {wait_timeout:.1f}s "
+                f"(server did not respond to tools/list)"
+            )
+            return []
         except Exception as exc:
-            logger.warning(f"tool discovery failed for {session.name}: {exc}")
+            exc_repr = str(exc) or type(exc).__name__
+            logger.warning(f"tool discovery failed for {session.name}: {exc_repr}")
             return []
 
         return [mcp2openai(tool) for tool in tools.tools]

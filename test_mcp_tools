@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Verify that every configured MCP server behind MCP-Bridge lists its tools.
+
+Queries the bridge's ``/mcp/tools`` endpoint (which fans out to every MCP client
+and calls ``list_tools()`` on each) and reports, per server, whether it responded
+and how many tools it exposed. Exits non-zero if any enabled server is offline or
+returns zero tools.
+
+Usage:
+    ./test_mcp_tools [--base-url http://localhost:11410] [--timeout 90]
+
+Environment:
+    MCP_BRIDGE_URL   Base URL of the bridge (default http://localhost:11410)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from typing import Any
+
+# ANSI colors (no-op when not a TTY).
+_RESET = "\033[0m"
+_BOLD = "\033[1m"
+_RED = "\033[31m"
+_GREEN = "\033[32m"
+_YELLOW = "\033[33m"
+_CYAN = "\033[36m"
+
+
+def _colorize(text: str, code: str) -> str:
+    if not sys.stdout.isatty():
+        return text
+    return f"{code}{text}{_RESET}"
+
+
+def _fetch_json(url: str, timeout: int) -> Any:
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--base-url",
+        default=os.environ.get("MCP_BRIDGE_URL", "http://localhost:11410"),
+        help="Base URL of the MCP-Bridge (default: http://localhost:11410)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=90,
+        help="Per-request timeout in seconds (default: 90)",
+    )
+    args = parser.parse_args()
+
+    base = args.base_url.rstrip("/")
+
+    # 1. Health check — which servers are online/offline.
+    try:
+        health = _fetch_json(f"{base}/health", args.timeout)
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+        print(_colorize(f"ERROR: could not reach bridge at {base}: {exc}", _RED))
+        return 2
+
+    servers = health.get("mcp_servers", [])
+    status_by_name = {s["name"]: s.get("status") for s in servers}
+
+    # 2. Tool listing — fan out to every MCP client.
+    try:
+        tools_payload = _fetch_json(f"{base}/mcp/tools", args.timeout)
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+        print(
+            _colorize(
+                f"ERROR: could not list tools via {base}/mcp/tools: {exc}", _RED
+            )
+        )
+        return 2
+
+    if not isinstance(tools_payload, dict):
+        print(_colorize("ERROR: unexpected /mcp/tools response shape", _RED))
+        return 2
+
+    print(_colorize("MCP server tool listing", _BOLD))
+    print("=" * 60)
+
+    failures: list[str] = []
+    for name in sorted(tools_payload):
+        entry = tools_payload[name]
+        tools = entry.get("tools", []) if isinstance(entry, dict) else []
+        count = len(tools)
+        status = status_by_name.get(name, "unknown")
+
+        if status != "online":
+            label = _colorize(f"{name:24s} OFFLINE ({status})", _RED)
+            failures.append(name)
+        elif count == 0:
+            label = _colorize(f"{name:24s} 0 tools (EMPTY)", _YELLOW)
+            failures.append(name)
+        else:
+            label = _colorize(f"{name:24s} {count} tools", _GREEN)
+
+        print(f"  {label}")
+
+    print("=" * 60)
+
+    total_servers = len(tools_payload)
+    total_tools = sum(
+        len(entry.get("tools", []))
+        for entry in tools_payload.values()
+        if isinstance(entry, dict)
+    )
+    print(
+        f"Servers: {total_servers}  |  Total tools: {total_tools}  |  "
+        f"Failures: {len(failures)}"
+    )
+
+    if failures:
+        print(
+            _colorize(
+                f"FAIL: {len(failures)} server(s) offline or empty: "
+                + ", ".join(failures),
+                _RED,
+            )
+        )
+        return 1
+
+    print(_colorize("OK: all servers listed their tools.", _GREEN))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
