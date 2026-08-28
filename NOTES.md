@@ -8,7 +8,7 @@ docker run -d \
   neo4j:latest
 
 
-
+docker update --restart unless-stopped local_neo4j
 
 # Test all MCP servers and their tools list
 

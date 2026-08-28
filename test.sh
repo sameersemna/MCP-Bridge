@@ -32,16 +32,16 @@ echo "${C_GREEN}Bridge is healthy. ---------------------------------${C_RESET}"
 # curl -fsS "${BASE_URL}/v1/models" | jq '.data[].id' > models.txt
 # exit
 
-echo "${C_CYAN}Checking whether ${MODEL} is available in Ollama...${C_RESET}"
+echo "${C_CYAN}Checking whether ${MODEL} is available with provider...${C_RESET}"
 # if model name has 'free' in it, then it is a free model and does not need to be pulled from Ollama
 if [[ "$MODEL" == *"/"* ]]; then
   echo "${C_GREEN}Model ${MODEL} is being used.${C_RESET}"
 elif [[ "$MODEL" == *"free"* ]]; then
   echo "${C_GREEN}Model ${MODEL} is being used.${C_RESET}"
 elif curl -fsS "${OLLAMA_URL}/api/tags" | jq -e --arg model "$MODEL" '.models[] | select(.name == $model)' >/dev/null; then
-  echo "${C_GREEN}Model ${MODEL} is available in Ollama.${C_RESET}"
+  echo "${C_GREEN}Model ${MODEL} is available with Provider.${C_RESET}"
 else
-  echo "${C_RED}Model ${MODEL} was not found in Ollama. Run: ollama pull ${MODEL}${C_RESET}" >&2
+  echo "${C_RED}Model ${MODEL} was not found with Provider. If using Ollama run: ollama pull ${MODEL}${C_RESET}" >&2
   exit 1
 fi
 
