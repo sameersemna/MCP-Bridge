@@ -20,3 +20,5 @@ MCP_BRIDGE_URL=http://host:port ./test_mcp_tools./test_mcp_tools # default http:
 ./test_mcp_tools --base-url http://host:port --timeout 120
 
 MCP_BRIDGE_URL=http://host:port ./test_mcp_tools
+
+

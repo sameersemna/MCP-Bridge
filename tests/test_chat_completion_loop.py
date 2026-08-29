@@ -33,28 +33,39 @@ class DummyTraceLogger:
 
 
 def test_call_tool_retries_once_after_timeout(monkeypatch):
+    attempts = 0
+
+    class DummySession:
+        async def call_tool(self, name: str, arguments: dict[str, object]):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise asyncio.TimeoutError()
+            return CallToolResult(content=[TextContent(type="text", text="ok")], isError=False)
+
     class DummyClient(GenericMcpClient):
         async def _maintain_session(self) -> None:
-            return None
+            # Re-establish the session after a reset, then block like the real
+            # maintainer so the _session_maintainer loop does not null it.
+            self.session = DummySession()
+            try:
+                while True:
+                    await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                raise
 
     async def run_test() -> None:
         client = DummyClient("dummy")
-        attempts = 0
-
-        class DummySession:
-            async def call_tool(self, name: str, arguments: dict[str, object]):
-                nonlocal attempts
-                attempts += 1
-                if attempts == 1:
-                    raise asyncio.TimeoutError()
-                return CallToolResult(content=[TextContent(type="text", text="ok")], isError=False)
-
         client.session = DummySession()
+        # Start the client so _reset_session will restart the maintainer after
+        # a timeout, which re-establishes the session for the retry.
+        await client.start()
 
-        async def fake_sleep(_: float) -> None:
-            return None
-
-        monkeypatch.setattr("mcp_bridge.mcp_clients.AbstractClient.asyncio.sleep", fake_sleep)
+        # Use a real (short) sleep. Monkeypatching asyncio.sleep to a no-op
+        # makes the background _session_maintainer loop spin at 100% CPU and
+        # the test never completes. The retry delay is only 0.25s, so a real
+        # sleep keeps the test fast while letting the maintainer actually idle.
+        monkeypatch.setenv("MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS", "0.01")
 
         result = await client.call_tool("search", {"query": "test"}, timeout=1)
 

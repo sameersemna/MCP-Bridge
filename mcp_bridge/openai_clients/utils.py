@@ -129,6 +129,19 @@ async def _ensure_client_manager_initialized() -> list[tuple[str, Any]]:
     return ClientManager.get_clients()
 
 
+# Cache of tool name -> inputSchema (JSON Schema) discovered at request time.
+# Used by `repair_tool_arguments` to coerce/fill LLM-produced arguments before
+# they are forwarded to the MCP server, reducing "(failed validation)" errors.
+_TOOL_SCHEMA_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _cache_tool_schema(tool_name: str, input_schema: Any) -> None:
+    if not tool_name:
+        return
+    if isinstance(input_schema, dict):
+        _TOOL_SCHEMA_CACHE[str(tool_name)] = input_schema
+
+
 async def chat_completion_add_tools(request: CreateChatCompletionRequest):
     request.tools = []
 
@@ -169,6 +182,8 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
             logger.warning(f"tool discovery failed for {session.name}: {exc_repr}")
             return []
 
+        for tool in tools.tools:
+            _cache_tool_schema(getattr(tool, "name", None), getattr(tool, "inputSchema", None))
         return [mcp2openai(tool) for tool in tools.tools]
 
     discovered_tools = await asyncio.gather(
@@ -230,6 +245,242 @@ def clamp_search_tool_arguments(tool_name: str | None, arguments: Any) -> Any:
     updated_arguments = dict(arguments)
     updated_arguments["max_results"] = clamped
     return updated_arguments
+
+
+# Per-tool default overrides for required fields that LLMs frequently omit.
+# Keyed by normalized tool name; each entry maps a missing required field to a
+# sensible default value. This is a pragmatic fallback for tools whose schemas
+# are strict but whose required fields are almost always safe to default.
+_TOOL_REQUIRED_DEFAULTS: dict[str, dict[str, Any]] = {
+    "sequentialthinking": {
+        "nextThoughtNeeded": True,
+    },
+    "sequential-thinking": {
+        "nextThoughtNeeded": True,
+    },
+}
+
+
+def _value_matches_type(value: Any, schema: Any) -> bool:
+    """Return True if ``value`` already conforms to the schema's declared type."""
+    if not isinstance(schema, dict):
+        return True
+    for combinator in ("anyOf", "oneOf", "allOf"):
+        branches = schema.get(combinator)
+        if isinstance(branches, list) and branches:
+            return any(_value_matches_type(value, branch) for branch in branches)
+    type_spec = schema.get("type")
+    if isinstance(type_spec, list):
+        return any(_value_matches_type(value, {"type": t}) for t in type_spec)
+    if type_spec == "boolean":
+        return isinstance(value, bool)
+    if type_spec == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if type_spec == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if type_spec == "string":
+        return isinstance(value, str)
+    if type_spec == "array":
+        return isinstance(value, list)
+    if type_spec == "object":
+        return isinstance(value, dict)
+    return True
+
+
+def _coerce_value(value: Any, schema: Any) -> Any:
+    """Coerce a single value to the type described by a JSON-schema fragment."""
+    if not isinstance(schema, dict):
+        return value
+
+    # Resolve anyOf/oneOf/allOf by picking the first branch that accepts the
+    # value (or the first branch's type coercion).
+    for combinator in ("anyOf", "oneOf", "allOf"):
+        branches = schema.get(combinator)
+        if isinstance(branches, list) and branches:
+            # Prefer a branch whose declared type already matches the value
+            # (no coercion needed), so e.g. an int stays an int even when a
+            # string branch appears first.
+            for branch in branches:
+                if _value_matches_type(value, branch):
+                    return value
+            for branch in branches:
+                coerced = _coerce_value(value, branch)
+                if coerced is not None:
+                    return coerced
+            return value
+
+    type_spec = schema.get("type")
+    if isinstance(type_spec, list):
+        # e.g. ["string", "null"] -> pick the first non-null type
+        non_null = [t for t in type_spec if t != "null"]
+        type_spec = non_null[0] if non_null else "null"
+
+    if type_spec == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes", "y"}:
+                return True
+            if lowered in {"false", "0", "no", "n"}:
+                return False
+        if isinstance(value, (int, float)):
+            return bool(value)
+        return value
+
+    if type_spec == "integer":
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(value.strip())
+            except (TypeError, ValueError):
+                try:
+                    return int(float(value.strip()))
+                except (TypeError, ValueError):
+                    return value
+        return value
+
+    if type_spec == "number":
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            try:
+                return float(value.strip())
+            except (TypeError, ValueError):
+                return value
+        return value
+
+    if type_spec == "string":
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (bool, int, float)):
+            return str(value)
+        return value
+
+    if type_spec == "array":
+        if isinstance(value, list):
+            item_schema = schema.get("items")
+            if isinstance(item_schema, dict):
+                return [_coerce_value(item, item_schema) for item in value]
+            return value
+        if isinstance(value, str):
+            # Some models send a JSON-encoded array as a string.
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return value
+
+    if type_spec == "object":
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return value
+
+    return value
+
+
+def _default_for_schema(schema: Any) -> Any:
+    """Return a default value for a JSON-schema fragment, or None if unknown."""
+    if not isinstance(schema, dict):
+        return None
+    if "default" in schema:
+        return schema["default"]
+    for combinator in ("anyOf", "oneOf", "allOf"):
+        branches = schema.get(combinator)
+        if isinstance(branches, list) and branches:
+            for branch in branches:
+                default = _default_for_schema(branch)
+                if default is not None:
+                    return default
+            return None
+    type_spec = schema.get("type")
+    if isinstance(type_spec, list):
+        non_null = [t for t in type_spec if t != "null"]
+        type_spec = non_null[0] if non_null else "null"
+    if type_spec == "boolean":
+        return False
+    if type_spec == "integer":
+        return 0
+    if type_spec == "number":
+        return 0.0
+    if type_spec == "string":
+        return ""
+    if type_spec == "array":
+        return []
+    if type_spec == "object":
+        return {}
+    return None
+
+
+def repair_tool_arguments(tool_name: str | None, arguments: Any) -> Any:
+    """Repair/coerce LLM-produced tool arguments against the tool's inputSchema.
+
+    LLMs frequently omit required fields, add unknown keys, or emit wrong types
+    (e.g. ``"true"`` instead of ``true``). MCP servers validate strictly and
+    reject such calls with ``(failed validation)``. This function normalizes the
+    arguments before they are forwarded:
+
+    * drops unknown keys when ``additionalProperties`` is ``false``
+    * coerces values to the declared JSON-schema types
+    * fills missing required fields with schema defaults (or per-tool defaults)
+
+    Returns the (possibly unchanged) arguments dict.
+    """
+    if not isinstance(arguments, dict):
+        return arguments
+
+    schema = _TOOL_SCHEMA_CACHE.get(str(tool_name or ""))
+    if not isinstance(schema, dict):
+        return arguments
+
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return arguments
+
+    required = schema.get("required")
+    required_set = set(required) if isinstance(required, list) else set()
+
+    additional_properties = schema.get("additionalProperties", True)
+    reject_unknown = additional_properties is False
+
+    repaired: dict[str, Any] = {}
+    for key, value in arguments.items():
+        prop_schema = properties.get(key)
+        if prop_schema is None:
+            if reject_unknown:
+                continue
+            repaired[key] = value
+            continue
+        repaired[key] = _coerce_value(value, prop_schema)
+
+    # Fill missing required fields.
+    for key in required_set:
+        if key in repaired:
+            continue
+        prop_schema = properties.get(key)
+        # Per-tool override takes precedence (e.g. sequential-thinking's
+        # nextThoughtNeeded should default to True, not the generic False).
+        default = _TOOL_REQUIRED_DEFAULTS.get(str(tool_name or ""), {}).get(key)
+        if default is None:
+            default = _default_for_schema(prop_schema)
+        if default is not None:
+            repaired[key] = default
+
+    return repaired
 
 
 def truncate_search_result_text(tool_name: str | None, text: str | None, max_results: int | None = None) -> str | None:
@@ -295,6 +546,160 @@ def _span_payload_preview(payload: Any, max_len: int = 160) -> str:
         return rendered
 
     return rendered[:max_len] + "...[truncated]"
+
+
+def _parse_lenient_json(raw: str) -> Any:
+    """Parse LLM-produced JSON, tolerating common malformations.
+
+    LLMs frequently emit arguments that are not strictly valid JSON: trailing
+    commas, single-quoted strings, unquoted keys, or a leading/trailing code
+    fence. This tries strict parsing first, then progressively more lenient
+    fallbacks. Returns the parsed value, or ``None`` if it cannot be recovered.
+    """
+    if not isinstance(raw, str):
+        return raw
+
+    text = raw.strip()
+    if not text:
+        return None
+
+    # Strip a surrounding markdown code fence if present.
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    # 1. Strict JSON.
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # 2. Python literal (handles single quotes, trailing commas, bare True/False).
+    try:
+        import ast
+
+        return ast.literal_eval(text)
+    except (ValueError, SyntaxError):
+        pass
+
+    # 3. Repair pass: strip trailing commas, convert single quotes to double
+    #    quotes (only outside strings), and wrap unquoted keys.
+    repaired = _repair_json_text(text)
+    if repaired is not None:
+        try:
+            return json.loads(repaired)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return None
+
+
+def _repair_json_text(text: str) -> str | None:
+    """Best-effort repair of common JSON syntax errors. Returns None on failure."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+
+    out: list[str] = []
+    in_string = False
+    escape = False
+    prev_significant: str | None = None
+    i = 0
+    n = len(text)
+
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            prev_significant = '"'
+            i += 1
+            continue
+
+        if ch in " \t\r\n":
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch == "'":
+            # Convert single-quoted string to double-quoted.
+            out.append('"')
+            in_string = True
+            prev_significant = '"'
+            i += 1
+            continue
+
+        if ch == ",":
+            # Drop a trailing comma before } or ].
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1
+                continue
+            out.append(ch)
+            prev_significant = ","
+            i += 1
+            continue
+
+        if ch in "{}[]":
+            out.append(ch)
+            prev_significant = ch
+            i += 1
+            continue
+
+        if ch == ":":
+            out.append(ch)
+            prev_significant = ":"
+            i += 1
+            continue
+
+        # Unquoted key: a bare identifier followed by ':'.
+        if ch.isalpha() or ch == "_":
+            j = i
+            while j < n and (text[j].isalnum() or text[j] in "_"):
+                j += 1
+            word = text[i:j]
+            k = j
+            while k < n and text[k] in " \t\r\n":
+                k += 1
+            if k < n and text[k] == ":":
+                out.append('"')
+                out.append(word)
+                out.append('"')
+                i = j
+                prev_significant = word
+                continue
+            # Bare True/False/None literal.
+            if word in {"True", "False", "None"}:
+                out.append(word)
+                i = j
+                prev_significant = word
+                continue
+            out.append(word)
+            i = j
+            prev_significant = word
+            continue
+
+        out.append(ch)
+        prev_significant = ch
+        i += 1
+
+    return "".join(out)
 
 
 async def call_tool(
@@ -366,11 +771,13 @@ async def call_tool(
             return ToolDispatchError(f"No MCP client found for tool '{tool_call_name}'")
 
         try:
-            tool_call_args = json.loads(tool_call_json)
+            tool_call_args = _parse_lenient_json(tool_call_json)
+            if not isinstance(tool_call_args, dict):
+                raise ValueError("tool arguments must be a JSON object")
             span.set_attribute("mcp_bridge.tool.arguments.parsed", True)
-            span.set_attribute("mcp_bridge.tool.arguments.keys", ",".join(sorted(str(key) for key in tool_call_args.keys())) if isinstance(tool_call_args, dict) else "")
-        except json.JSONDecodeError:
-            logger.error(f"failed to decode json for {tool_call_name}")
+            span.set_attribute("mcp_bridge.tool.arguments.keys", ",".join(sorted(str(key) for key in tool_call_args.keys())))
+        except (json.JSONDecodeError, ValueError):
+            logger.error(f"failed to decode json for {tool_call_name}: {tool_call_json[:200]}")
             span.set_attribute("mcp_bridge.tool.arguments.parsed", False)
             span.set_status(trace.Status(trace.StatusCode.ERROR, "invalid_json"))
             if trace_logger is not None:
@@ -384,7 +791,15 @@ async def call_tool(
 
         try:
             span.set_attribute("mcp_bridge.tool.client_name", getattr(session, "name", ""))
-            result = await session.call_tool(tool_call_name, clamp_search_tool_arguments(tool_call_name, tool_call_args), timeout)
+            repaired_args = repair_tool_arguments(tool_call_name, tool_call_args)
+            repaired_args = clamp_search_tool_arguments(tool_call_name, repaired_args)
+            if repaired_args != tool_call_args:
+                logger.debug(
+                    f"repaired tool arguments for {tool_call_name}: "
+                    f"{_span_payload_preview(tool_call_args)} -> {_span_payload_preview(repaired_args)}"
+                )
+                span.set_attribute("mcp_bridge.tool.arguments.repaired", True)
+            result = await session.call_tool(tool_call_name, repaired_args, timeout)
         except Exception as exc:
             logger.error(f"tool dispatch failed for {tool_call_name}: {exc}")
             span.set_attribute("mcp_bridge.tool.client_name", getattr(session, "name", ""))

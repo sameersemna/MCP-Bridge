@@ -1011,19 +1011,13 @@ async def chat_completions(
                         )
                         return _build_tool_error_response(response, tool_errors)
 
+                    # Recoverable failures (e.g. a validation error on one tool
+                    # call). The error messages were already appended to
+                    # request.messages above, so continuing the loop lets the
+                    # LLM see exactly what went wrong and correct its arguments
+                    # on the next iteration. The loop is still bounded by
+                    # max_tool_turns via should_continue_tool_loop.
                     logger.warning(
-                        f"tool call failures detected but partial evidence exists; continuing with synthesis: {'; '.join(tool_errors)}"
+                        f"tool call failures detected; feeding errors back to the model for correction: {'; '.join(tool_errors)}"
                     )
-                    synthesized_response = await _try_synthesize_tool_loop_result(
-                        client,
-                        request,
-                        stop_reason="max_tool_turns",
-                        request_messages=request.messages,
-                    )
-                    if synthesized_response is not None:
-                        return synthesized_response
-                    return _build_empty_content_response(
-                        response,
-                        request_messages=request.messages,
-                        stop_reason="empty_response",
-                    )
+                    continue
