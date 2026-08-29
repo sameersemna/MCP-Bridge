@@ -9,12 +9,14 @@ from mcp_bridge.openai_clients.chatCompletion import (
     DEFAULT_MAX_TOOL_TURNS,
     _build_empty_content_response,
     _build_synthesis_request,
+    _build_synthetic_tool_calls,
     _build_tool_loop_stop_response,
     _context_budget_exceeded,
     _extract_message_text,
     _extract_tool_message_text,
     _format_tool_loop_stop_message,
     _has_only_weak_tool_evidence,
+    _parse_pseudo_tool_calls,
     _record_timing,
     _should_stop_tool_loop_on_tool_errors,
     _should_use_empty_content_fallback,
@@ -700,3 +702,73 @@ def test_build_tool_loop_stop_response_strips_boilerplate_prefixes_from_tool_mes
     content = stop_response.choices[0].message.content or ""
     assert "Result:" not in content
     assert "The repository includes an MCP server implementation" in content
+
+
+def test_parse_pseudo_tool_calls_extracts_single_invoke():
+    text = (
+        "<dots_function_call>\n"
+        '<invoke name="fetch">\n'
+        '<parameter name="url">\n'
+        "https://abdurrahman.org/2014/01/29/evilsofnationalism/\n"
+        "</parameter>\n"
+        "</invoke>\n"
+        "</dots_function_call>"
+    )
+
+    calls = _parse_pseudo_tool_calls(text)
+
+    assert len(calls) == 1
+    name, arguments = calls[0]
+    assert name == "fetch"
+    assert '"url"' in arguments
+    assert "https://abdurrahman.org/2014/01/29/evilsofnationalism/" in arguments
+
+
+def test_parse_pseudo_tool_calls_handles_multiple_invokes():
+    text = (
+        '<invoke name="search"><parameter name="query">hello</parameter></invoke>\n'
+        '<invoke name="fetch"><parameter name="url">https://example.com</parameter></invoke>'
+    )
+
+    calls = _parse_pseudo_tool_calls(text)
+
+    assert len(calls) == 2
+    assert calls[0][0] == "search"
+    assert calls[1][0] == "fetch"
+
+
+def test_parse_pseudo_tool_calls_coerces_json_values():
+    text = (
+        '<invoke name="search">'
+        '<parameter name="query">test</parameter>'
+        '<parameter name="max_results">5</parameter>'
+        '<parameter name="enabled">true</parameter>'
+        "</invoke>"
+    )
+
+    calls = _parse_pseudo_tool_calls(text)
+
+    assert len(calls) == 1
+    name, arguments = calls[0]
+    assert name == "search"
+    parsed = __import__("json").loads(arguments)
+    assert parsed["query"] == "test"
+    assert parsed["max_results"] == 5
+    assert parsed["enabled"] is True
+
+
+def test_parse_pseudo_tool_calls_returns_empty_for_no_markers():
+    assert _parse_pseudo_tool_calls("just some text") == []
+    assert _parse_pseudo_tool_calls("") == []
+    assert _parse_pseudo_tool_calls(None) == []
+
+
+def test_build_synthetic_tool_calls_creates_expected_shape():
+    calls = _build_synthetic_tool_calls([("fetch", '{"url": "https://example.com"}')])
+
+    assert len(calls) == 1
+    tool_call = calls[0]
+    assert tool_call.id == "pseudo-call-0"
+    assert tool_call.type == "function"
+    assert tool_call.function.name == "fetch"
+    assert tool_call.function.arguments == '{"url": "https://example.com"}'

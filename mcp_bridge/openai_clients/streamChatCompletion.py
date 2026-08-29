@@ -48,6 +48,11 @@ except ImportError:  # pragma: no cover - fallback for minimal environments
         choices: list[StreamChoice] = Field(default_factory=list)
 
 from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content
+from .chatCompletion import (
+    _build_synthetic_tool_calls,
+    _contains_pseudo_tool_call_markers,
+    _parse_pseudo_tool_calls,
+)
 from mcp_bridge.models import SSEData
 from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
@@ -245,9 +250,37 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
             assert last.choices[0].finish_reason is not None
 
         if len(last.choices) > 0 and last.choices[0].finish_reason.value in ["stop", "length"]:
-            logger.debug("no tool calls found")
-            fully_done = True
-            continue
+            # The model may have emitted Anthropic-style pseudo tool-call
+            # markers as plain text content (e.g. <invoke name="...">) instead
+            # of structured tool_calls. Parse them so the tool still executes.
+            if _contains_pseudo_tool_call_markers(response_content):
+                parsed_calls = _parse_pseudo_tool_calls(response_content)
+                if parsed_calls:
+                    logger.warning(
+                        f"model emitted pseudo tool-call markers as plain text; "
+                        f"parsing {len(parsed_calls)} tool call(s) for execution"
+                    )
+                    collected_tool_calls = [
+                        {
+                            "id": f"pseudo-call-{index}",
+                            "name": name,
+                            "arguments": arguments,
+                        }
+                        for index, (name, arguments) in enumerate(parsed_calls)
+                    ]
+                    if trace_logger is not None:
+                        trace_logger.record(
+                            "pseudo_tool_calls_parsed",
+                            tool_calls=[{"name": name, "arguments": arguments} for name, arguments in parsed_calls],
+                        )
+                else:
+                    logger.debug("no tool calls found")
+                    fully_done = True
+                    continue
+            else:
+                logger.debug("no tool calls found")
+                fully_done = True
+                continue
 
         logger.debug(
             "tool calls found in stream; "

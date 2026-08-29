@@ -703,6 +703,81 @@ def _contains_pseudo_tool_call_markers(text: str) -> bool:
     return bool(_PSEUDO_TOOL_CALL_PATTERN.search(text))
 
 
+# Matches an Anthropic-style tool invocation block:
+#   <invoke name="tool_name">
+#     <parameter name="arg_name">value</parameter>
+#   </invoke>
+_INVOKE_BLOCK_PATTERN = re.compile(
+    r"<invoke\s+name=[\"']([^\"']+)[\"']>(.*?)</invoke>",
+    re.IGNORECASE | re.DOTALL,
+)
+_PARAMETER_PATTERN = re.compile(
+    r"<parameter\s+name=[\"']([^\"']+)[\"']>(.*?)</parameter>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _parse_pseudo_tool_calls(text: str) -> list[tuple[str, str]]:
+    """Parse Anthropic-style ``<invoke name="...">`` tool-call markers from plain
+    text into ``(tool_name, arguments_json)`` tuples.
+
+    Returns an empty list if no parseable invocations are found. Arguments are
+    collected from ``<parameter name="...">value</parameter>`` children and
+    serialized to a JSON object.
+    """
+    if not text:
+        return []
+
+    calls: list[tuple[str, str]] = []
+    for match in _INVOKE_BLOCK_PATTERN.finditer(text):
+        tool_name = match.group(1).strip()
+        body = match.group(2)
+        if not tool_name:
+            continue
+
+        arguments: dict[str, Any] = {}
+        for param in _PARAMETER_PATTERN.finditer(body):
+            arg_name = param.group(1).strip()
+            arg_value = param.group(2).strip()
+            if not arg_name:
+                continue
+            # Try to interpret the value as JSON (numbers, booleans, nested
+            # objects/arrays); fall back to the raw string.
+            try:
+                arguments[arg_name] = json.loads(arg_value)
+            except (json.JSONDecodeError, ValueError):
+                arguments[arg_name] = arg_value
+
+        calls.append((tool_name, json.dumps(arguments)))
+
+    return calls
+
+
+def _build_synthetic_tool_calls(
+    parsed_calls: list[tuple[str, str]],
+) -> list[Any]:
+    """Build synthetic OpenAI-style tool_call objects from parsed pseudo calls.
+
+    Each returned object has ``id``, ``type``, and ``function`` (with ``name``
+    and ``arguments``) attributes, matching the shape the tool loop expects.
+    """
+    from types import SimpleNamespace
+
+    tool_calls: list[Any] = []
+    for index, (name, arguments_json) in enumerate(parsed_calls):
+        tool_calls.append(
+            SimpleNamespace(
+                id=f"pseudo-call-{index}",
+                type="function",
+                function=SimpleNamespace(
+                    name=name,
+                    arguments=arguments_json,
+                ),
+            )
+        )
+    return tool_calls
+
+
 async def chat_completions(
     request: CreateChatCompletionRequest,
     http_request: Request,
@@ -815,21 +890,44 @@ async def chat_completions(
             if finish_reason_value in ["stop", "length"]:
                 assistant_text = _extract_message_text(msg)
                 if _contains_pseudo_tool_call_markers(assistant_text):
-                    logger.warning(
-                        "model emitted pseudo tool-call markers as plain text "
-                        "(e.g. <|tool_call_start|> / <tool_call> / <function=...>); "
-                        "model does not support structured tool calls via the bridge"
-                    )
-                    raise HTTPException(
-                        status_code=502,
-                        detail=(
-                            "The model does not support structured tool calls and "
-                            "emitted tool-call markers as plain text. Use a model "
-                            "with native tool-call support."
-                        ),
-                    )
-                logger.debug("no tool calls found")
-                return response
+                    # The model emitted Anthropic-style tool-call markers as
+                    # plain text instead of structured tool_calls. Parse them
+                    # into real tool calls and execute them, rather than
+                    # failing the request.
+                    parsed_calls = _parse_pseudo_tool_calls(assistant_text)
+                    if parsed_calls:
+                        logger.warning(
+                            f"model emitted pseudo tool-call markers as plain text; "
+                            f"parsing {len(parsed_calls)} tool call(s) for execution"
+                        )
+                        synthetic_calls = _build_synthetic_tool_calls(parsed_calls)
+                        msg.tool_calls = synthetic_calls
+                        # The tool loop reads tool_calls from
+                        # response.choices[0].message, so mirror them there too.
+                        response.choices[0].message.tool_calls = synthetic_calls
+                        if trace_logger is not None:
+                            trace_logger.record(
+                                "pseudo_tool_calls_parsed",
+                                tool_calls=[{"name": name, "arguments": arguments} for name, arguments in parsed_calls],
+                            )
+                        # Fall through to the normal tool-call execution path.
+                    else:
+                        logger.warning(
+                            "model emitted pseudo tool-call markers as plain text "
+                            "(e.g. <|tool_call_start|> / <tool_call> / <function=...>); "
+                            "model does not support structured tool calls via the bridge"
+                        )
+                        raise HTTPException(
+                            status_code=502,
+                            detail=(
+                                "The model does not support structured tool calls and "
+                                "emitted tool-call markers as plain text. Use a model "
+                                "with native tool-call support."
+                            ),
+                        )
+                else:
+                    logger.debug("no tool calls found")
+                    return response
 
             logger.debug("tool calls found")
             if trace_logger is not None:
