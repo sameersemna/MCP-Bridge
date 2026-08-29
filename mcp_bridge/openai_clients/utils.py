@@ -878,10 +878,16 @@ async def call_tool(
 
         if client_cache is not None and tool_call_name in client_cache:
             session = client_cache[tool_call_name]
+            resolved_tool_name = tool_call_name
         else:
-            session = await ClientManager.get_client_from_tool(
+            resolved = await ClientManager.resolve_tool(
                 tool_call_name, timeout=DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
             )
+            if resolved is None:
+                session = None
+                resolved_tool_name = tool_call_name
+            else:
+                session, resolved_tool_name = resolved
             if client_cache is not None:
                 client_cache[tool_call_name] = session
 
@@ -936,7 +942,12 @@ async def call_tool(
                     f"{_span_payload_preview(tool_call_args)} -> {_span_payload_preview(repaired_args)}"
                 )
                 span.set_attribute("mcp_bridge.tool.arguments.repaired", True)
-            result = await session.call_tool(tool_call_name, repaired_args, timeout)
+            if resolved_tool_name != tool_call_name:
+                logger.debug(
+                    f"resolved tool name for {tool_call_name} -> {resolved_tool_name}"
+                )
+                span.set_attribute("mcp_bridge.tool.resolved_name", resolved_tool_name)
+            result = await session.call_tool(resolved_tool_name, repaired_args, timeout)
         except Exception as exc:
             logger.error(f"tool dispatch failed for {tool_call_name}: {exc}")
             span.set_attribute("mcp_bridge.tool.client_name", getattr(session, "name", ""))

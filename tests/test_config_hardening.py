@@ -514,6 +514,43 @@ def test_get_client_from_tool_matches_normalized_tool_names() -> None:
     assert getattr(result, "name", None) == "normalized"
 
 
+def test_resolve_tool_returns_client_and_actual_tool_name() -> None:
+    class NormalizedToolClient:
+        def __init__(self):
+            self.name = "normalized"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[SimpleNamespace(name="google_search")])
+
+    manager = MCPClientManager()
+    manager.clients = {"normalized": NormalizedToolClient()}
+
+    resolved = asyncio.run(asyncio.wait_for(manager.resolve_tool("google-search", timeout=0.2), timeout=0.3))
+
+    assert resolved is not None
+    client, actual_name = resolved
+    assert getattr(client, "name", None) == "normalized"
+    assert actual_name == "google_search"
+
+
+def test_resolve_tool_returns_none_when_no_match() -> None:
+    class NormalizedToolClient:
+        def __init__(self):
+            self.name = "normalized"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[SimpleNamespace(name="google_search")])
+
+    manager = MCPClientManager()
+    manager.clients = {"normalized": NormalizedToolClient()}
+
+    resolved = asyncio.run(asyncio.wait_for(manager.resolve_tool("nonexistent-tool", timeout=0.2), timeout=0.3))
+
+    assert resolved is None
+
+
 def test_call_tool_returns_error_result_when_no_client_matches(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_get_client_from_tool(*args, **kwargs):
         return None

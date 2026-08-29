@@ -167,6 +167,25 @@ class MCPClientManager:
         return list(self.clients.items())
 
     async def get_client_from_tool(self, tool: str, timeout: float | None = None):
+        resolved = await self.resolve_tool(tool, timeout=timeout)
+        if resolved is None:
+            return None
+        client, _ = resolved
+        return client
+
+    async def resolve_tool(self, tool: str, timeout: float | None = None):
+        """Resolve a (possibly loosely-named) tool call to its owning client and
+        the exact tool name the server expects.
+
+        LLMs frequently call tools by a name that differs from the registered
+        name (e.g. ``google-search`` vs ``google_search``, or a server name
+        instead of a tool name). This normalizes separators and returns the
+        canonical tool name so the downstream ``session.call_tool`` uses the
+        name the server actually recognizes.
+
+        Returns ``(client, actual_tool_name)`` or ``None`` if no client exposes
+        a matching tool.
+        """
         effective_timeout = timeout
         if effective_timeout is None:
             effective_timeout = DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
@@ -196,7 +215,7 @@ class MCPClientManager:
                         )
                         for client_tool in list_tools.tools:
                             if self._normalize_tool_name(getattr(client_tool, "name", "")) == normalized_tool:
-                                return client
+                                return (client, getattr(client_tool, "name", tool))
                         return None
 
                 if not getattr(client, "session", None):
@@ -208,7 +227,7 @@ class MCPClientManager:
                 )
                 for client_tool in list_tools.tools:
                     if self._normalize_tool_name(getattr(client_tool, "name", "")) == normalized_tool:
-                        return client
+                        return (client, getattr(client_tool, "name", tool))
             except asyncio.TimeoutError:
                 client_name = getattr(client, "name", "unknown")
                 logger.warning(f"Timed out discovering tools for client '{client_name}'")
