@@ -6,10 +6,12 @@ import re
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 from loguru import logger
 from opentelemetry import trace
 
 from mcp_bridge.logging import RequestTraceLogger
+from mcp_bridge.mcp_clients.AbstractClient import CallToolResult, TextContent
 
 try:
     from lmos_openai_types import ChatCompletionRequestMessage, CreateChatCompletionRequest
@@ -702,6 +704,141 @@ def _repair_json_text(text: str) -> str | None:
     return "".join(out)
 
 
+# ---------------------------------------------------------------------------
+# Fetch mirror/cache fallback
+#
+# The `fetch` MCP tool respects robots.txt and can be blocked by server-side
+# bot protection (Cloudflare 403, etc.). When a fetch fails for one of these
+# reasons, MCP-Bridge transparently retries the URL via the Internet Archive
+# Wayback Machine and returns the archived content (clearly labelled) so the
+# LLM still gets usable evidence instead of a hard failure.
+# ---------------------------------------------------------------------------
+
+DEFAULT_FETCH_MIRROR_TIMEOUT_SECONDS = 30.0
+WAYBACK_AVAILABILITY_API = "https://archive.org/wayback/available"
+
+
+def get_fetch_mirror_fallback_enabled() -> bool:
+    raw = os.getenv("MCP_BRIDGE_FETCH_MIRROR_FALLBACK")
+    if raw is None:
+        return True
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_fetch_mirror_timeout_seconds() -> float:
+    raw = os.getenv("MCP_BRIDGE_FETCH_MIRROR_TIMEOUT_SECONDS")
+    if raw is None:
+        return DEFAULT_FETCH_MIRROR_TIMEOUT_SECONDS
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return DEFAULT_FETCH_MIRROR_TIMEOUT_SECONDS
+
+
+def _is_fetch_tool(tool_name: str | None) -> bool:
+    if not tool_name:
+        return False
+    return tool_name.strip().lower() in {"fetch", "fetch_content", "web_fetch"}
+
+
+def _is_fetch_blocked_error(error_text: str | None) -> bool:
+    """Return True if a fetch error is a block (robots.txt / 403 / bot detection)
+    that a mirror/cache fallback could plausibly bypass."""
+    if not error_text:
+        return False
+    lowered = error_text.lower()
+    block_markers = (
+        "robots.txt",
+        "robots txt",
+        "not allowed",
+        "not permitted",
+        "status code 403",
+        "status 403",
+        "403 forbidden",
+        "blocked",
+        "bot detection",
+        "bot protection",
+        "cloudflare",
+        "checking your browser",
+        "just a moment",
+        "access denied",
+        "forbidden",
+        "captcha",
+    )
+    return any(marker in lowered for marker in block_markers)
+
+
+def _extract_fetch_url(arguments: Any) -> str | None:
+    if not isinstance(arguments, dict):
+        return None
+    url = arguments.get("url")
+    if isinstance(url, str) and url.strip():
+        return url.strip()
+    return None
+
+
+async def _fetch_via_wayback(url: str, timeout: float | None = None) -> CallToolResult | None:
+    """Attempt to fetch ``url`` via the Internet Archive Wayback Machine.
+
+    Returns a successful ``CallToolResult`` with the archived content, or None
+    if no snapshot is available / the archive fetch fails.
+    """
+    effective_timeout = timeout if timeout is not None else get_fetch_mirror_timeout_seconds()
+
+    try:
+        async with httpx.AsyncClient(timeout=effective_timeout, follow_redirects=True) as client:
+            # 1. Query the availability API for the closest snapshot.
+            availability = await client.get(
+                WAYBACK_AVAILABILITY_API,
+                params={"url": url},
+            )
+            if availability.status_code != 200:
+                logger.debug(f"wayback availability API returned {availability.status_code} for {url}")
+                return None
+
+            data = availability.json()
+            snapshot = (data.get("archived_snapshots") or {}).get("closest")
+            if not snapshot or not snapshot.get("url"):
+                logger.debug(f"no wayback snapshot available for {url}")
+                return None
+
+            snapshot_url = snapshot["url"]
+            logger.info(f"fetch blocked; retrying via wayback snapshot: {snapshot_url}")
+
+            # 2. Fetch the archived snapshot content.
+            response = await client.get(snapshot_url)
+            if response.status_code != 200:
+                logger.debug(f"wayback snapshot fetch returned {response.status_code} for {snapshot_url}")
+                return None
+
+            text = response.text
+            if not text or len(text.strip()) < 20:
+                logger.debug(f"wayback snapshot content too short for {snapshot_url}")
+                return None
+
+            # Trim to a reasonable size to avoid overwhelming the tool loop.
+            max_chars = 20000
+            if len(text) > max_chars:
+                text = text[:max_chars] + "\n...[truncated]"
+
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=(
+                            f"[Fetched via Internet Archive Wayback Machine snapshot of {url}]\n\n"
+                            f"Source: {snapshot_url}\n\n"
+                            f"{text}"
+                        ),
+                    )
+                ],
+                isError=False,
+            )
+    except Exception as exc:
+        logger.debug(f"wayback fallback failed for {url}: {exc}")
+        return None
+
+
 async def call_tool(
     tool_call_name: str, tool_call_json: str, timeout: int | None = None,
     trace_logger: RequestTraceLogger | None = None,
@@ -824,6 +961,40 @@ async def call_tool(
                 is_error=getattr(result, "isError", False),
                 result=result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) if hasattr(result, "model_dump") else result,
             )
+
+        # Mirror/cache fallback: if a fetch tool call was blocked (robots.txt,
+        # 403, bot detection), transparently retry via the Wayback Machine so
+        # the LLM still gets usable content instead of a hard failure.
+        if (
+            getattr(result, "isError", False)
+            and _is_fetch_tool(tool_call_name)
+            and get_fetch_mirror_fallback_enabled()
+        ):
+            error_text = next(
+                (
+                    part.text
+                    for part in getattr(result, "content", [])
+                    if getattr(part, "type", None) == "text"
+                ),
+                "",
+            )
+            url = _extract_fetch_url(tool_call_args)
+            if _is_fetch_blocked_error(error_text) and url:
+                logger.warning(
+                    f"fetch blocked for {url}; attempting wayback mirror fallback"
+                )
+                mirror_result = await _fetch_via_wayback(url)
+                if mirror_result is not None:
+                    span.set_attribute("mcp_bridge.tool.mirror_fallback", True)
+                    if trace_logger is not None:
+                        trace_logger.record(
+                            "mcp_tool_mirror_fallback",
+                            tool_name=tool_call_name,
+                            url=url,
+                            is_error=False,
+                        )
+                    return mirror_result
+
         return result
 
 
