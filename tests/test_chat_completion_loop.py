@@ -763,6 +763,48 @@ def test_parse_pseudo_tool_calls_returns_empty_for_no_markers():
     assert _parse_pseudo_tool_calls(None) == []
 
 
+def test_parse_pseudo_tool_calls_handles_dots_studio_multi_tool_format():
+    # Exact format emitted by dots-studio/dots-3-note-preview:free
+    text = (
+        "<dots_function_call>\n"
+        '<invoke name="fetch">\n'
+        '<parameter name="url">\n'
+        "https://www.salafitalk.net/st/viewmessages.cfm?Forum=8&Topic=9887\n"
+        "</parameter>\n"
+        "</invoke>\n"
+        "</dots_function_call>\n"
+        "<dots_function_call>\n"
+        '<invoke name="fetch">\n'
+        '<parameter name="url">\n'
+        "https://abdurrahman.org/category/islam/bidah-innovated-celebrations/page/2/\n"
+        "</parameter>\n"
+        "</invoke>\n"
+        "</dots_function_call>\n"
+        "<dots_function_call>\n"
+        '<invoke name="google_search">\n'
+        '<parameter name="query">\n'
+        "Permanent Committee for Fatwa Saudi Arabia national day bidah fatwa volume 3 pages 86-89\n"
+        "</parameter>\n"
+        '<parameter name="num_results">\n'
+        "10\n"
+        "</parameter>\n"
+        "</invoke>\n"
+        "</dots_function_call>"
+    )
+
+    calls = _parse_pseudo_tool_calls(text)
+
+    assert len(calls) == 3
+    assert calls[0][0] == "fetch"
+    assert "salafitalk.net" in calls[0][1]
+    assert calls[1][0] == "fetch"
+    assert "abdurrahman.org" in calls[1][1]
+    assert calls[2][0] == "google_search"
+    parsed = __import__("json").loads(calls[2][1])
+    assert parsed["query"] == "Permanent Committee for Fatwa Saudi Arabia national day bidah fatwa volume 3 pages 86-89"
+    assert parsed["num_results"] == 10
+
+
 def test_build_synthetic_tool_calls_creates_expected_shape():
     calls = _build_synthetic_tool_calls([("fetch", '{"url": "https://example.com"}')])
 

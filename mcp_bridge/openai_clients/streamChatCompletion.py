@@ -282,6 +282,30 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                 fully_done = True
                 continue
 
+        # The model may have advertised a tool_calls finish reason but emitted
+        # Anthropic-style pseudo markers as plain text content with no
+        # structured tool_calls. Parse them so the tools still execute.
+        if not collected_tool_calls and _contains_pseudo_tool_call_markers(response_content):
+            parsed_calls = _parse_pseudo_tool_calls(response_content)
+            if parsed_calls:
+                logger.warning(
+                    f"model returned tool_calls finish reason with pseudo markers; "
+                    f"parsing {len(parsed_calls)} tool call(s) for execution"
+                )
+                collected_tool_calls = [
+                    {
+                        "id": f"pseudo-call-{index}",
+                        "name": name,
+                        "arguments": arguments,
+                    }
+                    for index, (name, arguments) in enumerate(parsed_calls)
+                ]
+                if trace_logger is not None:
+                    trace_logger.record(
+                        "pseudo_tool_calls_parsed",
+                        tool_calls=[{"name": name, "arguments": arguments} for name, arguments in parsed_calls],
+                    )
+
         logger.debug(
             "tool calls found in stream; "
             f"count={len(collected_tool_calls)}"

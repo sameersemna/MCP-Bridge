@@ -948,8 +948,33 @@ async def chat_completions(
                 tool_call_items.append((name, arguments))
 
             if not tool_call_items:
-                logger.warning("model returned a tool-like finish reason without tool calls; stopping loop")
-                return response
+                # The model may have advertised a tool_calls finish reason but
+                # emitted Anthropic-style pseudo markers as plain text content
+                # with no structured tool_calls. Parse them so the tools still
+                # execute instead of returning the raw markers.
+                assistant_text = _extract_message_text(msg)
+                if _contains_pseudo_tool_call_markers(assistant_text):
+                    parsed_calls = _parse_pseudo_tool_calls(assistant_text)
+                    if parsed_calls:
+                        logger.warning(
+                            f"model returned tool_calls finish reason with pseudo markers; "
+                            f"parsing {len(parsed_calls)} tool call(s) for execution"
+                        )
+                        synthetic_calls = _build_synthetic_tool_calls(parsed_calls)
+                        msg.tool_calls = synthetic_calls
+                        response.choices[0].message.tool_calls = synthetic_calls
+                        if trace_logger is not None:
+                            trace_logger.record(
+                                "pseudo_tool_calls_parsed",
+                                tool_calls=[{"name": name, "arguments": arguments} for name, arguments in parsed_calls],
+                            )
+                        tool_call_items = [(name, arguments) for name, arguments in parsed_calls]
+                    else:
+                        logger.warning("model returned a tool-like finish reason without tool calls; stopping loop")
+                        return response
+                else:
+                    logger.warning("model returned a tool-like finish reason without tool calls; stopping loop")
+                    return response
 
             if not should_continue_tool_loop(
                 finish_reason_value,
