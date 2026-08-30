@@ -54,6 +54,15 @@ class InferenceServer(BaseModel):
     api_key: str = Field(
         default="unauthenticated", description="API key for the inference server"
     )
+    model_context_windows: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Optional map of model ID -> context window length (in tokens), e.g. "
+            '{"nvidia/nemotron-3-super-120b-a12b:free": 128000, "minimax/minimax-m3:free": 1000000}. '
+            "Used to derive the tool-loop context budget per model. If a model is not listed, "
+            "the bridge falls back to a heuristic from the model ID, then to a default."
+        ),
+    )
 
     @field_validator("base_url")
     @classmethod

@@ -23,6 +23,7 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _record_timing,
     _should_stop_tool_loop_on_tool_errors,
     _should_use_empty_content_fallback,
+    _strip_pseudo_tool_call_markers,
     get_max_context_tokens,
     get_max_tool_turns,
     should_continue_tool_loop,
@@ -114,8 +115,11 @@ def test_get_max_tool_turns_clamps_too_low_environment_values(monkeypatch):
 
 def test_get_max_context_tokens_uses_default_when_unset(monkeypatch):
     monkeypatch.delenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", raising=False)
+    monkeypatch.delenv("MCP_BRIDGE_CONTEXT_BUDGET_FRACTION", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
 
-    assert get_max_context_tokens() == 60000
+    # No model id -> default context window (128k) * default fraction (0.75).
+    assert get_max_context_tokens() == 96000
 
 
 def test_get_max_context_tokens_reads_environment(monkeypatch):
@@ -128,6 +132,47 @@ def test_get_max_context_tokens_clamps_too_low_environment_values(monkeypatch):
     monkeypatch.setenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", "100")
 
     assert get_max_context_tokens() == 1000
+
+
+def test_get_max_context_tokens_derives_from_model_context_window(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", raising=False)
+    monkeypatch.delenv("MCP_BRIDGE_CONTEXT_BUDGET_FRACTION", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # minimax-m3 has a 1M context window -> 1M * 0.75 = 750000.
+    assert get_max_context_tokens("minimax/minimax-m3:free") == 750000
+
+
+def test_get_max_context_tokens_parses_context_hint_from_model_id(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", raising=False)
+    monkeypatch.delenv("MCP_BRIDGE_CONTEXT_BUDGET_FRACTION", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # "200k" in the id -> 200000 * 0.75 = 150000.
+    assert get_max_context_tokens("some-vendor/model-200k:free") == 150000
+
+
+def test_get_max_context_tokens_respects_budget_fraction_env(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_CONTEXT_BUDGET_FRACTION", "0.5")
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # minimax-m3 1M * 0.5 = 500000.
+    assert get_max_context_tokens("minimax/minimax-m3:free") == 500000
+
+
+def test_get_max_context_tokens_reads_from_models_catalog(monkeypatch, tmp_path):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", raising=False)
+    monkeypatch.delenv("MCP_BRIDGE_CONTEXT_BUDGET_FRACTION", raising=False)
+    catalog = tmp_path / "models.json"
+    catalog.write_text(
+        '{"models": {"acme/model-1:free": {"context_length": 262144}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", str(catalog))
+
+    # Catalog value wins over the known-model/heuristic fallback.
+    assert get_max_context_tokens("acme/model-1:free") == 196608
 
 
 def test_context_budget_exceeded_when_prompt_tokens_over_budget():
@@ -241,17 +286,20 @@ def test_format_tool_loop_stop_message_includes_turns_and_limit():
     assert message == "stopping tool loop after 3 turn(s); max_tool_turns=12"
 
 
-def test_detect_repeated_tool_calls_flags_second_identical_call():
+def test_detect_repeated_tool_calls_flags_third_identical_call():
     seen: dict[str, int] = {}
     # First iteration: not repeated.
     assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas ceremony"}')], seen) is False
-    # Second iteration with the same call: repeated.
+    # Second iteration with the same call: still not repeated (threshold is 3).
+    assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas ceremony"}')], seen) is False
+    # Third iteration with the same call: repeated.
     assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas ceremony"}')], seen) is True
 
 
 def test_detect_repeated_tool_calls_ignores_whitespace_differences():
     seen: dict[str, int] = {}
     assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas   ceremony"}')], seen) is False
+    assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas ceremony"}')], seen) is False
     assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas ceremony"}')], seen) is True
 
 
@@ -357,6 +405,28 @@ def test_build_synthesis_request_adds_instruction_and_drops_tools():
     assert last_role_value == "user"
     last_content = getattr(getattr(last_message, "root", last_message), "content", None)
     assert "synthesiz" in str(last_content).lower()
+
+
+def test_build_synthesis_request_force_answer_uses_direct_instruction():
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "messages": [
+                {"role": "system", "content": "You are helpful."},
+            ],
+            "model": "test-model",
+        }
+    )
+    synthesis_request = _build_synthesis_request(
+        request,
+        stop_reason="repeated_tool_calls",
+        request_messages=[ChatCompletionRequestMessage.model_validate({"role": "tool", "content": [{"type": "text", "text": "useful evidence"}], "tool_call_id": "call_1"})],
+        force_answer=True,
+    )
+
+    assert synthesis_request.tools == []
+    last_message = synthesis_request.messages[-1]
+    last_content = getattr(getattr(last_message, "root", last_message), "content", None)
+    assert "do not call any tools" in str(last_content).lower()
 
 
 def test_build_tool_loop_stop_response_replaces_tool_calls_with_summary():
@@ -833,10 +903,59 @@ def test_build_synthetic_tool_calls_creates_expected_shape():
 
     assert len(calls) == 1
     tool_call = calls[0]
-    assert tool_call.id == "pseudo-call-0"
+    # Provider-compatible OpenAI-style ID (minimax rejects "pseudo-call-0").
+    assert tool_call.id.startswith("call_")
     assert tool_call.type == "function"
     assert tool_call.function.name == "fetch"
     assert tool_call.function.arguments == '{"url": "https://example.com"}'
+
+
+def test_strip_pseudo_tool_call_markers_removes_tool_call_blocks():
+    # nemotron-3-super-120b format: <tool_call><function=NAME>...</function></tool_call>
+    text = (
+        "Let me search.\n"
+        "<tool_call>\n"
+        "<function=google_search>\n"
+        "<parameter=query>\n"
+        "some query\n"
+        "</parameter>\n"
+        "</function>\n"
+        "</tool_call>\n"
+    )
+
+    stripped = _strip_pseudo_tool_call_markers(text)
+
+    assert "<tool_call>" not in stripped
+    assert "<function=" not in stripped
+    assert "<parameter=" not in stripped
+    assert "Let me search." in stripped
+
+
+def test_strip_pseudo_tool_call_markers_removes_invoke_blocks():
+    text = (
+        '<invoke name="search"><parameter name="query">hello</parameter></invoke>\n'
+        "Some remaining text"
+    )
+
+    stripped = _strip_pseudo_tool_call_markers(text)
+
+    assert "<invoke" not in stripped
+    assert "<parameter" not in stripped
+    assert "Some remaining text" in stripped
+
+
+def test_strip_pseudo_tool_call_markers_removes_dots_function_call_wrappers():
+    text = (
+        "<dots_function_call>\n"
+        '<invoke name="fetch"><parameter name="url">https://example.com</parameter></invoke>\n'
+        "</dots_function_call>\n"
+    )
+
+    stripped = _strip_pseudo_tool_call_markers(text)
+
+    assert "<dots_function_call>" not in stripped
+    assert "<invoke" not in stripped
+    assert stripped == ""
 
 
 def test_parse_pseudo_tool_calls_handles_function_equals_format():

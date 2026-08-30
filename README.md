@@ -137,10 +137,50 @@ The tool-calling loop can be tuned with the following environment variables:
 | Variable | Default | Description |
 | --- | --- | --- |
 | `MCP_BRIDGE_MAX_TOOL_TURNS` | `12` | Maximum number of tool-calling iterations per request. |
-| `MCP_BRIDGE_MAX_CONTEXT_TOKENS` | `60000` | Safety cap on the accumulated prompt context (in tokens) for a single request. When exceeded, the tool loop stops and a final answer is synthesized. Prevents runaway loops where the model keeps issuing tool calls and the context grows unboundedly. |
+| `MCP_BRIDGE_MAX_CONTEXT_TOKENS` | *(model-derived)* | Hard override for the tool-loop context budget (tokens). If unset, the budget is derived per-model from the model's context window × `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION`. When exceeded, the tool loop stops and a final answer is synthesized. Prevents runaway loops where the model keeps issuing tool calls and the context grows unboundedly. |
+| `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION` | `0.75` | Fraction of the model's context window used as the tool-loop budget. The remaining fraction is headroom for the final synthesized answer. |
 | `MCP_BRIDGE_TOOL_TIMEOUT_SECONDS` | `60` | Per-tool-call timeout in seconds. |
 | `MCP_BRIDGE_TOOL_RETRY_COUNT` | `0` | Number of retries for a timed-out tool call. |
 | `MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS` | `0.25` | Delay between tool-call retries. |
+
+### Model-aware context budget
+
+The tool-loop context budget is **model-specific** rather than one-size-fits-all. The bridge derives it from the model's context window scaled by `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION` (default 75%), so a 1M-context model gets a much larger budget than a 128k-context model. The context window is resolved in this order:
+
+1. The local **`models.json` catalog** (generated from the provider's `/models` endpoint — see below).
+2. The `inference_server.model_context_windows` map in `config.json` (exact model ID, or the short name after the last `/`).
+3. A context hint embedded in the model ID (e.g. `model-200k`, `model-1m`).
+4. A built-in lookup of known models.
+5. A default of 128k tokens.
+
+Example `config.json`:
+```json
+{
+  "inference_server": {
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key": "sk-...",
+    "model_context_windows": {
+      "nvidia/nemotron-3-super-120b-a12b:free": 128000,
+      "minimax/minimax-m3:free": 1000000
+    }
+  }
+}
+```
+
+Setting `MCP_BRIDGE_MAX_CONTEXT_TOKENS` explicitly always overrides the derived budget.
+
+### Model catalog (`models.json`)
+
+The bridge and the test harness read per-model details (context window, pricing, etc.) from a local `models.json` catalog. Generate it from the provider's `/models` endpoint:
+
+```bash
+python scripts/fetch_models.py
+```
+
+This writes `models.json` with every model's `context_length`, pricing, and modality. Re-run it periodically (or from CI) to keep the catalog current, since providers add and remove models frequently. The catalog is the authoritative source for context windows — note that a model's `:free` variant often has a different context length than the paid one.
+
+- The Python bridge reads it via `MCP_BRIDGE_MODELS_CATALOG` (defaults to `models.json` in the repo root).
+- `test_openrouter.sh` uses the live bridge `/models` endpoint and falls back to `models.json` if the bridge is unreachable.
 
 ### API Key Authentication
 
