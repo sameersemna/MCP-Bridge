@@ -123,12 +123,21 @@ def test_validation_error_without_evidence_does_not_stop_loop():
 
 
 def test_fatal_error_stops_loop_even_without_evidence():
-    # "No MCP client found" / "Unknown tool" cannot be fixed by the model, so
-    # the loop should stop rather than spin.
+    # A bare "No MCP client found" with no suggestions cannot be fixed by the
+    # model, so the loop should stop rather than spin.
     assert _should_stop_tool_loop_on_tool_errors(
         ["google-search: No MCP client found for tool 'google-search'"],
         [],
     ) is True
+
+
+def test_corrective_unknown_tool_error_is_recoverable():
+    # When the bridge returns a corrective message listing close matches, the
+    # model CAN self-correct on the next iteration, so the loop must NOT stop.
+    assert _should_stop_tool_loop_on_tool_errors(
+        ["memory: 'memory' is not a registered tool. Did you mean one of: search_nodes, read_graph? Call one of these exact names instead."],
+        [],
+    ) is False
 
 
 def test_too_many_recoverable_errors_stop_loop():

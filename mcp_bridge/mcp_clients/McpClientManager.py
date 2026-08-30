@@ -1,4 +1,5 @@
 import asyncio
+import difflib
 import json
 from typing import Any, Union
 from urllib.parse import urlparse
@@ -173,6 +174,46 @@ class MCPClientManager:
         client, _ = resolved
         return client
 
+    async def _list_client_tools(self, client: client_types, timeout: float) -> list[Any]:
+        """Return the list of tools exposed by a client, or ``[]`` on failure.
+
+        Handles both clients that expose a ``session`` (with ``list_tools``)
+        and those that expose a top-level ``list_tools`` method, waiting for
+        the session to become ready when needed.
+        """
+        try:
+            if not getattr(client, "session", None):
+                wait_for_session = getattr(client, "_wait_for_session", None)
+                if callable(wait_for_session):
+                    configured_request_timeout = None
+                    config = getattr(client, "config", None)
+                    request_timeout = getattr(config, "requestTimeout", None)
+                    if request_timeout is not None:
+                        configured_request_timeout = float(request_timeout) / 1000.0
+
+                    wait_timeout = float(timeout)
+                    if configured_request_timeout is not None:
+                        wait_timeout = max(wait_timeout, configured_request_timeout)
+
+                    await wait_for_session(timeout=int(wait_timeout), http_error=False)
+                else:
+                    list_tools = await asyncio.wait_for(client.list_tools(), timeout=timeout)
+                    return list(getattr(list_tools, "tools", []) or [])
+
+            if not getattr(client, "session", None):
+                return []
+
+            list_tools = await asyncio.wait_for(client.session.list_tools(), timeout=timeout)
+            return list(getattr(list_tools, "tools", []) or [])
+        except asyncio.TimeoutError:
+            client_name = getattr(client, "name", "unknown")
+            logger.warning(f"Timed out discovering tools for client '{client_name}'")
+            return []
+        except Exception as exc:
+            client_name = getattr(client, "name", "unknown")
+            logger.debug(f"Client '{client_name}' could not be resolved for tools: {exc}")
+            return []
+
     async def resolve_tool(self, tool: str, timeout: float | None = None):
         """Resolve a (possibly loosely-named) tool call to its owning client and
         the exact tool name the server expects.
@@ -182,6 +223,10 @@ class MCPClientManager:
         instead of a tool name). This normalizes separators and returns the
         canonical tool name so the downstream ``session.call_tool`` uses the
         name the server actually recognizes.
+
+        If the called name matches no tool but matches a *server* name, and
+        that server exposes exactly one tool, the call is dispatched to that
+        tool directly (the common "called the server instead of the tool" case).
 
         Returns ``(client, actual_tool_name)`` or ``None`` if no client exposes
         a matching tool.
@@ -193,50 +238,10 @@ class MCPClientManager:
         normalized_tool = self._normalize_tool_name(tool)
 
         async def _probe(client: client_types):
-            try:
-                if not getattr(client, "session", None):
-                    wait_for_session = getattr(client, "_wait_for_session", None)
-                    if callable(wait_for_session):
-                        configured_request_timeout = None
-                        config = getattr(client, "config", None)
-                        request_timeout = getattr(config, "requestTimeout", None)
-                        if request_timeout is not None:
-                            configured_request_timeout = float(request_timeout) / 1000.0
-
-                        wait_timeout = float(effective_timeout)
-                        if configured_request_timeout is not None:
-                            wait_timeout = max(wait_timeout, configured_request_timeout)
-
-                        await wait_for_session(timeout=int(wait_timeout), http_error=False)
-                    else:
-                        list_tools = await asyncio.wait_for(
-                            client.list_tools(),
-                            timeout=effective_timeout,
-                        )
-                        for client_tool in list_tools.tools:
-                            if self._normalize_tool_name(getattr(client_tool, "name", "")) == normalized_tool:
-                                return (client, getattr(client_tool, "name", tool))
-                        return None
-
-                if not getattr(client, "session", None):
-                    return None
-
-                list_tools = await asyncio.wait_for(
-                    client.session.list_tools(),
-                    timeout=effective_timeout,
-                )
-                for client_tool in list_tools.tools:
-                    if self._normalize_tool_name(getattr(client_tool, "name", "")) == normalized_tool:
-                        return (client, getattr(client_tool, "name", tool))
-            except asyncio.TimeoutError:
-                client_name = getattr(client, "name", "unknown")
-                logger.warning(f"Timed out discovering tools for client '{client_name}'")
-                return None
-            except Exception as exc:
-                client_name = getattr(client, "name", "unknown")
-                logger.debug(f"Client '{client_name}' could not be resolved for tool '{tool}': {exc}")
-                return None
-
+            client_tools = await self._list_client_tools(client, effective_timeout)
+            for client_tool in client_tools:
+                if self._normalize_tool_name(getattr(client_tool, "name", "")) == normalized_tool:
+                    return (client, getattr(client_tool, "name", tool))
             return None
 
         clients = [client for _, client in self.get_clients()]
@@ -277,7 +282,58 @@ class MCPClientManager:
         for task in probe_tasks:
             task.cancel()
 
+        # Server-name fallback: the called name matched no tool, but it may be
+        # a *server* name. If that server exposes exactly one tool, dispatch to
+        # it directly so the common "called the server" case succeeds silently.
+        for client in clients:
+            client_name = getattr(client, "name", "")
+            if client_name and self._normalize_tool_name(client_name) == normalized_tool:
+                client_tools = await self._list_client_tools(client, effective_timeout)
+                if len(client_tools) == 1:
+                    return (client, getattr(client_tools[0], "name", tool))
+                # Multiple tools on the matched server: cannot disambiguate
+                # reliably, so fall through to the corrective error path.
+                break
+
         return None
+
+    async def suggest_tools(self, tool: str, timeout: float | None = None) -> list[str]:
+        """Return a list of registered tool names that are close matches to the
+        given (misnamed) tool call, for use in a corrective error message.
+
+        If the called name matches a *server* name, that server's tools are
+        returned first (the model likely meant one of them). Otherwise fuzzy
+        matching (``difflib``) is used against every tool name exposed by every
+        client, so the model can see what it should have called.
+        """
+        effective_timeout = timeout
+        if effective_timeout is None:
+            effective_timeout = DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
+
+        normalized_tool = self._normalize_tool_name(tool)
+
+        # Server-name match: the model likely meant a tool on this server.
+        for _, client in self.get_clients():
+            client_name = getattr(client, "name", "")
+            if client_name and self._normalize_tool_name(client_name) == normalized_tool:
+                client_tools = await self._list_client_tools(client, effective_timeout)
+                names = [getattr(t, "name", "") for t in client_tools]
+                return [n for n in names if n]
+
+        all_tool_names: list[str] = []
+        for _, client in self.get_clients():
+            client_tools = await self._list_client_tools(client, effective_timeout)
+            for client_tool in client_tools:
+                name = getattr(client_tool, "name", "")
+                if name:
+                    all_tool_names.append(name)
+
+        if not all_tool_names:
+            return []
+
+        matches = difflib.get_close_matches(normalized_tool, [self._normalize_tool_name(n) for n in all_tool_names], n=5, cutoff=0.4)
+        normalized_to_original = {self._normalize_tool_name(n): n for n in all_tool_names}
+        return [normalized_to_original[m] for m in matches]
 
     async def get_client_from_prompt(self, prompt: str, timeout: float | None = None):
         effective_timeout = timeout

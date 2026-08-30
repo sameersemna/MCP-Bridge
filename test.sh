@@ -117,13 +117,15 @@ fi
 echo "${C_CYAN}Extracting content from response.json and saving to response.md from model ${MODEL}...${C_RESET}"
 jq -r '.choices[0].message.content' response.json > response.md
 
-# Some reasoning models (e.g. Liquid LFM2.5) advertise `tools` support but do not
-# emit structured OpenAI `tool_calls`. Instead they write pseudo tool-call markers
-# as plain text inside `content` (e.g. `<|tool_call_start|>`, `<tool_call>`,
-# `<function=...>`). The bridge cannot execute these, so skip such models.
-if grep -qE '<\|tool_call|<tool_call|<function=|<\|function' response.md; then
+# Some reasoning models (e.g. Liquid LFM2.5, dots-studio) advertise `tools`
+# support but do not emit structured OpenAI `tool_calls`. Instead they write
+# pseudo tool-call markers as plain text inside `content` (e.g.
+# `<|tool_call_start|>`, `<tool_call>`, `<function=...>`, `<dots_function_call>`,
+# or Anthropic-style `<invoke name="...">`). The bridge cannot execute these, so
+# skip such models.
+if grep -qE '<\|tool_call|<tool_call|<function=|<\|function|<dots_function_call|<invoke\b|<parameter\b' response.md; then
   echo "${C_YELLOW}WARNING: Model ${MODEL} emitted pseudo tool-call markers as plain text${C_RESET}" >&2
-  echo "${C_YELLOW}         (e.g. <|tool_call_start|> / <tool_call> / <function=...>).${C_RESET}" >&2
+  echo "${C_YELLOW}         (e.g. <|tool_call_start|> / <tool_call> / <function=...> / <dots_function_call> / <invoke>).${C_RESET}" >&2
   echo "${C_YELLOW}         This model does not support structured tool calls via the bridge.${C_RESET}" >&2
   echo "${C_YELLOW}         Skipping model ${MODEL}.${C_RESET}" >&2
   rm -f response.md

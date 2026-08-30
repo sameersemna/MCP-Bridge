@@ -551,6 +551,114 @@ def test_resolve_tool_returns_none_when_no_match() -> None:
     assert resolved is None
 
 
+def test_resolve_tool_falls_back_to_single_tool_server_name() -> None:
+    # Calling a *server* name that exposes exactly one tool should dispatch to
+    # that tool directly (the common "called the server" case).
+    class SingleToolClient:
+        def __init__(self):
+            self.name = "memory"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[SimpleNamespace(name="search_nodes")])
+
+    manager = MCPClientManager()
+    manager.clients = {"memory": SingleToolClient()}
+
+    resolved = asyncio.run(asyncio.wait_for(manager.resolve_tool("memory", timeout=0.2), timeout=0.3))
+
+    assert resolved is not None
+    client, actual_name = resolved
+    assert getattr(client, "name", None) == "memory"
+    assert actual_name == "search_nodes"
+
+
+def test_resolve_tool_does_not_fallback_when_server_has_multiple_tools() -> None:
+    # A server name with multiple tools cannot be disambiguated reliably, so
+    # resolution should return None and let the corrective error path handle it.
+    class MultiToolClient:
+        def __init__(self):
+            self.name = "memory"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(
+                tools=[
+                    SimpleNamespace(name="create_entities"),
+                    SimpleNamespace(name="search_nodes"),
+                ]
+            )
+
+    manager = MCPClientManager()
+    manager.clients = {"memory": MultiToolClient()}
+
+    resolved = asyncio.run(asyncio.wait_for(manager.resolve_tool("memory", timeout=0.2), timeout=0.3))
+
+    assert resolved is None
+
+
+def test_suggest_tools_returns_close_matches() -> None:
+    class Client:
+        def __init__(self):
+            self.name = "memory"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(
+                tools=[
+                    SimpleNamespace(name="create_entities"),
+                    SimpleNamespace(name="search_nodes"),
+                    SimpleNamespace(name="read_graph"),
+                ]
+            )
+
+    manager = MCPClientManager()
+    manager.clients = {"memory": Client()}
+
+    suggestions = asyncio.run(asyncio.wait_for(manager.suggest_tools("search", timeout=0.2), timeout=0.3))
+
+    assert "search_nodes" in suggestions
+
+
+def test_suggest_tools_prioritizes_server_name_tools() -> None:
+    # Calling a *server* name should suggest that server's tools, not unrelated
+    # fuzzy matches from other servers (e.g. Redis commands for 'memory').
+    class MemoryClient:
+        def __init__(self):
+            self.name = "memory"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(
+                tools=[
+                    SimpleNamespace(name="create_entities"),
+                    SimpleNamespace(name="search_nodes"),
+                    SimpleNamespace(name="read_graph"),
+                ]
+            )
+
+    class RedisClient:
+        def __init__(self):
+            self.name = "redis"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(
+                tools=[
+                    SimpleNamespace(name="smembers"),
+                    SimpleNamespace(name="zrem"),
+                    SimpleNamespace(name="srem"),
+                ]
+            )
+
+    manager = MCPClientManager()
+    manager.clients = {"memory": MemoryClient(), "redis": RedisClient()}
+
+    suggestions = asyncio.run(asyncio.wait_for(manager.suggest_tools("memory", timeout=0.2), timeout=0.3))
+
+    assert suggestions == ["create_entities", "search_nodes", "read_graph"]
+
+
 def test_call_tool_returns_error_result_when_no_client_matches(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_get_client_from_tool(*args, **kwargs):
         return None

@@ -247,6 +247,38 @@ def _format_tool_loop_stop_message(*, tool_turns_completed: int, max_tool_turns:
     return f"stopping tool loop after {tool_turns_completed} turn(s); max_tool_turns={max_tool_turns}"
 
 
+def _normalize_tool_call_key(name: str, arguments: Any) -> str:
+    """Build a stable comparison key for a tool call, ignoring whitespace.
+
+    Used to detect when the model re-issues the same tool call across loop
+    iterations (a "search loop") instead of converging on an answer.
+    """
+    arg_text = arguments if isinstance(arguments, str) else json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+    return f"{name}::{' '.join(arg_text.split())}"
+
+
+def _detect_repeated_tool_calls(
+    tool_call_items: list[tuple[str, Any]],
+    seen_calls: dict[str, int],
+    *,
+    threshold: int = 2,
+) -> bool:
+    """Return True if any tool call in this iteration has already been issued
+    ``threshold`` or more times across the loop.
+
+    A weak model that keeps re-issuing the same search call without converging
+    is a "search loop". Detecting it lets the bridge stop early and synthesize
+    a final answer instead of burning tokens and context.
+    """
+    repeated = False
+    for name, arguments in tool_call_items:
+        key = _normalize_tool_call_key(name, arguments)
+        seen_calls[key] = seen_calls.get(key, 0) + 1
+        if seen_calls[key] >= threshold:
+            repeated = True
+    return repeated
+
+
 def _extract_tool_message_text(message: ChatCompletionRequestMessage | Any) -> str | None:
     message_root = getattr(message, "root", message)
     if isinstance(message_root, dict):
@@ -399,6 +431,8 @@ def _build_synthesis_request(
         instruction += " The tool workflow stopped early, so if some information is incomplete, say so clearly."
     elif stop_reason == "max_context_tokens":
         instruction += " The tool workflow stopped early because the conversation context grew too large, so if some information is incomplete, say so clearly."
+    elif stop_reason == "repeated_tool_calls":
+        instruction += " The tool workflow stopped because the same tool call was repeated without new information, so synthesize the best answer from the evidence already gathered."
 
     synthesis_request.messages.append(
         ChatCompletionRequestMessage.model_validate(
@@ -566,6 +600,8 @@ def _build_tool_loop_stop_response(
         summary_parts.append("Note: The search or tool workflow reached its turn limit before finishing.")
     elif stop_reason == "max_context_tokens":
         summary_parts.append("Note: The search or tool workflow stopped early because the conversation context grew too large.")
+    elif stop_reason == "repeated_tool_calls":
+        summary_parts.append("Note: The tool workflow stopped because the same tool call was repeated without new information.")
     else:
         summary_parts.append("Note: The workflow stopped before it could finish.")
 
@@ -964,6 +1000,7 @@ async def chat_completions(
     tool_timeout_seconds = get_tool_timeout_seconds()
     tool_turns_completed = 0
     tool_client_cache: dict[str, Any] = {}
+    seen_tool_calls: dict[str, int] = {}
 
     async with get_client(http_request) as client:
         while True:
@@ -1145,6 +1182,22 @@ async def chat_completions(
                 else:
                     logger.warning("model returned a tool-like finish reason without tool calls; stopping loop")
                     return response
+
+            # Detect a "search loop": the model re-issuing the same tool call
+            # across iterations without converging. Stop early and build a
+            # deterministic answer from the tool evidence already gathered.
+            # We deliberately do NOT call the model to synthesize here: a weak
+            # model that is looping on the same call will just echo the tool-call
+            # arguments back instead of producing a real answer.
+            if tool_call_items and _detect_repeated_tool_calls(tool_call_items, seen_tool_calls):
+                logger.warning(
+                    "detected repeated tool call(s); stopping tool loop and building a final answer from tool evidence"
+                )
+                return _build_tool_loop_stop_response(
+                    response,
+                    stop_reason="repeated_tool_calls",
+                    request_messages=request.messages,
+                )
 
             if not should_continue_tool_loop(
                 finish_reason_value,

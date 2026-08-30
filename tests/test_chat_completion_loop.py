@@ -14,6 +14,7 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _compress_tool_context,
     _context_budget_exceeded,
     _context_budget_nearly_exceeded,
+    _detect_repeated_tool_calls,
     _extract_message_text,
     _extract_tool_message_text,
     _format_tool_loop_stop_message,
@@ -238,6 +239,26 @@ def test_format_tool_loop_stop_message_includes_turns_and_limit():
     message = _format_tool_loop_stop_message(tool_turns_completed=3, max_tool_turns=12)
 
     assert message == "stopping tool loop after 3 turn(s); max_tool_turns=12"
+
+
+def test_detect_repeated_tool_calls_flags_second_identical_call():
+    seen: dict[str, int] = {}
+    # First iteration: not repeated.
+    assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas ceremony"}')], seen) is False
+    # Second iteration with the same call: repeated.
+    assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas ceremony"}')], seen) is True
+
+
+def test_detect_repeated_tool_calls_ignores_whitespace_differences():
+    seen: dict[str, int] = {}
+    assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas   ceremony"}')], seen) is False
+    assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas ceremony"}')], seen) is True
+
+
+def test_detect_repeated_tool_calls_does_not_flag_distinct_queries():
+    seen: dict[str, int] = {}
+    assert _detect_repeated_tool_calls([("google_search", '{"query": "Hajr al-Asas"}')], seen) is False
+    assert _detect_repeated_tool_calls([("google_search", '{"query": "Sang e Buniyaad"}')], seen) is False
 
 
 def test_should_use_empty_content_fallback_only_when_there_are_no_tool_calls():

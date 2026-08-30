@@ -911,7 +911,26 @@ async def call_tool(
                 def model_dump(self, **kwargs: Any) -> dict[str, Any]:
                     return {"isError": True, "content": [{"type": "text", "text": self.content[0].text}]}
 
-            return ToolDispatchError(f"No MCP client found for tool '{tool_call_name}'")
+            # Build a corrective message the model can act on instead of a
+            # dead-end. The model named a tool that doesn't exist (often a
+            # server name or a misname); listing close matches lets it
+            # self-correct on the next loop iteration.
+            suggestions = await ClientManager.suggest_tools(
+                tool_call_name, timeout=DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
+            )
+            if suggestions:
+                suggestion_text = ", ".join(suggestions)
+                message = (
+                    f"'{tool_call_name}' is not a registered tool. "
+                    f"Did you mean one of: {suggestion_text}? "
+                    f"Call one of these exact names instead."
+                )
+            else:
+                message = (
+                    f"No MCP client found for tool '{tool_call_name}'. "
+                    f"Only call tools by their exact registered names."
+                )
+            return ToolDispatchError(message)
 
         try:
             tool_call_args = _parse_lenient_json(tool_call_json)
