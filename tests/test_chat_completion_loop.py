@@ -11,7 +11,9 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _build_synthesis_request,
     _build_synthetic_tool_calls,
     _build_tool_loop_stop_response,
+    _compress_tool_context,
     _context_budget_exceeded,
+    _context_budget_nearly_exceeded,
     _extract_message_text,
     _extract_tool_message_text,
     _format_tool_loop_stop_message,
@@ -852,3 +854,87 @@ def test_parse_pseudo_tool_calls_handles_multiple_function_equals_blocks():
     assert len(calls) == 2
     assert calls[0][0] == "search"
     assert calls[1][0] == "fetch"
+
+
+def test_context_budget_nearly_exceeded_detects_approaching_limit():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": {"prompt_tokens": 50000, "completion_tokens": 10, "total_tokens": 50010},
+        }
+    )
+
+    assert _context_budget_nearly_exceeded(response, 60000) is True
+
+
+def test_context_budget_nearly_exceeded_false_when_well_under():
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": {"prompt_tokens": 10000, "completion_tokens": 10, "total_tokens": 10010},
+        }
+    )
+
+    assert _context_budget_nearly_exceeded(response, 60000) is False
+
+
+def test_compress_tool_context_reduces_message_count():
+    messages = [
+        ChatCompletionRequestMessage.model_validate({"role": "system", "content": "system"}),
+    ]
+    for index in range(10):
+        messages.append(
+            ChatCompletionRequestMessage.model_validate(
+                {
+                    "role": "tool",
+                    "content": [{"type": "text", "text": f"Search result {index} with some useful evidence"}],
+                    "tool_call_id": f"call_{index}",
+                }
+            )
+        )
+
+    compressed = _compress_tool_context(messages, keep_recent=3)
+
+    assert compressed is True
+    # 1 system + 1 summary + 3 recent tool messages = 5
+    assert len(messages) == 5
+    # The summary message should be present.
+    summary_texts = [
+        _extract_tool_message_text(m) or ""
+        for m in messages
+        if getattr(getattr(m, "root", m), "role", None) == "tool"
+    ]
+    assert any("summarized" in text for text in summary_texts)
+
+
+def test_compress_tool_context_returns_false_when_few_messages():
+    messages = [
+        ChatCompletionRequestMessage.model_validate({"role": "system", "content": "system"}),
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Search result 1"}],
+                "tool_call_id": "call_1",
+            }
+        ),
+        ChatCompletionRequestMessage.model_validate(
+            {
+                "role": "tool",
+                "content": [{"type": "text", "text": "Search result 2"}],
+                "tool_call_id": "call_2",
+            }
+        ),
+    ]
+
+    compressed = _compress_tool_context(messages, keep_recent=3)
+
+    assert compressed is False
+    assert len(messages) == 3

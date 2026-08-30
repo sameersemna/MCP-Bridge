@@ -139,6 +139,110 @@ def _context_budget_exceeded(
     return prompt_tokens > max_context_tokens
 
 
+def _context_budget_nearly_exceeded(
+    response: CreateChatCompletionResponse,
+    max_context_tokens: int,
+    threshold: float = 0.7,
+) -> bool:
+    """Return True if the accumulated prompt context is approaching the budget.
+
+    Used to trigger proactive context compression before the hard limit is hit,
+    so the tool loop can keep going instead of stopping early.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return False
+    prompt_tokens = getattr(usage, "prompt_tokens", None)
+    if not isinstance(prompt_tokens, int):
+        return False
+    return prompt_tokens > (max_context_tokens * threshold)
+
+
+def _compress_tool_context(
+    request_messages: list[ChatCompletionRequestMessage],
+    *,
+    keep_recent: int = 6,
+) -> bool:
+    """Compress older tool messages into a single compact summary.
+
+    Long research workflows accumulate many tool messages (search results,
+    fetched pages) that bloat the prompt context. When the budget is nearly
+    exceeded, this replaces the OLDEST tool messages with a single summarized
+    ``role: "tool"`` message, freeing context so the loop can continue.
+
+    Returns True if compression was performed, False otherwise.
+    """
+    if not request_messages:
+        return False
+
+    # Identify tool messages and their indices.
+    tool_indices: list[int] = []
+    for index, message in enumerate(request_messages):
+        role = getattr(getattr(message, "root", message), "role", None)
+        if role == "tool":
+            tool_indices.append(index)
+
+    if len(tool_indices) <= keep_recent:
+        # Not enough tool messages to compress meaningfully.
+        return False
+
+    # Keep the most recent `keep_recent` tool messages; compress the older ones.
+    compress_indices = tool_indices[:-keep_recent]
+    keep_indices = set(tool_indices[-keep_recent:])
+
+    tool_texts: list[str] = []
+    for index in compress_indices:
+        text = _extract_tool_message_text(request_messages[index])
+        if text:
+            tool_texts.append(text)
+
+    if not tool_texts:
+        return False
+
+    summary = _summarize_tool_messages(tool_texts)
+    if not summary:
+        return False
+
+    # Build the new message list: drop the compressed tool messages and insert
+    # a single summary tool message in their place.
+    new_messages: list[ChatCompletionRequestMessage] = []
+    inserted = False
+    for index, message in enumerate(request_messages):
+        if index in keep_indices:
+            new_messages.append(message)
+            continue
+        if index in compress_indices:
+            if not inserted:
+                new_messages.append(
+                    ChatCompletionRequestMessage.model_validate(
+                        {
+                            "role": "tool",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": (
+                                        "[Earlier tool results summarized to save context]\n\n"
+                                        + summary
+                                    ),
+                                }
+                            ],
+                            "tool_call_id": "context-compression",
+                        }
+                    )
+                )
+                inserted = True
+            continue
+        new_messages.append(message)
+
+    # Replace the list in place.
+    request_messages[:] = new_messages
+    logger.info(
+        f"compressed {len(compress_indices)} older tool message(s) into a summary; "
+        f"kept {len(keep_indices)} recent tool message(s)"
+    )
+    return True
+
+
 def _format_tool_loop_stop_message(*, tool_turns_completed: int, max_tool_turns: int) -> str:
     return f"stopping tool loop after {tool_turns_completed} turn(s); max_tool_turns={max_tool_turns}"
 
@@ -1104,6 +1208,17 @@ async def chat_completions(
                     stop_reason="max_context_tokens",
                     request_messages=request.messages,
                 )
+
+            # Proactive context compression: if the budget is nearly exceeded,
+            # compress older tool messages into a summary so the loop can keep
+            # going instead of stopping early.
+            if _context_budget_nearly_exceeded(response, max_context_tokens):
+                if _compress_tool_context(request.messages):
+                    logger.info(
+                        "context budget nearly exceeded; compressed older tool messages; "
+                        "continuing tool loop"
+                    )
+                    continue
 
             tool_turns_completed += 1
 
