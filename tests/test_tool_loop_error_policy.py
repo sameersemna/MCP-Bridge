@@ -111,3 +111,29 @@ def test_timeout_errors_with_partial_evidence_do_not_stop_loop():
         [f"fetch_content: Timeout Error calling fetch_content"] * 5,
         request_messages,
     ) is False
+
+
+def test_validation_error_without_evidence_does_not_stop_loop():
+    # A validation error on the FIRST tool call (no evidence yet) is recoverable:
+    # the model can correct its arguments. The loop must NOT stop early.
+    assert _should_stop_tool_loop_on_tool_errors(
+        ["sequential-thinking: Input validation error: Invalid arguments for tool sequentialthinking"],
+        [],
+    ) is False
+
+
+def test_fatal_error_stops_loop_even_without_evidence():
+    # "No MCP client found" / "Unknown tool" cannot be fixed by the model, so
+    # the loop should stop rather than spin.
+    assert _should_stop_tool_loop_on_tool_errors(
+        ["google-search: No MCP client found for tool 'google-search'"],
+        [],
+    ) is True
+
+
+def test_too_many_recoverable_errors_stop_loop():
+    # More than 3 recoverable errors -> stop to avoid an infinite loop.
+    assert _should_stop_tool_loop_on_tool_errors(
+        ["sequential-thinking: Input validation error"] * 4,
+        [],
+    ) is True

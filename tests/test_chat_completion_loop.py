@@ -814,3 +814,41 @@ def test_build_synthetic_tool_calls_creates_expected_shape():
     assert tool_call.type == "function"
     assert tool_call.function.name == "fetch"
     assert tool_call.function.arguments == '{"url": "https://example.com"}'
+
+
+def test_parse_pseudo_tool_calls_handles_function_equals_format():
+    # Exact format emitted by nvidia/nemotron-3-super-120b-a12b:free
+    text = (
+        "<tool_call>\n"
+        "<function=fetch>\n"
+        "<parameter=max_length>\n"
+        "3000\n"
+        "</parameter>\n"
+        "<parameter=url>\n"
+        "https://www.alqayim.net/ar/artical/17/d-805\n"
+        "</parameter>\n"
+        "</function>\n"
+        "</tool_call>"
+    )
+
+    calls = _parse_pseudo_tool_calls(text)
+
+    assert len(calls) == 1
+    name, arguments = calls[0]
+    assert name == "fetch"
+    parsed = __import__("json").loads(arguments)
+    assert parsed["max_length"] == 3000
+    assert parsed["url"] == "https://www.alqayim.net/ar/artical/17/d-805"
+
+
+def test_parse_pseudo_tool_calls_handles_multiple_function_equals_blocks():
+    text = (
+        "<tool_call><function=search><parameter=query>hello</parameter></function></tool_call>\n"
+        "<tool_call><function=fetch><parameter=url>https://example.com</parameter></function></tool_call>"
+    )
+
+    calls = _parse_pseudo_tool_calls(text)
+
+    assert len(calls) == 2
+    assert calls[0][0] == "search"
+    assert calls[1][0] == "fetch"

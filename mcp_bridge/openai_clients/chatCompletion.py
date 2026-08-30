@@ -222,6 +222,29 @@ def _build_tool_error_response(response: CreateChatCompletionResponse, tool_erro
     return response
 
 
+def _is_recoverable_tool_error(error: str) -> bool:
+    """Return True if a tool error is recoverable by feeding it back to the model.
+
+    Validation errors (e.g. ``sequential-thinking`` rejecting malformed
+    arguments) are recoverable — the model can correct its arguments and retry.
+    Fatal errors (no client found, unknown tool) are not recoverable by the
+    model, so the loop should stop rather than spin.
+    """
+    if not error:
+        return False
+    lowered = error.lower()
+    fatal_markers = (
+        "no mcp client found",
+        "unknown tool",
+        "tool not found",
+        "client not found",
+        "not found for tool",
+    )
+    if any(marker in lowered for marker in fatal_markers):
+        return False
+    return True
+
+
 def _should_stop_tool_loop_on_tool_errors(
     tool_errors: list[str],
     request_messages: list[ChatCompletionRequestMessage],
@@ -229,25 +252,28 @@ def _should_stop_tool_loop_on_tool_errors(
     if not tool_errors:
         return False
 
-    if not request_messages:
+    # Fatal errors (no client / unknown tool) cannot be fixed by the model, so
+    # stop immediately regardless of evidence.
+    if any(not _is_recoverable_tool_error(error) for error in tool_errors):
         return True
 
+    # Timeout errors with partial evidence are recoverable — the model can
+    # continue with what it has. Keep looping even if there are several.
     evidence_text = "\n".join(
         _extract_tool_message_text(message) or ""
         for message in request_messages
         if getattr(getattr(message, "root", message), "role", None) == "tool"
     )
-    if not evidence_text.strip():
-        return True
-
     timeout_error_count = sum(1 for error in tool_errors if "timeout" in error.lower() or "timed out" in error.lower())
     if timeout_error_count and evidence_text.strip():
         return False
 
-    if len(tool_errors) <= 3:
-        return False
+    # Recoverable errors (validation, timeout) should be fed back to the model
+    # for correction. Only stop if there are too many to avoid an infinite loop.
+    if len(tool_errors) > 3:
+        return True
 
-    return True
+    return False
 
 
 def _build_synthesis_request(
@@ -716,19 +742,47 @@ _PARAMETER_PATTERN = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Matches a function-call block in the format some models emit:
+#   <tool_call>
+#     <function=fetch>
+#       <parameter=max_length>3000</parameter>
+#       <parameter=url>https://...</parameter>
+#     </function>
+#   </tool_call>
+_FUNCTION_BLOCK_PATTERN = re.compile(
+    r"<function=([^>]+)>(.*?)</function>",
+    re.IGNORECASE | re.DOTALL,
+)
+_FUNCTION_PARAMETER_PATTERN = re.compile(
+    r"<parameter=([^>]+)>(.*?)</parameter>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _coerce_pseudo_value(value: str) -> Any:
+    """Interpret a pseudo tool-call parameter value as JSON when possible."""
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, ValueError):
+        return value
+
 
 def _parse_pseudo_tool_calls(text: str) -> list[tuple[str, str]]:
-    """Parse Anthropic-style ``<invoke name="...">`` tool-call markers from plain
-    text into ``(tool_name, arguments_json)`` tuples.
+    """Parse pseudo tool-call markers from plain text into
+    ``(tool_name, arguments_json)`` tuples.
 
-    Returns an empty list if no parseable invocations are found. Arguments are
-    collected from ``<parameter name="...">value</parameter>`` children and
-    serialized to a JSON object.
+    Supports two common formats:
+    * Anthropic-style ``<invoke name="..."><parameter name="...">...</parameter></invoke>``
+    * ``<tool_call><function=NAME><parameter=ARG>value</parameter></function></tool_call>``
+
+    Returns an empty list if no parseable invocations are found.
     """
     if not text:
         return []
 
     calls: list[tuple[str, str]] = []
+
+    # Format 1: <invoke name="...">...</invoke>
     for match in _INVOKE_BLOCK_PATTERN.finditer(text):
         tool_name = match.group(1).strip()
         body = match.group(2)
@@ -741,12 +795,24 @@ def _parse_pseudo_tool_calls(text: str) -> list[tuple[str, str]]:
             arg_value = param.group(2).strip()
             if not arg_name:
                 continue
-            # Try to interpret the value as JSON (numbers, booleans, nested
-            # objects/arrays); fall back to the raw string.
-            try:
-                arguments[arg_name] = json.loads(arg_value)
-            except (json.JSONDecodeError, ValueError):
-                arguments[arg_name] = arg_value
+            arguments[arg_name] = _coerce_pseudo_value(arg_value)
+
+        calls.append((tool_name, json.dumps(arguments)))
+
+    # Format 2: <function=NAME>...</function>
+    for match in _FUNCTION_BLOCK_PATTERN.finditer(text):
+        tool_name = match.group(1).strip()
+        body = match.group(2)
+        if not tool_name:
+            continue
+
+        arguments: dict[str, Any] = {}
+        for param in _FUNCTION_PARAMETER_PATTERN.finditer(body):
+            arg_name = param.group(1).strip()
+            arg_value = param.group(2).strip()
+            if not arg_name:
+                continue
+            arguments[arg_name] = _coerce_pseudo_value(arg_value)
 
         calls.append((tool_name, json.dumps(arguments)))
 
