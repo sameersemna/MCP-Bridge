@@ -1,8 +1,12 @@
 import asyncio
+import hashlib
 import inspect
 import json
 import os
 import re
+import tempfile
+import time
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -839,6 +843,231 @@ async def _fetch_via_wayback(url: str, timeout: float | None = None) -> CallTool
         return None
 
 
+def _normalize_query_text(text: str) -> str:
+    """Collapse whitespace and lowercase for stable query comparison."""
+    return " ".join(str(text).split()).lower()
+
+
+def _extract_query_argument(payload: str) -> str:
+    """Extract the ``query`` argument from a tool-call JSON payload, if present."""
+    if not payload:
+        return ""
+    try:
+        args = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(args, dict):
+        return ""
+    query = args.get("query")
+    if isinstance(query, str):
+        return query.strip()
+    return ""
+
+
+def _queries_are_near_duplicates(a: str, b: str, *, min_shared: int = 4, overlap_ratio: float = 0.8) -> bool:
+    """Return True if two search queries are near-duplicates.
+
+    A model stuck in a search loop often re-issues essentially the same query
+    with one keyword appended or removed (e.g. adding "الكفار", "تشبه",
+    "محدثة" one at a time). Exact-match detection misses this. Here we treat
+    two queries as near-duplicates when they share a large fraction of their
+    terms, which lets the cache serve the second query instead of re-fetching
+    from the web.
+
+    ``min_shared`` guards against short queries (two 2-word queries sharing 1
+    word are not duplicates). ``overlap_ratio`` is the fraction of the smaller
+    query's terms that must appear in the larger one.
+    """
+    a_terms = set(_normalize_query_text(a).split())
+    b_terms = set(_normalize_query_text(b).split())
+    if not a_terms or not b_terms:
+        return False
+    shared = a_terms & b_terms
+    if len(shared) < min_shared:
+        return False
+    smaller = min(len(a_terms), len(b_terms))
+    return len(shared) / smaller >= overlap_ratio
+
+
+class ToolResultCache:
+    """Per-request cache of tool results keyed by (tool_name, normalized query).
+
+    Near-identical search queries (the "append one keyword" loop pattern) hit
+    this cache and return the previously fetched result instantly, instead of
+    re-fetching from the web and burning 30+ minutes. This lets the model keep
+    exploring from different angles while making repeated/near-repeated queries
+    cheap, so the loop converges on its own.
+    """
+
+    def __init__(self, *, max_entries: int = 64) -> None:
+        self._entries: list[tuple[str, str, Any]] = []
+        self._max_entries = max_entries
+
+    def _find(self, tool_name: str, query: str) -> Any | None:
+        for cached_name, cached_query, result in self._entries:
+            if cached_name != tool_name:
+                continue
+            if _queries_are_near_duplicates(cached_query, query):
+                return result
+        return None
+
+    def get(self, tool_name: str, query: str) -> Any | None:
+        return self._find(tool_name, query)
+
+    def put(self, tool_name: str, query: str, result: Any) -> None:
+        if result is None:
+            return
+        # Don't cache error results (works for both objects and dicts).
+        if isinstance(result, dict):
+            if result.get("isError"):
+                return
+        elif getattr(result, "isError", False):
+            return
+        # Avoid caching the same query twice.
+        if self._find(tool_name, query) is not None:
+            return
+        self._entries.append((tool_name, query, result))
+        if len(self._entries) > self._max_entries:
+            self._entries.pop(0)
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+# Default TTL for the persistent on-disk tool cache (48 hours).
+DEFAULT_TOOL_CACHE_TTL_SECONDS = 48 * 60 * 60
+
+
+def get_tool_cache_dir() -> str:
+    """Return the directory for the persistent on-disk tool cache."""
+    configured = os.getenv("MCP_BRIDGE_TOOL_CACHE_DIR", "")
+    if configured:
+        return configured
+    # Default to a directory next to the repo root.
+    return os.path.join(os.path.dirname(__file__), "..", "..", "tool_cache")
+
+
+def get_tool_cache_ttl_seconds() -> int:
+    raw = os.getenv("MCP_BRIDGE_TOOL_CACHE_TTL_SECONDS")
+    if raw is None:
+        return DEFAULT_TOOL_CACHE_TTL_SECONDS
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        logger.warning(
+            f"invalid MCP_BRIDGE_TOOL_CACHE_TTL_SECONDS value: {raw}; using default {DEFAULT_TOOL_CACHE_TTL_SECONDS}"
+        )
+        return DEFAULT_TOOL_CACHE_TTL_SECONDS
+
+
+def get_tool_cache_enabled() -> bool:
+    raw = os.getenv("MCP_BRIDGE_TOOL_CACHE_ENABLED", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _tool_cache_key(tool_name: str, query: str) -> str:
+    """Stable hash key for a (tool_name, query) pair."""
+    raw = f"{tool_name}::{_normalize_query_text(query)}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+class PersistentToolCache:
+    """On-disk, TTL-bounded cache of tool results keyed by exact (tool_name, query).
+
+    Unlike the in-memory ``ToolResultCache`` (which catches near-duplicate
+    queries within a single request), this cache persists across requests and
+    process restarts. It uses exact-match keys (a SHA-256 hash of the query) so
+    a lookup is a single file read — no scanning, no RAM bloat. A TTL (default
+    48h) expires stale entries so search results don't go stale.
+
+    This is especially valuable because fetching from the web is the biggest
+    latency source: if a request fails halfway, the next attempt reuses the
+    already-fetched results instead of re-fetching them.
+    """
+
+    def __init__(self, cache_dir: str | None = None, ttl_seconds: int | None = None) -> None:
+        self._cache_dir = cache_dir or get_tool_cache_dir()
+        self._ttl_seconds = ttl_seconds if ttl_seconds is not None else get_tool_cache_ttl_seconds()
+        self._enabled = get_tool_cache_enabled()
+        if self._enabled:
+            try:
+                Path(self._cache_dir).mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                logger.warning(f"tool cache dir unavailable ({exc}); disabling persistent cache")
+                self._enabled = False
+
+    def _path_for(self, key: str) -> str:
+        return os.path.join(self._cache_dir, f"{key}.json")
+
+    def get(self, tool_name: str, query: str) -> Any | None:
+        if not self._enabled or not query:
+            return None
+        key = _tool_cache_key(tool_name, query)
+        path = self._path_for(key)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        cached_at = payload.get("cached_at", 0)
+        if time.time() - cached_at > self._ttl_seconds:
+            # Expired: remove and treat as a miss.
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            return None
+
+        try:
+            return CallToolResult.model_validate(payload.get("result"))
+        except Exception:
+            return None
+
+    def put(self, tool_name: str, query: str, result: Any) -> None:
+        if not self._enabled or not query or result is None:
+            return
+        # Don't cache error results.
+        if isinstance(result, dict):
+            if result.get("isError"):
+                return
+        elif getattr(result, "isError", False):
+            return
+
+        try:
+            if isinstance(result, dict):
+                result_dict = result
+            else:
+                result_dict = result.model_dump(exclude_defaults=True, exclude_none=True)
+        except Exception:
+            return
+
+        payload = {
+            "tool_name": tool_name,
+            "query": query,
+            "cached_at": time.time(),
+            "result": result_dict,
+        }
+        key = _tool_cache_key(tool_name, query)
+        path = self._path_for(key)
+        try:
+            # Atomic write: write to a temp file then rename, so concurrent
+            # requests never observe a partially-written cache file.
+            fd, tmp_path = tempfile.mkstemp(dir=self._cache_dir, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False)
+                os.replace(tmp_path, path)
+            except Exception:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+                raise
+        except OSError as exc:
+            logger.debug(f"tool cache write failed: {exc}")
+
+
 async def call_tool(
     tool_call_name: str, tool_call_json: str, timeout: int | None = None,
     trace_logger: RequestTraceLogger | None = None,
@@ -1032,14 +1261,37 @@ async def call_tools(
     tool_calls: list[tuple[str, str]], timeout: int | None = None,
     trace_logger: RequestTraceLogger | None = None,
     client_cache: dict[str, Any] | None = None,
+    result_cache: ToolResultCache | None = None,
+    persistent_cache: PersistentToolCache | None = None,
 ) -> list[Any]:
-    """Execute multiple tool calls concurrently while preserving order."""
+    """Execute multiple tool calls concurrently while preserving order.
+
+    If ``result_cache`` is provided, near-identical search queries are served
+    from the in-memory cache. If ``persistent_cache`` is provided, exact-match
+    queries are served from the on-disk cache (across requests).
+    """
 
     if not tool_calls:
         return []
 
     async def _run(call: tuple[str, str]) -> Any:
         name, payload = call
+        query = _extract_query_argument(payload)
+
+        # 1. In-memory fuzzy cache (near-duplicate queries within this request).
+        if result_cache is not None and query:
+            cached = result_cache.get(name, query)
+            if cached is not None:
+                logger.debug(f"tool call served from in-memory cache: name={name}; query={query[:80]}")
+                return cached
+
+        # 2. Persistent on-disk cache (exact-match queries across requests).
+        if persistent_cache is not None and query:
+            cached = persistent_cache.get(name, query)
+            if cached is not None:
+                logger.debug(f"tool call served from persistent cache: name={name}; query={query[:80]}")
+                return cached
+
         call_kwargs = {"timeout": timeout}
         if trace_logger is not None:
             call_kwargs["trace_logger"] = trace_logger
@@ -1047,8 +1299,15 @@ async def call_tools(
         signature = inspect.signature(call_tool)
         if "trace_logger" in signature.parameters:
             call_kwargs["client_cache"] = client_cache
-            return await call_tool(name, payload, **call_kwargs)
+            result = await call_tool(name, payload, **call_kwargs)
+        else:
+            result = await call_tool(name, payload, timeout)
 
-        return await call_tool(name, payload, timeout)
+        if query:
+            if result_cache is not None:
+                result_cache.put(name, query, result)
+            if persistent_cache is not None:
+                persistent_cache.put(name, query, result)
+        return result
 
     return await asyncio.gather(*(_run(call) for call in tool_calls))

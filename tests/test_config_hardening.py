@@ -739,6 +739,109 @@ def test_call_tools_runs_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:
     assert elapsed < 0.09
 
 
+def test_tool_result_cache_serves_near_duplicate_queries() -> None:
+    cache = openai_utils.ToolResultCache()
+    result = {"isError": False, "content": [{"type": "text", "text": "results"}]}
+
+    cache.put("google_search", '"حجر الأساس" "بدعة" "فتوى" "الشيخ" "مدرسة" "مسجد" "سلفي" "تحريم" "وثني" "مشركين" "أصل" "تاريخ" "طقوس" "تقليد"', result)
+
+    # A near-duplicate (one keyword appended) should hit the cache.
+    near = '"حجر الأساس" "بدعة" "فتوى" "الشيخ" "مدرسة" "مسجد" "سلفي" "تحريم" "وثني" "مشركين" "أصل" "تاريخ" "طقوس" "تقليد" "الكفار"'
+    assert cache.get("google_search", near) is result
+
+    # A genuinely different query should miss.
+    assert cache.get("google_search", "Sang e Buniyaad foundation stone ceremony") is None
+
+
+def test_tool_result_cache_does_not_cache_errors() -> None:
+    cache = openai_utils.ToolResultCache()
+    error_result = {"isError": True, "content": [{"type": "text", "text": "failed"}]}
+
+    cache.put("google_search", "some query", error_result)
+
+    assert cache.get("google_search", "some query") is None
+    assert len(cache) == 0
+
+
+def test_call_tools_serves_near_duplicate_from_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        calls.append(payload)
+        return {"isError": False, "content": [{"type": "text", "text": "web result"}]}
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    cache = openai_utils.ToolResultCache()
+    q1 = '"حجر الأساس" "بدعة" "فتوى" "الشيخ" "مدرسة" "مسجد" "سلفي" "تحريم" "وثني" "مشركين" "أصل" "تاريخ" "طقوس" "تقليد"'
+    q2 = q1 + ' "الكفار"'
+
+    # First call hits the web and is cached.
+    r1 = asyncio.run(openai_utils.call_tools([("google_search", json.dumps({"query": q1}))], result_cache=cache))
+    # Second near-duplicate call is served from cache (no web call).
+    r2 = asyncio.run(openai_utils.call_tools([("google_search", json.dumps({"query": q2}))], result_cache=cache))
+
+    assert len(calls) == 1
+    assert r1[0]["content"][0]["text"] == "web result"
+    assert r2[0]["content"][0]["text"] == "web result"
+
+
+def test_persistent_tool_cache_roundtrips_across_instances(tmp_path) -> None:
+    cache_dir = str(tmp_path / "tool_cache")
+    result = {"isError": False, "content": [{"type": "text", "text": "persisted result"}]}
+
+    # First instance writes.
+    cache1 = openai_utils.PersistentToolCache(cache_dir=cache_dir, ttl_seconds=3600)
+    cache1.put("google_search", "some query", result)
+
+    # A brand-new instance (simulating a new request / restart) reads it back.
+    cache2 = openai_utils.PersistentToolCache(cache_dir=cache_dir, ttl_seconds=3600)
+    hit = cache2.get("google_search", "some query")
+
+    assert hit is not None
+    assert hit.content[0].text == "persisted result"
+
+
+def test_persistent_tool_cache_respects_ttl(tmp_path) -> None:
+    cache_dir = str(tmp_path / "tool_cache")
+    result = {"isError": False, "content": [{"type": "text", "text": "stale"}]}
+
+    cache = openai_utils.PersistentToolCache(cache_dir=cache_dir, ttl_seconds=0)
+    cache.put("google_search", "some query", result)
+
+    # TTL of 0 means the entry is immediately expired.
+    assert cache.get("google_search", "some query") is None
+
+
+def test_persistent_tool_cache_does_not_cache_errors(tmp_path) -> None:
+    cache_dir = str(tmp_path / "tool_cache")
+    cache = openai_utils.PersistentToolCache(cache_dir=cache_dir, ttl_seconds=3600)
+    cache.put("google_search", "some query", {"isError": True, "content": [{"type": "text", "text": "failed"}]})
+
+    assert cache.get("google_search", "some query") is None
+
+
+def test_call_tools_serves_exact_match_from_persistent_cache(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    calls: list[str] = []
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        calls.append(payload)
+        return {"isError": False, "content": [{"type": "text", "text": "web result"}]}
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    cache_dir = str(tmp_path / "tool_cache")
+    persistent = openai_utils.PersistentToolCache(cache_dir=cache_dir, ttl_seconds=3600)
+    query = "Hajr al-Asas foundation stone ceremony"
+
+    # First call hits the web and persists.
+    asyncio.run(openai_utils.call_tools([("google_search", json.dumps({"query": query}))], persistent_cache=persistent))
+    # Second call (same exact query) is served from disk.
+    asyncio.run(openai_utils.call_tools([("google_search", json.dumps({"query": query}))], persistent_cache=persistent))
+
+    assert len(calls) == 1
+
+
 def test_chat_completion_add_tools_does_not_wait_for_every_unavailable_session(monkeypatch: pytest.MonkeyPatch) -> None:
     class UnavailableSession:
         name = "unavailable"

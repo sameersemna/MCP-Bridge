@@ -12,7 +12,7 @@ from lmos_openai_types import (
     FinishReason1,
 )
 
-from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content
+from .utils import PersistentToolCache, ToolResultCache, call_tools, chat_completion_add_tools, sanitize_tool_result_content
 from .genericHttpxClient import get_client
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
@@ -810,6 +810,15 @@ def _looks_like_empty_search_fallback(message: str) -> bool:
     return any(marker in lowered for marker in fallback_markers)
 
 
+def _has_tool_evidence(request_messages: list[ChatCompletionRequestMessage]) -> bool:
+    """Return True if any tool message with usable text is present."""
+    for message in request_messages:
+        tool_text = _extract_tool_message_text(message)
+        if tool_text and not _looks_like_empty_search_fallback(tool_text):
+            return True
+    return False
+
+
 def _has_only_weak_tool_evidence(request_messages: list[ChatCompletionRequestMessage]) -> bool:
     tool_messages = []
     for message in request_messages:
@@ -1227,6 +1236,8 @@ async def chat_completions(
     tool_turns_completed = 0
     tool_client_cache: dict[str, Any] = {}
     seen_tool_calls: dict[str, int] = {}
+    tool_result_cache = ToolResultCache()
+    persistent_tool_cache = PersistentToolCache()
 
     async with get_client(http_request) as client:
         while True:
@@ -1269,6 +1280,38 @@ async def chat_completions(
                         break
                 if not retried:
                     logger.error(f"upstream inference server returned status {upstream_response.status_code}: {text[:2000]}")
+                    # If we already gathered tool evidence (e.g. after 30+ min of
+                    # research), don't throw it all away on a final provider
+                    # blip. Synthesize a fallback answer from the evidence we
+                    # have instead of failing the whole run.
+                    if _has_tool_evidence(request.messages):
+                        logger.warning(
+                            "upstream failed after tool evidence was gathered; "
+                            "synthesizing a fallback answer from the evidence"
+                        )
+                        synthesized = await _try_synthesize_tool_loop_result(
+                            client,
+                            request,
+                            stop_reason="max_tool_turns",
+                            request_messages=request.messages,
+                        )
+                        if synthesized is not None:
+                            return synthesized
+                        return _build_tool_loop_stop_response(
+                            response if "response" in locals() else CreateChatCompletionResponse.model_validate(
+                                {
+                                    "id": "chatcmpl-fallback",
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "message": {"role": "assistant", "content": ""},
+                                        }
+                                    ],
+                                }
+                            ),
+                            stop_reason="max_tool_turns",
+                            request_messages=request.messages,
+                        )
                     raise HTTPException(
                         status_code=502,
                         detail=f"Upstream inference server returned status {upstream_response.status_code}",
@@ -1562,6 +1605,8 @@ async def chat_completions(
                     timeout=tool_timeout_seconds,
                     trace_logger=trace_logger,
                     client_cache=tool_client_cache,
+                    result_cache=tool_result_cache,
+                    persistent_cache=persistent_tool_cache,
                 )
                 if trace_logger is not None:
                     trace_logger.record("mcp_tool_calls", tool_calls=[{"name": name, "arguments": arguments} for name, arguments in tool_call_items])

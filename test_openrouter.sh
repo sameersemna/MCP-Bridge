@@ -50,6 +50,7 @@ model_strength() {
 # Minimum model strength to include in the test loop. Models below this are
 # skipped to avoid wasting time/resources on weak models.
 MIN_MODEL_STRENGTH="${MIN_MODEL_STRENGTH:-70}"
+# MIN_MODEL_STRENGTH="${MIN_MODEL_STRENGTH:-45}"
 
 models=()
 # models=(

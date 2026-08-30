@@ -1,6 +1,6 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-08-30T18:18:29.830044+00:00",
+  "fetched_at": "2026-08-30T20:43:40.511933+00:00",
   "model_count": 396,
   "models": {
     "tencent/hy4-preview": {
@@ -598,7 +598,7 @@
       ],
       "prompt_price": "0.00000003",
       "completion_price": "0.00000016",
-      "input_cache_read_price": "0.00000001",
+      "input_cache_read_price": "0.000000013",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -5926,7 +5926,7 @@
     "openai/gpt-4.1-nano": {
       "name": "OpenAI: GPT-4.1 Nano",
       "context_length": 1047576,
-      "max_completion_tokens": 942818,
+      "max_completion_tokens": 32768,
       "modality": "text+image+file->text",
       "input_modalities": [
         "image",
@@ -5938,7 +5938,7 @@
       ],
       "prompt_price": "0.0000001",
       "completion_price": "0.0000004",
-      "input_cache_read_price": "0.00000003",
+      "input_cache_read_price": "0.000000025",
       "knowledge_cutoff": "2024-06-30",
       "reasoning": false
     },

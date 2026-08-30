@@ -169,6 +169,35 @@ Example `config.json`:
 
 Setting `MCP_BRIDGE_MAX_CONTEXT_TOKENS` explicitly always overrides the derived budget.
 
+### Tool-result caching
+
+A model doing research often re-issues near-identical search queries (e.g. appending one keyword at a time: `"بدعة" "فتوى" ...` → `... "الكفار"` → `... "تشبه"`). Instead of blocking these (which would prevent legitimate multi-angle research), the bridge **caches tool results per request**. When a near-duplicate query is issued, the previously fetched result is returned instantly from the cache instead of re-fetching from the web — so the model can keep exploring from different angles without burning 30+ minutes on repeated web fetches.
+
+- Two queries are "near-duplicates" when they share ≥4 terms and ≥80% of the smaller query's terms.
+- Only successful (non-error) results are cached.
+- The cache is per-request (in-memory) and bounded (64 entries), so it adds no cross-request staleness or unbounded memory.
+
+### Persistent on-disk tool cache
+
+In addition to the in-memory cache, the bridge keeps a **persistent on-disk cache** of tool results so repeat queries across requests (and across process restarts) are served from disk instead of re-fetching from the web — the biggest latency source. This also means that if a request fails halfway, the next attempt reuses the already-fetched results.
+
+- Stored as one small JSON file per exact query (SHA-256 key) in a cache directory.
+- **TTL** (default 48h) expires stale entries so search results don't go stale.
+- Exact-match keys mean a lookup is a single file read — no RAM bloat, no scanning.
+- Atomic writes (temp file + rename) keep concurrent requests safe.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MCP_BRIDGE_TOOL_CACHE_DIR` | `tool_cache/` (repo root) | Directory for the persistent tool cache. |
+| `MCP_BRIDGE_TOOL_CACHE_TTL_SECONDS` | `172800` (48h) | How long a cached tool result stays valid. |
+| `MCP_BRIDGE_TOOL_CACHE_ENABLED` | `true` | Set to `false` to disable the persistent cache. |
+
+> **Docker note:** if you run MCP-Bridge in Docker, mount the cache directory so it persists on the host (otherwise it lives in the container's ephemeral filesystem and is lost on restart). Add to `compose.yml`:
+> ```yaml
+> volumes:
+>   - ./tool_cache:/app/tool_cache
+> ```
+
 ### Model catalog (`models.json`)
 
 The bridge and the test harness read per-model details (context window, pricing, etc.) from a local `models.json` catalog. Generate it from the provider's `/models` endpoint:
