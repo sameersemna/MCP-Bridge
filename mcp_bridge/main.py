@@ -1,3 +1,13 @@
+from dotenv import load_dotenv
+
+# Load the `.env` file into the process environment *before* importing the
+# config and any module that reads `os.getenv` directly (e.g. the persistent
+# tool cache reads `MCP_BRIDGE_TOOL_CACHE_*` via `os.getenv`). pydantic-settings
+# reads `.env` for its own fields, but does NOT inject them into `os.environ`,
+# so this explicit load is required for `os.getenv`-based settings to work.
+# Real environment variables take precedence over the `.env` file.
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger

@@ -1,6 +1,6 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-08-30T22:07:41.269175+00:00",
+  "fetched_at": "2026-08-31T14:11:05.246453+00:00",
   "model_count": 396,
   "models": {
     "tencent/hy4-preview": {
@@ -1290,9 +1290,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000000825",
-      "completion_price": "0.00000033",
-      "input_cache_read_price": "0.000000020625",
+      "prompt_price": "0.000000132",
+      "completion_price": "0.000000528",
+      "input_cache_read_price": "0.000000033",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2392,9 +2392,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000417252",
-      "completion_price": "0.000000834504",
-      "input_cache_read_price": "0.000000034771",
+      "prompt_price": "0.000001039302",
+      "completion_price": "0.000002078604",
+      "input_cache_read_price": "0.0000000866085",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2409,9 +2409,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000007868",
-      "completion_price": "0.00000015736",
-      "input_cache_read_price": "0.000000015736",
+      "prompt_price": "0.00000008708",
+      "completion_price": "0.00000017416",
+      "input_cache_read_price": "0.000000017416",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2827,7 +2827,7 @@
     "kwaipilot/kat-coder-pro-v2": {
       "name": "Kwaipilot: KAT-Coder-Pro V2",
       "context_length": 262144,
-      "max_completion_tokens": 80000,
+      "max_completion_tokens": 144000,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -3594,9 +3594,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000006",
-      "completion_price": "0.000003",
-      "input_cache_read_price": "0.0000001",
+      "prompt_price": "0.00000045",
+      "completion_price": "0.00000225",
+      "input_cache_read_price": "0.00000007",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -5945,7 +5945,7 @@
     "meta-llama/llama-4-maverick": {
       "name": "Meta: Llama 4 Maverick",
       "context_length": 1048576,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 115200,
       "modality": "text+image->text",
       "input_modalities": [
         "text",
@@ -5955,7 +5955,7 @@
         "text"
       ],
       "prompt_price": "0.0000002",
-      "completion_price": "0.0000008",
+      "completion_price": "0.000000696",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2024-08-31",
       "reasoning": false

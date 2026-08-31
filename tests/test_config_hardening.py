@@ -78,6 +78,38 @@ def test_settings_accepts_http_style_mcp_server_config() -> None:
     assert server.requestTimeout == 10000
 
 
+def test_settings_cached_flag_is_captured_and_stripped() -> None:
+    """The `cached` flag must be captured into `cached_mcp_servers` AND removed
+    from the server config, so `extra="forbid"` transport models (e.g. SSE/HTTP)
+    accept the server entry. Regression test for the config-load crash."""
+    settings = Settings(
+        mcp_servers={
+            "google-search": {
+                "type": "sse",
+                "url": "http://localhost:11403/sse",
+                "cached": True,
+            },
+            "fetch": {
+                "command": "uvx",
+                "args": ["mcp-server-fetch"],
+                "cached": True,
+            },
+            "memory": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-memory"],
+            },
+        }
+    )
+
+    # The cached servers are captured.
+    assert settings.cached_mcp_servers == {"google-search", "fetch"}
+    # The non-cached server is not.
+    assert "memory" not in settings.cached_mcp_servers
+    # The SSE server (extra="forbid") loaded successfully, meaning `cached` was
+    # stripped from its config.
+    assert settings.mcp_servers["google-search"].url == "http://localhost:11403/sse"
+
+
 def test_transport_selection_uses_sse_client_for_sse_style_urls() -> None:
     server_config = SSEMCPServer(
         type="http",
@@ -840,6 +872,74 @@ def test_call_tools_serves_exact_match_from_persistent_cache(monkeypatch: pytest
     asyncio.run(openai_utils.call_tools([("google_search", json.dumps({"query": query}))], persistent_cache=persistent))
 
     assert len(calls) == 1
+
+
+def test_call_tools_cache_gated_by_cache_enabled_predicate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Per-server opt-in caching: a tool whose server is NOT opted in must not
+    be served from (or written to) the cache, even for an exact-match query."""
+    calls: list[str] = []
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        calls.append(payload)
+        return {"isError": False, "content": [{"type": "text", "text": "web result"}]}
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    cache = openai_utils.ToolResultCache()
+    query = "Hajr al-Asas foundation stone ceremony"
+
+    # `cache_enabled` returns False for this tool (its server is not opted in),
+    # so the result must NOT be cached and every call must hit the web.
+    def cache_enabled(name: str) -> bool:
+        return False
+
+    asyncio.run(openai_utils.call_tools(
+        [("google_search", json.dumps({"query": query}))],
+        result_cache=cache,
+        cache_enabled=cache_enabled,
+    ))
+    asyncio.run(openai_utils.call_tools(
+        [("google_search", json.dumps({"query": query}))],
+        result_cache=cache,
+        cache_enabled=cache_enabled,
+    ))
+
+    # Both calls hit the web because caching is disabled for this tool.
+    assert len(calls) == 2
+    assert len(cache) == 0
+
+
+def test_call_tools_cache_enabled_when_predicate_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When `cache_enabled` returns True, an exact-match query is served from
+    the in-memory cache on the second call."""
+    calls: list[str] = []
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        calls.append(payload)
+        return {"isError": False, "content": [{"type": "text", "text": "web result"}]}
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    cache = openai_utils.ToolResultCache()
+    query = "Hajr al-Asas foundation stone ceremony"
+
+    def cache_enabled(name: str) -> bool:
+        return True
+
+    asyncio.run(openai_utils.call_tools(
+        [("google_search", json.dumps({"query": query}))],
+        result_cache=cache,
+        cache_enabled=cache_enabled,
+    ))
+    asyncio.run(openai_utils.call_tools(
+        [("google_search", json.dumps({"query": query}))],
+        result_cache=cache,
+        cache_enabled=cache_enabled,
+    ))
+
+    # Second call is served from cache (only one web call).
+    assert len(calls) == 1
+    assert len(cache) == 1
 
 
 def test_chat_completion_add_tools_does_not_wait_for_every_unavailable_session(monkeypatch: pytest.MonkeyPatch) -> None:

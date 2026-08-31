@@ -237,6 +237,14 @@ class Settings(BaseSettings):
         default_factory=set,
         description="Names of MCP servers that are disabled in configuration",
     )
+    cached_mcp_servers: set[str] = Field(
+        default_factory=set,
+        description=(
+            "Names of MCP servers whose tool results are cached (persistent + "
+            "in-memory). Opt-in per server via `\"cached\": true` in the server's "
+            "config. Defaults to empty (no caching) for all servers."
+        ),
+    )
 
     sampling: Sampling = Field(default_factory=Sampling, description="sampling config")
 
@@ -262,5 +270,46 @@ class Settings(BaseSettings):
                 if disabled_servers:
                     data = dict(data)
                     data.setdefault("disabled_mcp_servers", disabled_servers)
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def collect_cached_mcp_servers(cls, data: Any) -> Any:
+        """Collect the names of MCP servers opted into tool-result caching.
+
+        The `cached` flag is read from the *raw* config dict because the SDK's
+        ``StdioServerParameters`` (and other transport models) use
+        ``extra="ignore"`` and would silently drop an unknown ``cached`` field.
+        Mirroring ``collect_disabled_mcp_servers``, we capture it here into a
+        dedicated ``cached_mcp_servers`` set.
+
+        Crucially, the ``cached`` key is then **removed** from each server's
+        config dict. Transport models like ``SSEMCPServer`` use
+        ``extra="forbid"`` and would otherwise reject the unknown ``cached``
+        field, breaking config loading entirely.
+        """
+        if isinstance(data, dict):
+            raw_servers = data.get("mcp_servers")
+            if isinstance(raw_servers, dict):
+                cached_servers = {
+                    name
+                    for name, server_config in raw_servers.items()
+                    if isinstance(server_config, dict) and server_config.get("cached")
+                }
+                if cached_servers:
+                    data = dict(data)
+                    data.setdefault("cached_mcp_servers", cached_servers)
+                    # Strip `cached` from each server config so the transport
+                    # models (extra="forbid") accept them.
+                    data["mcp_servers"] = {
+                        name: {
+                            key: value
+                            for key, value in server_config.items()
+                            if key != "cached"
+                        }
+                        if isinstance(server_config, dict)
+                        else server_config
+                        for name, server_config in raw_servers.items()
+                    }
         return data
 

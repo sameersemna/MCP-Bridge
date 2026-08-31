@@ -14,6 +14,7 @@ from lmos_openai_types import (
 
 from .utils import PersistentToolCache, ToolResultCache, call_tools, chat_completion_add_tools, sanitize_tool_result_content
 from .genericHttpxClient import get_client
+from mcp_bridge.config import config
 from mcp_bridge.logging import RequestTraceLogger
 from loguru import logger
 import json
@@ -1257,6 +1258,16 @@ async def chat_completions(
     tool_result_cache = ToolResultCache()
     persistent_tool_cache = PersistentToolCache()
 
+    # Per-server opt-in caching: only tools whose owning MCP server is
+    # configured with `"cached": true` are read from / written to the caches.
+    # The tool->server map is attached during tool discovery.
+    tool_server_map: dict[str, str] = getattr(request, "_tool_server_map", {}) or {}
+    cached_servers: set[str] = getattr(config, "cached_mcp_servers", set()) or set()
+
+    def _cache_enabled(tool_name: str) -> bool:
+        server = tool_server_map.get(tool_name)
+        return server is not None and server in cached_servers
+
     async with get_client(http_request) as client:
         while True:
             start_time = time.perf_counter()
@@ -1629,6 +1640,7 @@ async def chat_completions(
                     client_cache=tool_client_cache,
                     result_cache=tool_result_cache,
                     persistent_cache=persistent_tool_cache,
+                    cache_enabled=_cache_enabled,
                 )
                 if trace_logger is not None:
                     trace_logger.record("mcp_tool_calls", tool_calls=[{"name": name, "arguments": arguments} for name, arguments in tool_call_items])

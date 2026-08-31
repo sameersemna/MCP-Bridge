@@ -7,6 +7,7 @@ import re
 import tempfile
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -166,6 +167,11 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
     tool_discovery_timeout_seconds = get_tool_discovery_timeout_seconds()
     clients = await _ensure_client_manager_initialized()
 
+    # Map of tool name -> owning MCP server name, used to gate per-server
+    # tool-result caching (only servers opted in via `"cached": true` are
+    # cached). Attached to the request so the tool loop can consult it.
+    tool_server_map: dict[str, str] = {}
+
     async def _discover_tools_for_session(session: Any) -> list[Any]:
         configured_request_timeout = None
         config = getattr(session, "config", None)
@@ -203,7 +209,10 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
         try:
             converted = []
             for tool in tools.tools:
-                _cache_tool_schema(getattr(tool, "name", None), getattr(tool, "inputSchema", None))
+                tool_name = getattr(tool, "name", None)
+                _cache_tool_schema(tool_name, getattr(tool, "inputSchema", None))
+                if tool_name:
+                    tool_server_map[str(tool_name)] = session.name
                 converted.append(mcp2openai(tool))
             return converted
         except Exception as exc:
@@ -227,6 +236,12 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
             logger.warning(f"tool discovery task raised: {tools!r}")
             continue
         request.tools.extend(tools)
+
+    # Attach the tool->server map to the request for cache gating downstream.
+    try:
+        request._tool_server_map = tool_server_map  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
     maybe_add_tool_selection_instructions(request)
     return request
@@ -1290,30 +1305,46 @@ async def call_tools(
     client_cache: dict[str, Any] | None = None,
     result_cache: ToolResultCache | None = None,
     persistent_cache: PersistentToolCache | None = None,
+    cache_enabled: Callable[[str], bool] | None = None,
 ) -> list[Any]:
     """Execute multiple tool calls concurrently while preserving order.
 
     If ``result_cache`` is provided, near-identical search queries are served
     from the in-memory cache. If ``persistent_cache`` is provided, exact-match
     queries are served from the on-disk cache (across requests).
+
+    ``cache_enabled`` is an optional per-tool predicate (tool name -> bool) that
+    gates whether caching applies to a given tool. When provided, only tools for
+    which it returns True are read from / written to the caches. This enables
+    per-server opt-in caching (a tool is cached only if its owning MCP server is
+    configured with ``"cached": true``).
     """
 
     if not tool_calls:
         return []
 
+    def _should_cache(name: str) -> bool:
+        if cache_enabled is None:
+            return True
+        try:
+            return bool(cache_enabled(name))
+        except Exception:
+            return False
+
     async def _run(call: tuple[str, str]) -> Any:
         name, payload = call
         query = _extract_query_argument(payload)
+        cacheable = _should_cache(name)
 
         # 1. In-memory fuzzy cache (near-duplicate queries within this request).
-        if result_cache is not None and query:
+        if cacheable and result_cache is not None and query:
             cached = result_cache.get(name, query)
             if cached is not None:
                 logger.debug(f"tool call served from in-memory cache: name={name}; query={query[:80]}")
                 return cached
 
         # 2. Persistent on-disk cache (exact-match queries across requests).
-        if persistent_cache is not None and query:
+        if cacheable and persistent_cache is not None and query:
             cached = persistent_cache.get(name, query)
             if cached is not None:
                 logger.debug(f"tool call served from persistent cache: name={name}; query={query[:80]}")
@@ -1330,7 +1361,7 @@ async def call_tools(
         else:
             result = await call_tool(name, payload, timeout)
 
-        if query:
+        if cacheable and query:
             if result_cache is not None:
                 result_cache.put(name, query, result)
             if persistent_cache is not None:

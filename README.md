@@ -186,11 +186,35 @@ In addition to the in-memory cache, the bridge keeps a **persistent on-disk cach
 - Exact-match keys mean a lookup is a single file read — no RAM bloat, no scanning.
 - Atomic writes (temp file + rename) keep concurrent requests safe.
 
+**Per-server opt-in (recommended):** caching is **disabled by default** for all
+MCP servers. To enable it for a specific server, add `"cached": true` to that
+server's entry in `config.json`:
+
+```json
+{
+  "mcp_servers": {
+    "google-search": {
+      "type": "sse",
+      "url": "http://latitude:11403/sse",
+      "cached": true
+    }
+  }
+}
+```
+
+Only tools owned by a server with `"cached": true` are read from / written to
+the caches. This avoids caching stateful tools (e.g. `memory`,
+`sequential-thinking`) or cheap tools that don't benefit from caching.
+
 | Variable | Default | Description |
 | --- | --- | --- |
 | `MCP_BRIDGE_TOOL_CACHE_DIR` | `tool_cache/` (repo root) | Directory for the persistent tool cache. |
 | `MCP_BRIDGE_TOOL_CACHE_TTL_SECONDS` | `172800` (48h) | How long a cached tool result stays valid. |
-| `MCP_BRIDGE_TOOL_CACHE_ENABLED` | `true` | Set to `false` to disable the persistent cache. |
+| `MCP_BRIDGE_TOOL_CACHE_ENABLED` | `true` | Global master switch. Set to `false` to disable the persistent cache entirely (overrides per-server opt-in). |
+
+These can be set in a `.env` file (gitignored) at the repo root, or as real
+environment variables (which take precedence). The app loads `.env` into the
+process environment at startup via `python-dotenv`.
 
 > **Docker note:** if you run MCP-Bridge in Docker, mount the cache directory so it persists on the host (otherwise it lives in the container's ephemeral filesystem and is lost on restart). Use a **named volume** (not a bind mount) so Docker initializes it with the image's ownership — the container runs as an unprivileged `appuser`, and a bind mount (`./tool_cache:...`) is owned by the host user's UID and would be read-only to it. Add to `compose.yml`:
 > ```yaml
