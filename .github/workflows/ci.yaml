@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run pytest -q
+
+  lint:
+    name: Lint & Type check (informational)
+    runs-on: ubuntu-latest
+    # Non-blocking: the codebase is not yet ruff/mypy-clean (see the
+    # stabilization backlog). These run to surface issues without failing the
+    # build. Once the backlog items are resolved, remove `continue-on-error`.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check mcp_bridge tests
+
+      - name: Type check (mypy)
+        run: uv run mypy mcp_bridge

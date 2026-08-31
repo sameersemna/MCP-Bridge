@@ -1,5 +1,5 @@
 import secrets
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from mcp_bridge.config import config
 

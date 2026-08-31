@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import json
-from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -22,7 +21,6 @@ except ImportError:  # pragma: no cover - allows the package to import in minima
 
 from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
-from mcp_bridge.mcp_clients.session import McpClientSession
 from .AbstractClient import GenericMcpClient
 
 

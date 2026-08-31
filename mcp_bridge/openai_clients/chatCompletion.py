@@ -14,8 +14,6 @@ from lmos_openai_types import (
 
 from .utils import PersistentToolCache, ToolResultCache, call_tools, chat_completion_add_tools, sanitize_tool_result_content
 from .genericHttpxClient import get_client
-from mcp_bridge.mcp_clients.McpClientManager import ClientManager
-from mcp_bridge.tool_mappers import mcp2openai
 from mcp_bridge.logging import RequestTraceLogger
 from loguru import logger
 import json
@@ -51,6 +49,15 @@ _KNOWN_MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 
+# Memoization state for the model catalog. The catalog is read once and cached
+# in-process, keyed by the file's mtime so a re-run of ``scripts/fetch_models.py``
+# (which rewrites ``models.json``) is picked up without a process restart, while
+# the hot path (``get_max_context_tokens`` inside the tool loop) never re-reads
+# or re-parses the file on every iteration.
+_model_catalog_cache: dict[str, int] | None = None
+_model_catalog_mtime: float | None = None
+
+
 def _load_model_catalog() -> dict[str, int]:
     """Load the local ``models.json`` catalog (if present) as a model_id -> context_length map.
 
@@ -58,11 +65,25 @@ def _load_model_catalog() -> dict[str, int]:
     ``/models`` endpoint, so it reflects the real, current context windows
     (which often differ between a model's paid and ``:free`` variants). Returns
     an empty dict if the catalog is missing or unreadable.
+
+    The result is memoized in-process and invalidated only when the file's
+    mtime changes, so repeated calls (e.g. once per tool-loop iteration) are
+    cheap and do not re-read the file from disk.
     """
+    global _model_catalog_cache, _model_catalog_mtime
+
     catalog_path = os.getenv("MCP_BRIDGE_MODELS_CATALOG", "")
     if not catalog_path:
         catalog_path = os.path.join(os.path.dirname(__file__), "..", "..", "models.json")
     catalog_path = os.path.abspath(catalog_path)
+
+    try:
+        mtime = os.path.getmtime(catalog_path)
+    except OSError:
+        mtime = None
+
+    if _model_catalog_cache is not None and mtime is not None and mtime == _model_catalog_mtime:
+        return _model_catalog_cache
 
     try:
         with open(catalog_path, encoding="utf-8") as fh:
@@ -73,9 +94,12 @@ def _load_model_catalog() -> dict[str, int]:
             ctx = info.get("context_length") if isinstance(info, dict) else None
             if isinstance(ctx, int) and ctx > 0:
                 result[mid] = ctx
-        return result
     except Exception:
-        return {}
+        result = {}
+
+    _model_catalog_cache = result
+    _model_catalog_mtime = mtime
+    return result
 
 
 def _infer_model_context_window(model_id: str | None) -> int:
@@ -208,16 +232,6 @@ def get_max_tool_turns() -> int:
     return configured_value
 
 
-def _summarize_trace(trace_logger: RequestTraceLogger) -> dict[str, object]:
-    events = trace_logger.events
-    return {
-        "event_count": len(events),
-        "last_event_type": events[-1]["type"] if events else None,
-        "tool_events": sum(1 for event in events if event["type"] in {"mcp_tool_calls", "mcp_tool_result"}),
-        "llm_responses": sum(1 for event in events if event["type"] == "llm_response"),
-    }
-
-
 def should_continue_tool_loop(
     finish_reason: str | None,
     *,
@@ -330,7 +344,15 @@ def _compress_tool_context(
         return False
 
     # Build the new message list: drop the compressed tool messages and insert
-    # a single summary tool message in their place.
+    # a single summary message in their place.
+    #
+    # The summary is emitted as a `role: "user"` message (NOT a `role: "tool"`
+    # message) because a `tool` message must carry a `tool_call_id` that matches
+    # a preceding assistant `tool_calls[].id`. A synthetic id like
+    # "context-compression" has no such match, and strict OpenAI-compatible
+    # providers reject the request with:
+    #   "invalid params, tool result's tool id(context-compression) not found (2013)"
+    # A `user` message has no such pairing requirement, so it is protocol-safe.
     new_messages: list[ChatCompletionRequestMessage] = []
     inserted = False
     for index, message in enumerate(request_messages):
@@ -342,17 +364,11 @@ def _compress_tool_context(
                 new_messages.append(
                     ChatCompletionRequestMessage.model_validate(
                         {
-                            "role": "tool",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": (
-                                        "[Earlier tool results summarized to save context]\n\n"
-                                        + summary
-                                    ),
-                                }
-                            ],
-                            "tool_call_id": "context-compression",
+                            "role": "user",
+                            "content": (
+                                "[Earlier tool results summarized to save context]\n\n"
+                                + summary
+                            ),
                         }
                     )
                 )
@@ -716,66 +732,28 @@ def _should_use_empty_content_fallback(message: ChatCompletionRequestMessage, fi
     return _extract_message_text(message).strip() == ""
 
 
-def _build_empty_content_response(
-    response: CreateChatCompletionResponse,
-    *,
-    request_messages: list[ChatCompletionRequestMessage],
-    stop_reason: str,
-) -> CreateChatCompletionResponse:
-    summary_parts: list[str] = []
-    if stop_reason == "empty_response":
-        summary_parts.append("The model returned an empty completion, so I synthesized the available tool evidence into a concise answer.")
-    else:
-        summary_parts.append("The model returned an empty completion, so I synthesized the available context into a concise answer.")
-
-    if request_messages:
-        tool_messages = []
-        for message in request_messages:
-            tool_text = _extract_tool_message_text(message)
-            if tool_text:
-                tool_messages.append(tool_text)
-
-        if tool_messages:
-            informative_messages = [
-                message for message in tool_messages if message and not _looks_like_empty_search_fallback(message)
-            ]
-            if informative_messages:
-                compact_summary = _summarize_tool_messages(informative_messages)
-                summary_parts.append(_format_tool_synthesis(compact_summary, stop_reason, tool_messages))
-            else:
-                summary_parts.append(_format_weak_evidence_fallback(stop_reason))
-
-    content = "\n\n".join(summary_parts)
-    if content:
-        content = content.strip()
-    response.choices[0].message.content = content
-    response.choices[0].message.tool_calls = None
-    response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
-    return response
-
-
-def _build_tool_loop_stop_response(
+def _build_synthesized_response(
     response: CreateChatCompletionResponse,
     *,
     stop_reason: str,
     request_messages: list[ChatCompletionRequestMessage],
+    intro_line: str,
 ) -> CreateChatCompletionResponse:
-    summary_parts: list[str] = []
-    if stop_reason == "max_tool_turns":
-        summary_parts.append("Note: The search or tool workflow reached its turn limit before finishing.")
-    elif stop_reason == "max_context_tokens":
-        summary_parts.append("Note: The search or tool workflow stopped early because the conversation context grew too large.")
-    elif stop_reason == "repeated_tool_calls":
-        summary_parts.append("Note: The tool workflow stopped because the same tool call was repeated without new information.")
-    else:
-        summary_parts.append("Note: The workflow stopped before it could finish.")
+    """Build a final response by synthesizing gathered tool evidence.
+
+    Shared by the empty-content and tool-loop-stop fallbacks, which differ only
+    in their intro line. The body is identical: collect tool-message text,
+    filter out empty/weak search fallbacks, summarize the informative remainder,
+    and attach the result as the assistant's final content.
+    """
+    summary_parts: list[str] = [intro_line]
 
     if request_messages:
-        tool_messages = []
-        for message in request_messages:
-            tool_text = _extract_tool_message_text(message)
-            if tool_text:
-                tool_messages.append(tool_text)
+        tool_messages = [
+            tool_text
+            for message in request_messages
+            if (tool_text := _extract_tool_message_text(message))
+        ]
 
         if tool_messages:
             informative_messages = [
@@ -796,6 +774,46 @@ def _build_tool_loop_stop_response(
     response.choices[0].message.tool_calls = None
     response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
     return response
+
+
+def _build_empty_content_response(
+    response: CreateChatCompletionResponse,
+    *,
+    request_messages: list[ChatCompletionRequestMessage],
+    stop_reason: str,
+) -> CreateChatCompletionResponse:
+    if stop_reason == "empty_response":
+        intro_line = "The model returned an empty completion, so I synthesized the available tool evidence into a concise answer."
+    else:
+        intro_line = "The model returned an empty completion, so I synthesized the available context into a concise answer."
+    return _build_synthesized_response(
+        response,
+        stop_reason=stop_reason,
+        request_messages=request_messages,
+        intro_line=intro_line,
+    )
+
+
+def _build_tool_loop_stop_response(
+    response: CreateChatCompletionResponse,
+    *,
+    stop_reason: str,
+    request_messages: list[ChatCompletionRequestMessage],
+) -> CreateChatCompletionResponse:
+    if stop_reason == "max_tool_turns":
+        intro_line = "Note: The search or tool workflow reached its turn limit before finishing."
+    elif stop_reason == "max_context_tokens":
+        intro_line = "Note: The search or tool workflow stopped early because the conversation context grew too large."
+    elif stop_reason == "repeated_tool_calls":
+        intro_line = "Note: The tool workflow stopped because the same tool call was repeated without new information."
+    else:
+        intro_line = "Note: The workflow stopped before it could finish."
+    return _build_synthesized_response(
+        response,
+        stop_reason=stop_reason,
+        request_messages=request_messages,
+        intro_line=intro_line,
+    )
 
 
 def _looks_like_empty_search_fallback(message: str) -> bool:
@@ -1297,8 +1315,12 @@ async def chat_completions(
                         )
                         if synthesized is not None:
                             return synthesized
+                        # The upstream failed this turn, so there is no valid
+                        # parsed `response` to base the fallback on. Build a
+                        # synthetic one; `_build_tool_loop_stop_response` only
+                        # overwrites `choices[0]` fields, so the base is safe.
                         return _build_tool_loop_stop_response(
-                            response if "response" in locals() else CreateChatCompletionResponse.model_validate(
+                            CreateChatCompletionResponse.model_validate(
                                 {
                                     "id": "chatcmpl-fallback",
                                     "choices": [

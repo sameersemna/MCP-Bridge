@@ -1,6 +1,5 @@
 import asyncio
 import time
-from unittest.mock import AsyncMock
 
 import anyio
 import pytest

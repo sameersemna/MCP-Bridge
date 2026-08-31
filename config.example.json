@@ -1,0 +1,56 @@
+{
+  "inference_server": {
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key": "${OPENROUTER_API_KEY}"
+  },
+  "network": {
+    "host": "0.0.0.0",
+    "port": 11410
+  },
+  "logging": {
+    "log_level": "INFO"
+  },
+  "security": {
+    "auth": {
+      "enabled": false,
+      "api_keys": [
+        {
+          "key": "${MCP_BRIDGE_API_KEY}"
+        }
+      ]
+    }
+  },
+  "mcp_servers": {
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "--with",
+        "fastmcp",
+        "mcp-server-fetch"
+      ],
+      "disabled": false
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-brave-search"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      },
+      "disabled": false
+    },
+    "exa": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "exa-mcp-server"
+      ],
+      "env": {
+        "EXA_API_KEY": "${EXA_API_KEY}"
+      },
+      "disabled": false
+    }
+  }
+}

@@ -15,7 +15,6 @@ except ImportError:  # pragma: no cover - allows the package to import in minima
         raise RuntimeError("mcpx SDK is not installed")
 
 from mcp_bridge.mcp_clients.session import McpClientSession
-from mcp_bridge.config import config
 from .AbstractClient import GenericMcpClient
 
 

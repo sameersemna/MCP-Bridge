@@ -108,7 +108,7 @@ def test_timeout_errors_with_partial_evidence_do_not_stop_loop():
     ]
 
     assert _should_stop_tool_loop_on_tool_errors(
-        [f"fetch_content: Timeout Error calling fetch_content"] * 5,
+        ["fetch_content: Timeout Error calling fetch_content"] * 5,
         request_messages,
     ) is False
 

@@ -1,7 +1,4 @@
 import asyncio
-import json
-import os
-import sys
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP('local-search-tools')

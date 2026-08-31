@@ -49,14 +49,11 @@ except ImportError:  # pragma: no cover - fallback for minimal environments
 
 from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content
 from .chatCompletion import (
-    _build_synthetic_tool_calls,
     _contains_pseudo_tool_call_markers,
     _parse_pseudo_tool_calls,
 )
 from mcp_bridge.models import SSEData
 from .genericHttpxClient import get_client
-from mcp_bridge.mcp_clients.McpClientManager import ClientManager
-from mcp_bridge.tool_mappers import mcp2openai
 from mcp_bridge.logging import RequestTraceLogger
 from loguru import logger
 
@@ -244,10 +241,22 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                     # save the last message
                     last = parsed_data
 
-        # ideally we should check this properly
-        assert last is not None
-        if len(last.choices) > 0:
-            assert last.choices[0].finish_reason is not None
+        # The upstream stream must have produced at least one parsed chunk. If
+        # it did not (empty stream / no parseable events), fail gracefully with
+        # a 502 rather than raising an AssertionError (which would surface as a
+        # 500 and also vanish entirely under `python -O`).
+        if last is None:
+            logger.error("upstream stream produced no parseable chunks")
+            raise HTTPException(
+                status_code=502,
+                detail="Upstream stream produced no parseable chunks",
+            )
+        if len(last.choices) > 0 and last.choices[0].finish_reason is None:
+            logger.error("upstream stream ended without a finish_reason")
+            raise HTTPException(
+                status_code=502,
+                detail="Upstream stream ended without a finish_reason",
+            )
 
         if len(last.choices) > 0 and last.choices[0].finish_reason.value in ["stop", "length"]:
             # The model may have emitted Anthropic-style pseudo tool-call

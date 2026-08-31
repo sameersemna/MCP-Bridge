@@ -2,7 +2,12 @@ from collections import deque
 from typing import Any
 
 from .types import MCPServerHealth, UnhealthyEvent
-from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+
+# NOTE: `ClientManager` is imported lazily inside `get_mcp_server_health` rather
+# than at module top. Importing it here would create a circular import:
+#   McpClientManager -> health.manager -> McpClientManager
+# (McpClientManager.initialize imports health.manager to publish its inventory).
+# The lazy import keeps the module graph acyclic.
 
 __all__ = ["manager"]
 
@@ -29,7 +34,12 @@ class HealthManager:
 
     def get_mcp_server_health(self, client_manager: Any | None = None) -> list[MCPServerHealth]:
         server_health: list[MCPServerHealth] = []
-        registry = client_manager or ClientManager
+        if client_manager is None:
+            # Lazy import to avoid the circular dependency with McpClientManager.
+            from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+
+            client_manager = ClientManager
+        registry = client_manager
 
         for name, client in registry.get_clients():
             if client is None:

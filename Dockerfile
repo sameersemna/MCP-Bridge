@@ -21,7 +21,7 @@ COPY mcp_bridge ./mcp_bridge
 
 RUN addgroup --system appgroup \
     && adduser --system --ingroup appgroup appuser \
-    && mkdir -p /home/appuser/.cache/uv \
+    && mkdir -p /home/appuser/.cache/uv /app/logs /app/tool_cache \
     && chown -R appuser:appgroup /app /home/appuser
 ENV HOME=/home/appuser \
     UV_CACHE_DIR=/home/appuser/.cache/uv
@@ -31,5 +31,7 @@ EXPOSE 11410
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:11410/health', timeout=2).read()" || exit 1
 
-USER root
-ENTRYPOINT ["sh", "-c", "mkdir -p /app/logs && chmod 0777 /app/logs && exec uv run --no-dev python -m mcp_bridge.main"]
+# Run as the unprivileged `appuser`. The `/app/logs` directory is created and
+# owned by `appuser` during the build above, so no root privileges are needed
+# at runtime (previously the ENTRYPOINT switched back to root to `mkdir` it).
+ENTRYPOINT ["uv", "run", "--no-dev", "python", "-m", "mcp_bridge.main"]

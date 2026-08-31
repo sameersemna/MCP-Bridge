@@ -1,6 +1,5 @@
 import asyncio
 
-import pytest
 
 from mcp_bridge.openai_clients.utils import (
     _extract_fetch_url,

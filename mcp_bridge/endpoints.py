@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 from opentelemetry import trace

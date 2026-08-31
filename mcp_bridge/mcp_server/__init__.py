@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from .sse import router as sse_router
 from mcp_bridge.openapi_tags import Tag
-from mcp_bridge.auth import get_api_key
 
 __all__ = ["router"]
 

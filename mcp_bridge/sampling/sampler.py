@@ -65,6 +65,11 @@ async def handle_sampling_message(
     )
     
     # select model
+    if not config.sampling.models:
+        raise RuntimeError(
+            "No sampling models configured; add at least one model under "
+            "`sampling.models` in config.json to use MCP sampling."
+        )
     model = config.sampling.models[0]
     if message.modelPreferences is not None:
         model = find_best_model(message.modelPreferences)
@@ -99,10 +104,14 @@ async def handle_sampling_message(
 
     logger.debug("sampling request received from endpoint")
 
-    assert response.choices is not None
-    assert len(response.choices) > 0
-    assert response.choices[0].message is not None
-    assert response.choices[0].message.content is not None
+    # Validate the upstream response explicitly instead of using `assert`
+    # (which vanishes under `python -O` and raises AssertionError -> 500).
+    if response.choices is None or len(response.choices) == 0:
+        raise RuntimeError("Sampling upstream returned no choices")
+    if response.choices[0].message is None:
+        raise RuntimeError("Sampling upstream returned no message")
+    if response.choices[0].message.content is None:
+        raise RuntimeError("Sampling upstream returned empty content")
 
     return types.CreateMessageResult(
         role="assistant",

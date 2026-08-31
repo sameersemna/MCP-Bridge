@@ -16,7 +16,6 @@ except ImportError:  # pragma: no cover - allows the package to import in minima
 
 from mcp_bridge.mcp_clients.stdio_transport import StdioServerParameters, stdio_client
 
-from mcp_bridge.config import config
 from mcp_bridge.mcp_clients.session import McpClientSession
 from .AbstractClient import GenericMcpClient
 
@@ -54,8 +53,13 @@ class StdioClient(GenericMcpClient):
 
         command = shutil.which(config.command)
         if command is None:
-            logger.error(f"could not find command {config.command}")
-            exit(1)
+            # Raise instead of terminating the process: a single misconfigured
+            # server (missing binary) must not kill the whole bridge. The
+            # caller (McpClientManager.initialize) catches this and records the
+            # server as failed, leaving the rest of the bridge running.
+            raise RuntimeError(
+                f"could not find command '{config.command}' for MCP server '{name}'"
+            )
 
         own_config.command = command
 

@@ -1,4 +1,3 @@
-import re
 
 from mcp_bridge.mcp_clients.stdio_transport import _sanitize_stderr_text, _should_log_stderr_text
 

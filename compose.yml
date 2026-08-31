@@ -34,7 +34,11 @@ services:
       - ./config.json:/app/config.json
       - ./logs:/app/logs
       - ./tmp:/tmp
-      - ./tool_cache:/app/tool_cache
+      # Named volume (not a bind mount): Docker owns it and initializes it with
+      # the image's `/app/tool_cache` ownership (the unprivileged `appuser`), so
+      # the persistent cache is writable. A bind mount (`./tool_cache:...`) is
+      # owned by the host user's UID and would be read-only to `appuser`.
+      - tool_cache:/app/tool_cache
     restart: unless-stopped
 
   jaeger:
@@ -46,3 +50,6 @@ services:
       # - "5778:5778"     # Config server
       # - "9411:9411"     # Zipkin compatible
     restart: unless-stopped
+
+volumes:
+  tool_cache:

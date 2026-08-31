@@ -192,10 +192,14 @@ In addition to the in-memory cache, the bridge keeps a **persistent on-disk cach
 | `MCP_BRIDGE_TOOL_CACHE_TTL_SECONDS` | `172800` (48h) | How long a cached tool result stays valid. |
 | `MCP_BRIDGE_TOOL_CACHE_ENABLED` | `true` | Set to `false` to disable the persistent cache. |
 
-> **Docker note:** if you run MCP-Bridge in Docker, mount the cache directory so it persists on the host (otherwise it lives in the container's ephemeral filesystem and is lost on restart). Add to `compose.yml`:
+> **Docker note:** if you run MCP-Bridge in Docker, mount the cache directory so it persists on the host (otherwise it lives in the container's ephemeral filesystem and is lost on restart). Use a **named volume** (not a bind mount) so Docker initializes it with the image's ownership — the container runs as an unprivileged `appuser`, and a bind mount (`./tool_cache:...`) is owned by the host user's UID and would be read-only to it. Add to `compose.yml`:
 > ```yaml
 > volumes:
->   - ./tool_cache:/app/tool_cache
+>   - tool_cache:/app/tool_cache
+>
+> # ...and declare the volume:
+> volumes:
+>   tool_cache:
 > ```
 
 ### Model catalog (`models.json`)

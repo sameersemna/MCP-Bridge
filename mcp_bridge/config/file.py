@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 from typing import Any
-from loguru import logger
 
 
 def load_config(file: str) -> dict[str, Any]:

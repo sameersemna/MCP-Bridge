@@ -6,6 +6,7 @@ import os
 import re
 import tempfile
 import time
+from collections import OrderedDict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -138,14 +139,25 @@ async def _ensure_client_manager_initialized() -> list[tuple[str, Any]]:
 # Cache of tool name -> inputSchema (JSON Schema) discovered at request time.
 # Used by `repair_tool_arguments` to coerce/fill LLM-produced arguments before
 # they are forwarded to the MCP server, reducing "(failed validation)" errors.
-_TOOL_SCHEMA_CACHE: dict[str, dict[str, Any]] = {}
+#
+# Bounded LRU cache (keyed by tool name) so a long-running process with many MCP
+# servers does not grow this dict without bound, and so a server whose tools
+# change over time does not leave stale schemas cached forever.
+_TOOL_SCHEMA_CACHE_MAX_ENTRIES = 512
+_TOOL_SCHEMA_CACHE: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
 
 
 def _cache_tool_schema(tool_name: str, input_schema: Any) -> None:
     if not tool_name:
         return
     if isinstance(input_schema, dict):
-        _TOOL_SCHEMA_CACHE[str(tool_name)] = input_schema
+        key = str(tool_name)
+        # Re-insert to mark as most-recently-used, then evict the oldest entry
+        # if the cache exceeds its bound.
+        _TOOL_SCHEMA_CACHE.pop(key, None)
+        _TOOL_SCHEMA_CACHE[key] = input_schema
+        while len(_TOOL_SCHEMA_CACHE) > _TOOL_SCHEMA_CACHE_MAX_ENTRIES:
+            _TOOL_SCHEMA_CACHE.popitem(last=False)
 
 
 async def chat_completion_add_tools(request: CreateChatCompletionRequest):
@@ -188,16 +200,32 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
             logger.warning(f"tool discovery failed for {session.name}: {exc_repr}")
             return []
 
-        for tool in tools.tools:
-            _cache_tool_schema(getattr(tool, "name", None), getattr(tool, "inputSchema", None))
-        return [mcp2openai(tool) for tool in tools.tools]
+        try:
+            converted = []
+            for tool in tools.tools:
+                _cache_tool_schema(getattr(tool, "name", None), getattr(tool, "inputSchema", None))
+                converted.append(mcp2openai(tool))
+            return converted
+        except Exception as exc:
+            # A single malformed tool schema from one server must not abort
+            # tool discovery for the whole request. Skip this server's tools
+            # and let the others proceed.
+            exc_repr = str(exc) or type(exc).__name__
+            logger.warning(f"tool conversion failed for {session.name}: {exc_repr}")
+            return []
 
+    # `return_exceptions=True` is defense-in-depth: even if a discovery task
+    # raises unexpectedly (e.g. a bug in a transport), one server's failure
+    # must not abort the entire request. Exceptions are logged and skipped.
     discovered_tools = await asyncio.gather(
         *(_discover_tools_for_session(session) for _, session in clients),
-        return_exceptions=False,
+        return_exceptions=True,
     )
 
     for tools in discovered_tools:
+        if isinstance(tools, BaseException):
+            logger.warning(f"tool discovery task raised: {tools!r}")
+            continue
         request.tools.extend(tools)
 
     maybe_add_tool_selection_instructions(request)
@@ -612,7 +640,6 @@ def _repair_json_text(text: str) -> str | None:
     out: list[str] = []
     in_string = False
     escape = False
-    prev_significant: str | None = None
     i = 0
     n = len(text)
 
@@ -632,7 +659,6 @@ def _repair_json_text(text: str) -> str | None:
         if ch == '"':
             in_string = True
             out.append(ch)
-            prev_significant = '"'
             i += 1
             continue
 
@@ -645,7 +671,6 @@ def _repair_json_text(text: str) -> str | None:
             # Convert single-quoted string to double-quoted.
             out.append('"')
             in_string = True
-            prev_significant = '"'
             i += 1
             continue
 
@@ -658,19 +683,16 @@ def _repair_json_text(text: str) -> str | None:
                 i += 1
                 continue
             out.append(ch)
-            prev_significant = ","
             i += 1
             continue
 
         if ch in "{}[]":
             out.append(ch)
-            prev_significant = ch
             i += 1
             continue
 
         if ch == ":":
             out.append(ch)
-            prev_significant = ":"
             i += 1
             continue
 
@@ -688,21 +710,17 @@ def _repair_json_text(text: str) -> str | None:
                 out.append(word)
                 out.append('"')
                 i = j
-                prev_significant = word
                 continue
             # Bare True/False/None literal.
             if word in {"True", "False", "None"}:
                 out.append(word)
                 i = j
-                prev_significant = word
                 continue
             out.append(word)
             i = j
-            prev_significant = word
             continue
 
         out.append(ch)
-        prev_significant = ch
         i += 1
 
     return "".join(out)
@@ -986,14 +1004,23 @@ class PersistentToolCache:
     """
 
     def __init__(self, cache_dir: str | None = None, ttl_seconds: int | None = None) -> None:
-        self._cache_dir = cache_dir or get_tool_cache_dir()
+        self._cache_dir = os.path.abspath(cache_dir or get_tool_cache_dir())
         self._ttl_seconds = ttl_seconds if ttl_seconds is not None else get_tool_cache_ttl_seconds()
         self._enabled = get_tool_cache_enabled()
         if self._enabled:
             try:
                 Path(self._cache_dir).mkdir(parents=True, exist_ok=True)
+                # Verify the directory is actually *writable*, not just present.
+                # A bind-mounted directory (e.g. `./tool_cache:/app/tool_cache`)
+                # may exist but be owned by a different UID — e.g. when the
+                # container runs as an unprivileged user. Detect this upfront
+                # and disable the cache gracefully instead of failing on every
+                # single write (which would otherwise spam DEBUG logs).
+                test_file = Path(self._cache_dir) / ".write_test"
+                test_file.write_text("ok", encoding="utf-8")
+                test_file.unlink(missing_ok=True)
             except OSError as exc:
-                logger.warning(f"tool cache dir unavailable ({exc}); disabling persistent cache")
+                logger.warning(f"tool cache dir not writable ({exc}); disabling persistent cache")
                 self._enabled = False
 
     def _path_for(self, key: str) -> str:

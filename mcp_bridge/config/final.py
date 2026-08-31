@@ -168,6 +168,17 @@ class Cors(BaseModel):
     allow_methods: list[str] = Field(["*"], description="Allowed methods")
     allow_headers: list[str] = Field(["*"], description="Allowed headers")
 
+    @model_validator(mode="after")
+    def validate_credentials_with_wildcard(self) -> "Cors":
+        # Browsers reject `Access-Control-Allow-Origin: *` combined with
+        # `Access-Control-Allow-Credentials: true`. A wildcard origin with
+        # credentials is a misconfiguration that silently breaks CORS for
+        # credentialed clients, so force credentials off when origins are
+        # wildcarded (the safe, spec-compliant default).
+        if self.allow_credentials and "*" in self.allow_origins:
+            self.allow_credentials = False
+        return self
+
 
 class ApiKey(BaseModel):
     key: str = Field(..., description="API key")

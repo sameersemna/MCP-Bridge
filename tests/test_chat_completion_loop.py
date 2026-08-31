@@ -16,6 +16,7 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _context_budget_nearly_exceeded,
     _detect_repeated_tool_calls,
     _extract_message_text,
+    _extract_tool_calls,
     _extract_tool_message_text,
     _format_tool_loop_stop_message,
     _has_only_weak_tool_evidence,
@@ -1027,10 +1028,28 @@ def test_context_budget_nearly_exceeded_false_when_well_under():
 
 
 def test_compress_tool_context_reduces_message_count():
+    # Build a realistic conversation: each `tool` message is preceded by an
+    # assistant message whose `tool_calls[].id` matches the tool message's
+    # `tool_call_id` (the OpenAI protocol invariant).
     messages = [
         ChatCompletionRequestMessage.model_validate({"role": "system", "content": "system"}),
     ]
     for index in range(10):
+        messages.append(
+            ChatCompletionRequestMessage.model_validate(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": f"call_{index}",
+                            "type": "function",
+                            "function": {"name": "search", "arguments": "{}"},
+                        }
+                    ],
+                }
+            )
+        )
         messages.append(
             ChatCompletionRequestMessage.model_validate(
                 {
@@ -1044,15 +1063,39 @@ def test_compress_tool_context_reduces_message_count():
     compressed = _compress_tool_context(messages, keep_recent=3)
 
     assert compressed is True
-    # 1 system + 1 summary + 3 recent tool messages = 5
-    assert len(messages) == 5
-    # The summary message should be present.
+    # 1 system + 10 assistant + 1 summary + 3 recent tool messages = 15
+    # (assistant messages are never removed; only the 7 oldest tool messages
+    # are collapsed into the single summary)
+    assert len(messages) == 15
+    # The summary message should be present, as a `user` message (not `tool`),
+    # so it does not require a matching assistant tool_call id.
     summary_texts = [
-        _extract_tool_message_text(m) or ""
+        _extract_message_text(m) or ""
         for m in messages
-        if getattr(getattr(m, "root", m), "role", None) == "tool"
+        if getattr(getattr(m, "root", m), "role", None) == "user"
     ]
     assert any("summarized" in text for text in summary_texts)
+
+    # Protocol validity: every remaining `tool` message must carry a
+    # `tool_call_id` that matches a preceding assistant `tool_calls[].id`.
+    # (This is the invariant that the old "context-compression" id violated.)
+    assistant_tool_call_ids = set()
+    for m in messages:
+        inner = getattr(m, "root", m)
+        role = getattr(inner, "role", None)
+        if role == "assistant":
+            for tc in _extract_tool_calls(inner):
+                tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                if tc_id:
+                    assistant_tool_call_ids.add(tc_id)
+    for m in messages:
+        inner = getattr(m, "root", m)
+        role = getattr(inner, "role", None)
+        if role == "tool":
+            tool_call_id = getattr(inner, "tool_call_id", None)
+            assert tool_call_id in assistant_tool_call_ids, (
+                f"tool message has orphaned tool_call_id={tool_call_id!r}"
+            )
 
 
 def test_compress_tool_context_returns_false_when_few_messages():

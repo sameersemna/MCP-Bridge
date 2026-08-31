@@ -2,7 +2,6 @@ from string import Template
 from typing import Any
 import os
 
-from loguru import logger
 
 
 def substitute_env_vars(config: Any, env: dict[str, str] | None = None) -> Any:

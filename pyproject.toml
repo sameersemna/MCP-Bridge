@@ -21,7 +21,6 @@ dependencies = [
     "pydantic>=2.10.4",
     "pydantic-settings>=2.7.0",
     "sse-starlette>=2.2.0",
-    "tortoise-orm[asyncmy,asyncpg]>=0.23.0",
     "uvicorn>=0.34.0",
 ]
 
@@ -43,3 +42,13 @@ path = "mcp_bridge/__init__.py"
 
 [project.scripts]
 mcp-bridge = "mcp_bridge.main:run"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# E402 (module import not at top of file) is intentionally allowed: several
+# test modules insert the repo root into sys.path before importing, which is a
+# legitimate pattern for a repo without an installed test package.
+ignore = ["E402"]
