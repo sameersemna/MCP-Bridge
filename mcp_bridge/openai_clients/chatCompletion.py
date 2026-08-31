@@ -1567,7 +1567,14 @@ async def chat_completions(
             except HTTPException:
                 raise
             except Exception as e:
+                # Log the raw upstream body so a parse failure is diagnosable.
+                # Providers sometimes return a small error/empty body (e.g. a
+                # 62-byte `{"error": ...}` or a truncated response) that is not
+                # a valid chat completion; without the raw text we cannot tell
+                # whether it was a transient blip, a rate limit, or a provider
+                # bug.
                 logger.error("error parsing upstream chat completion response")
+                logger.error(f"upstream status={upstream_response.status_code}; raw body: {text[:2000]}")
                 logger.error(e)
                 raise HTTPException(
                     status_code=502,

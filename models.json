@@ -1,6 +1,6 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-08-31T17:38:29.233127+00:00",
+  "fetched_at": "2026-08-31T18:01:20.426897+00:00",
   "model_count": 395,
   "models": {
     "tencent/hy4-preview": {
@@ -1876,9 +1876,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000015",
-      "completion_price": "0.000009",
-      "input_cache_read_price": "0.00000015",
+      "prompt_price": "0.00000165",
+      "completion_price": "0.0000099",
+      "input_cache_read_price": "0.000000165",
       "knowledge_cutoff": "2025-01-01",
       "reasoning": true
     },
