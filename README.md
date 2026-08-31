@@ -143,6 +143,14 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_TOOL_RETRY_COUNT` | `0` | Number of retries for a timed-out tool call. |
 | `MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS` | `0.25` | Delay between tool-call retries. |
 
+**Upstream retry behavior:** when the inference provider returns a transient
+error (5xx, HTTP 429 rate-limit, or HTTP 200 with an "overloaded"/"rate limit"
+body), the bridge retries up to 2 times. If the provider supplies a
+`Retry-After` hint (common for 429 rate-limits), the bridge honors it (capped at
+60s) so the provider has time to recover instead of being hammered with
+too-short retries. This is especially important for long research loops against
+free-tier providers, which rate-limit under sustained load.
+
 ### Model-aware context budget
 
 The tool-loop context budget is **model-specific** rather than one-size-fits-all. The bridge derives it from the model's context window scaled by `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION` (default 75%), so a 1M-context model gets a much larger budget than a 128k-context model. The context window is resolved in this order:

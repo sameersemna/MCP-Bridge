@@ -23,11 +23,15 @@ DEFAULT_MAX_TOOL_TURNS = 12
 MIN_MAX_TOOL_TURNS = 12
 DEFAULT_TOOL_TIMEOUT_SECONDS = 60
 # Number of retries for transient upstream provider errors (HTTP 200 with an
-# error body, or 5xx "overloaded"/"unavailable" responses). Free-tier providers
-# frequently return these under load; a short retry avoids failing a strong
-# model's run on a transient blip.
+# error body, 429 rate-limit, or 5xx "overloaded"/"unavailable" responses).
+# Free-tier providers frequently return these under load; a short retry avoids
+# failing a strong model's run on a transient blip.
 DEFAULT_UPSTREAM_RETRY_COUNT = 2
 DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS = 2.0
+# Upper bound on how long we will wait for a provider's `Retry-After` hint.
+# Free-tier providers often ask for 60s; we honor it but cap it so a single
+# request cannot stall the worker for an unreasonable time.
+MAX_UPSTREAM_RETRY_AFTER_SECONDS = 60.0
 # Safety cap on the accumulated prompt context (in tokens) for a single
 # tool-calling request. Prevents runaway loops where the model keeps issuing
 # tool calls and the context grows unboundedly (e.g. 3+ hour requests).
@@ -211,6 +215,29 @@ def get_tool_timeout_seconds() -> int:
     except ValueError:
         logger.warning(f"invalid MCP_BRIDGE_TOOL_TIMEOUT_SECONDS value: {raw_value}; using default {DEFAULT_TOOL_TIMEOUT_SECONDS}")
         return DEFAULT_TOOL_TIMEOUT_SECONDS
+
+
+DEFAULT_MAX_STUB_RETRIES = 2
+
+
+def get_max_stub_retries() -> int:
+    raw_value = os.getenv("MCP_BRIDGE_MAX_STUB_RETRIES")
+    if raw_value is None:
+        return DEFAULT_MAX_STUB_RETRIES
+
+    try:
+        configured_value = int(raw_value)
+    except ValueError:
+        logger.warning(
+            f"invalid MCP_BRIDGE_MAX_STUB_RETRIES value: {raw_value}; using default {DEFAULT_MAX_STUB_RETRIES}"
+        )
+        return DEFAULT_MAX_STUB_RETRIES
+
+    if configured_value < 0:
+        logger.warning(f"configured MCP_BRIDGE_MAX_STUB_RETRIES={configured_value} is negative; using 0")
+        return 0
+
+    return configured_value
 
 
 def get_max_tool_turns() -> int:
@@ -591,6 +618,8 @@ def _build_synthesis_request(
         instruction += " The tool workflow stopped early because the conversation context grew too large, so if some information is incomplete, say so clearly."
     elif stop_reason == "repeated_tool_calls":
         instruction += " The tool workflow stopped because the same tool call was repeated without new information, so synthesize the best answer from the evidence already gathered."
+    elif stop_reason == "unfulfilled_action_stub":
+        instruction += " A previous attempt only announced an action (e.g. \"Let me fetch...\") without completing it or calling any tool, so actually answer the question now using whatever information is already available."
 
     synthesis_request.messages.append(
         ChatCompletionRequestMessage.model_validate(
@@ -807,6 +836,8 @@ def _build_tool_loop_stop_response(
         intro_line = "Note: The search or tool workflow stopped early because the conversation context grew too large."
     elif stop_reason == "repeated_tool_calls":
         intro_line = "Note: The tool workflow stopped because the same tool call was repeated without new information."
+    elif stop_reason == "unfulfilled_action_stub":
+        intro_line = "Note: A previous attempt announced an action but did not complete it or call any tool."
     else:
         intro_line = "Note: The workflow stopped before it could finish."
     return _build_synthesized_response(
@@ -1211,6 +1242,104 @@ def _strip_pseudo_tool_call_markers(text: str) -> str:
     return stripped.strip()
 
 
+# Matches an assistant reply that announces intent to perform an action (e.g.
+# "Let me fetch...", "I'll search...", "I need to check...") at the very start
+# of the content.
+_INTENT_STUB_PATTERN = re.compile(
+    r"^(?:let(?:'s|s)?(?:\s+me)?|let\s+us|i(?:'ll|'m going to| will| need to| am going to| plan to| should)|"
+    r"allow\s+me\s+to|going\s+to|i\s+shall)\b[^.!?\n]{0,80}?\b"
+    r"(?:fetch|search|check|look\s*up|browse|retrieve|find|verify|confirm|review|read|open|"
+    r"query|investigate|research|examine|consult|access|visit|call|use|pull\s+up|dig\s+into)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_unfulfilled_action_stub(text: str, *, max_words: int = 30, max_sentences: int = 2) -> bool:
+    """Return True if `text` is a "throat-clearing" stub: the assistant announces
+    an action it is about to take (fetch/search/check/...) but the message has
+    no attached tool call and no further substantive content — i.e. the real
+    work (a tool invocation, or an actual answer) never happened.
+
+    This is distinct from an empty completion (``_should_use_empty_content_fallback``)
+    or plain-text pseudo tool-call markers (``_contains_pseudo_tool_call_markers``):
+    the content here is well-formed, non-empty prose, so naive
+    "content is non-empty" checks (as used by CLI pipelines that only assert
+    ``choices[0].message.content`` is a non-empty string) accept it as a valid
+    final answer. In practice this shows up when an upstream provider (e.g. a
+    ``:free`` tier model under load) cuts a generation off right after this kind
+    of preamble but still reports ``finish_reason: "stop"``.
+
+    Both a low word/sentence count AND the leading intent phrase are required,
+    so a genuinely long answer that merely opens with "Let me summarize..."
+    is never flagged.
+    """
+    stripped = text.strip()
+    if not stripped or not _INTENT_STUB_PATTERN.match(stripped):
+        return False
+
+    if len(stripped.split()) > max_words:
+        return False
+
+    sentence_count = len([s for s in re.split(r"(?<=[.!?])\s+", stripped) if s.strip()])
+    return sentence_count <= max_sentences
+
+
+# Sentinel returned by ``_handle_stub_or_stop`` to tell the caller to drop the
+# just-appended stub assistant message and retry the upstream call, rather than
+# returning a value directly (the retry itself must happen in the caller's
+# ``while`` loop via ``continue``).
+_RETRY_TOOL_LOOP = object()
+
+
+async def _handle_stub_or_stop(
+    client: Any,
+    request: CreateChatCompletionRequest,
+    *,
+    assistant_text: str,
+    response: CreateChatCompletionResponse,
+    stub_retry_count: int,
+    max_stub_retries: int,
+) -> Any:
+    """Decide what to do when the model produced no usable tool call.
+
+    Returns ``_RETRY_TOOL_LOOP`` if ``assistant_text`` looks like an unfulfilled
+    action-intent stub (e.g. "Let me fetch the page...") and retries remain --
+    the caller should pop the stub message it just appended and retry the
+    upstream call. Otherwise returns a ``CreateChatCompletionResponse`` for the
+    caller to return as-is: either the original ``response`` (not a stub), or a
+    synthesized final answer (a stub that has exhausted its retries).
+    """
+    if not _looks_like_unfulfilled_action_stub(assistant_text):
+        logger.debug("no tool calls found")
+        return response
+
+    if stub_retry_count < max_stub_retries:
+        logger.warning(
+            "model returned an unfulfilled action-intent stub "
+            f"('{assistant_text[:80]}') with no tool calls; "
+            f"retrying upstream request ({stub_retry_count + 1}/{max_stub_retries})"
+        )
+        return _RETRY_TOOL_LOOP
+
+    logger.warning(
+        "model repeatedly returned an unfulfilled action-intent stub "
+        f"('{assistant_text[:80]}'); synthesizing a final answer instead"
+    )
+    synthesized_response = await _try_synthesize_tool_loop_result(
+        client,
+        request,
+        stop_reason="unfulfilled_action_stub",
+        request_messages=request.messages,
+    )
+    if synthesized_response is not None:
+        return synthesized_response
+    return _build_tool_loop_stop_response(
+        response,
+        stop_reason="unfulfilled_action_stub",
+        request_messages=request.messages,
+    )
+
+
 def _is_transient_upstream_error(text: str) -> bool:
     """Return True if the upstream body indicates a transient provider error.
 
@@ -1238,6 +1367,53 @@ def _is_transient_upstream_error(text: str) -> bool:
     return any(marker in lowered for marker in transient_markers)
 
 
+def _is_retryable_upstream_status(status_code: int, text: str) -> bool:
+    """Return True if an upstream response is worth retrying.
+
+    Retryable: 5xx, 429 (rate limit), or HTTP 200 with a transient error body.
+    A 429 is explicitly retryable because free-tier providers rate-limit under
+    sustained load (e.g. a long research loop) and the response usually carries
+    a ``Retry-After`` hint telling us how long to wait.
+    """
+    if status_code == 429:
+        return True
+    if status_code >= 500:
+        return True
+    if status_code == 200 and _is_transient_upstream_error(text):
+        return True
+    return False
+
+
+def _get_retry_after_seconds(response: Any) -> float:
+    """Extract the provider's ``Retry-After`` hint (seconds) from a response.
+
+    Checks the ``Retry-After`` HTTP header first, then the ``retry_after_seconds``
+    field in the JSON error body (OpenRouter/OpenAI-style). Returns 0.0 if no
+    hint is present. The value is capped at ``MAX_UPSTREAM_RETRY_AFTER_SECONDS``
+    so a single request cannot stall a worker for an unreasonable time.
+    """
+    try:
+        header = response.headers.get("Retry-After")
+        if header:
+            value = float(header)
+            return min(max(value, 0.0), MAX_UPSTREAM_RETRY_AFTER_SECONDS)
+    except (AttributeError, TypeError, ValueError):
+        pass
+
+    try:
+        payload = json.loads(response.text)
+        seconds = (
+            payload.get("error", {}).get("metadata", {}).get("retry_after_seconds")
+        )
+        if seconds is not None:
+            value = float(seconds)
+            return min(max(value, 0.0), MAX_UPSTREAM_RETRY_AFTER_SECONDS)
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+
+    return 0.0
+
+
 async def chat_completions(
     request: CreateChatCompletionRequest,
     http_request: Request,
@@ -1251,8 +1427,10 @@ async def chat_completions(
         trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
 
     max_tool_turns = get_max_tool_turns()
+    max_stub_retries = get_max_stub_retries()
     tool_timeout_seconds = get_tool_timeout_seconds()
     tool_turns_completed = 0
+    stub_retry_count = 0
     tool_client_cache: dict[str, Any] = {}
     seen_tool_calls: dict[str, int] = {}
     tool_result_cache = ToolResultCache()
@@ -1283,28 +1461,29 @@ async def chat_completions(
             logger.debug(f"upstream chat completion response received: status={upstream_response.status_code}")
             _record_timing(trace_logger, "upstream_llm_request", time.perf_counter() - start_time)
 
-            # Retry transient provider errors (5xx, or HTTP 200 with an error
-            # body like "overloaded"/"provider returned error"). Free-tier
-            # providers are flaky under load; a short retry avoids failing a
-            # strong model's run on a transient blip.
-            if upstream_response.status_code >= 500 or (
-                upstream_response.status_code == 200 and _is_transient_upstream_error(text)
-            ):
+            # Retry transient provider errors (5xx, 429 rate-limit, or HTTP 200
+            # with an error body like "overloaded"/"provider returned error").
+            # Free-tier providers are flaky under load; a short retry avoids
+            # failing a strong model's run on a transient blip. When the
+            # provider supplies a `Retry-After` hint (common for 429), honor it
+            # so the provider has time to recover instead of us hammering it.
+            if _is_retryable_upstream_status(upstream_response.status_code, text):
                 retried = False
                 for attempt in range(DEFAULT_UPSTREAM_RETRY_COUNT):
+                    retry_after = _get_retry_after_seconds(upstream_response)
+                    delay = retry_after if retry_after > 0 else DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS
                     logger.warning(
                         f"upstream transient error (status={upstream_response.status_code}); "
-                        f"retrying ({attempt + 1}/{DEFAULT_UPSTREAM_RETRY_COUNT})"
+                        f"retrying ({attempt + 1}/{DEFAULT_UPSTREAM_RETRY_COUNT}) "
+                        f"in {delay:.1f}s"
                     )
-                    await asyncio.sleep(DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS)
+                    await asyncio.sleep(delay)
                     upstream_response = await client.post(
                         "/chat/completions",
                         json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
                     )
                     text = upstream_response.text
-                    if upstream_response.status_code < 500 and not (
-                        upstream_response.status_code == 200 and _is_transient_upstream_error(text)
-                    ):
+                    if not _is_retryable_upstream_status(upstream_response.status_code, text):
                         retried = True
                         break
                 if not retried:
@@ -1329,14 +1508,21 @@ async def chat_completions(
                         # The upstream failed this turn, so there is no valid
                         # parsed `response` to base the fallback on. Build a
                         # synthetic one; `_build_tool_loop_stop_response` only
-                        # overwrites `choices[0]` fields, so the base is safe.
+                        # overwrites `choices[0]` fields, so the base must be
+                        # a *valid* `CreateChatCompletionResponse` (all required
+                        # fields present) or `model_validate` raises before the
+                        # fallback can run.
                         return _build_tool_loop_stop_response(
                             CreateChatCompletionResponse.model_validate(
                                 {
                                     "id": "chatcmpl-fallback",
+                                    "object": "chat.completion",
+                                    "created": int(time.time()),
+                                    "model": getattr(request, "model", "") or "unknown",
                                     "choices": [
                                         {
                                             "index": 0,
+                                            "finish_reason": "stop",
                                             "message": {"role": "assistant", "content": ""},
                                         }
                                     ],
@@ -1472,8 +1658,19 @@ async def chat_completions(
                             ),
                         )
                 else:
-                    logger.debug("no tool calls found")
-                    return response
+                    stub_result = await _handle_stub_or_stop(
+                        client,
+                        request,
+                        assistant_text=assistant_text,
+                        response=response,
+                        stub_retry_count=stub_retry_count,
+                        max_stub_retries=max_stub_retries,
+                    )
+                    if stub_result is _RETRY_TOOL_LOOP:
+                        stub_retry_count += 1
+                        request.messages.pop()
+                        continue
+                    return stub_result
 
             logger.debug("tool calls found")
             if trace_logger is not None:
@@ -1522,11 +1719,33 @@ async def chat_completions(
                             )
                         tool_call_items = [(name, arguments) for name, arguments in parsed_calls]
                     else:
-                        logger.warning("model returned a tool-like finish reason without tool calls; stopping loop")
-                        return response
+                        stub_result = await _handle_stub_or_stop(
+                            client,
+                            request,
+                            assistant_text=assistant_text,
+                            response=response,
+                            stub_retry_count=stub_retry_count,
+                            max_stub_retries=max_stub_retries,
+                        )
+                        if stub_result is _RETRY_TOOL_LOOP:
+                            stub_retry_count += 1
+                            request.messages.pop()
+                            continue
+                        return stub_result
                 else:
-                    logger.warning("model returned a tool-like finish reason without tool calls; stopping loop")
-                    return response
+                    stub_result = await _handle_stub_or_stop(
+                        client,
+                        request,
+                        assistant_text=assistant_text,
+                        response=response,
+                        stub_retry_count=stub_retry_count,
+                        max_stub_retries=max_stub_retries,
+                    )
+                    if stub_result is _RETRY_TOOL_LOOP:
+                        stub_retry_count += 1
+                        request.messages.pop()
+                        continue
+                    return stub_result
 
             # Detect a "search loop": the model re-issuing the same tool call
             # across iterations without converging. Stop early and synthesize a

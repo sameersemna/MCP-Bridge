@@ -17,9 +17,10 @@ from mcp_bridge.openai_clients import chatCompletion as chat_completion_module
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, text: str) -> None:
+    def __init__(self, status_code: int, text: str, headers: dict | None = None) -> None:
         self.status_code = status_code
         self.text = text
+        self.headers = headers or {}
 
 
 class FakeClient:
@@ -185,3 +186,111 @@ def test_chat_completions_retries_transient_upstream_error(monkeypatch):
     # The transient error was retried once, then the successful response was used.
     assert len(fake_client.posts) == 2
     assert response.choices[0].message.content == "Recovered answer."
+
+
+def test_chat_completions_retries_429_and_honors_retry_after(monkeypatch):
+    """A 429 rate-limit response is retryable, and the provider's `Retry-After`
+    hint is honored (capped) so the provider can recover instead of us failing
+    the request after a too-short fixed delay."""
+    fake_client = FakeClient(
+        [
+            # 429 with a Retry-After header of 60s.
+            FakeResponse(429, '{"error": {"message": "rate limited", "code": 429}}', headers={"Retry-After": "60"}),
+            FakeResponse(200, _stop_response("Recovered successfully.")),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    # Cap the retry-after so the test doesn't actually sleep 60s.
+    monkeypatch.setattr(chat_completion_module, "MAX_UPSTREAM_RETRY_AFTER_SECONDS", 0.0)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    response = asyncio.run(chat_completion_module.chat_completions(request, None))
+
+    # The 429 was retried once, then the successful response was used.
+    assert len(fake_client.posts) == 2
+    assert response.choices[0].message.content == "Recovered successfully."
+
+
+def test_get_retry_after_seconds_parses_header_and_body():
+    """The Retry-After hint is parsed from the HTTP header and the JSON body,
+    and is capped at the configured maximum."""
+    # From the HTTP header.
+    resp = FakeResponse(429, "{}", headers={"Retry-After": "60"})
+    assert chat_completion_module._get_retry_after_seconds(resp) == 60.0
+
+    # From the JSON error body (OpenRouter-style).
+    resp2 = FakeResponse(
+        429,
+        '{"error": {"metadata": {"retry_after_seconds": 30}}}',
+    )
+    assert chat_completion_module._get_retry_after_seconds(resp2) == 30.0
+
+    # Capped at the maximum.
+    resp3 = FakeResponse(429, "{}", headers={"Retry-After": "9999"})
+    assert chat_completion_module._get_retry_after_seconds(resp3) == chat_completion_module.MAX_UPSTREAM_RETRY_AFTER_SECONDS
+
+    # No hint -> 0.0.
+    resp4 = FakeResponse(200, "{}")
+    assert chat_completion_module._get_retry_after_seconds(resp4) == 0.0
+
+
+def test_chat_completions_synthesizes_fallback_when_upstream_fails_after_evidence(monkeypatch):
+    """Regression test: when the upstream fails (transient 502) AFTER tool
+    evidence has been gathered, the bridge must synthesize a valid fallback
+    response — not crash with a 500 from an invalid synthetic response."""
+    fake_client = FakeClient(
+        [
+            # Turn 1: model issues a tool call.
+            FakeResponse(200, _tool_calls_response("search", '{"query": "hello"}')),
+            # Turn 2: upstream is overloaded (transient 502 in a 200 body).
+            FakeResponse(200, '{"error": {"message": "Upstream error from Nvidia: Service temporarily overloaded", "code": 502}}'),
+            # Turn 3: the synthesis request also fails (still overloaded).
+            FakeResponse(200, '{"error": {"message": "Upstream error from Nvidia: Service temporarily overloaded", "code": 502}}'),
+            FakeResponse(200, '{"error": {"message": "Upstream error from Nvidia: Service temporarily overloaded", "code": 502}}'),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    async def fake_call_tools(tool_calls, **kwargs):
+        return [
+            CallToolResult(
+                content=[TextContent(type="text", text="result for search")],
+                isError=False,
+            )
+            for name, _ in tool_calls
+        ]
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(chat_completion_module, "call_tools", fake_call_tools)
+    # Avoid the real 2s retry delay in tests.
+    monkeypatch.setattr(chat_completion_module, "DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS", 0.0)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "do a search"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    # Must NOT raise (previously this crashed with a pydantic ValidationError -> 500).
+    response = asyncio.run(chat_completion_module.chat_completions(request, None))
+
+    # A fallback response was synthesized from the tool evidence.
+    assert response.choices[0].message.content
+    assert "result for search" in response.choices[0].message.content
