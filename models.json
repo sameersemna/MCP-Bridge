@@ -1,6 +1,6 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-01T15:19:29.587440+00:00",
+  "fetched_at": "2026-09-01T16:44:12.234433+00:00",
   "model_count": 418,
   "models": {
     "inception/mercury-2.5-preview": {
@@ -1402,9 +1402,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000132",
-      "completion_price": "0.000000528",
-      "input_cache_read_price": "0.000000033",
+      "prompt_price": "0.0000000825",
+      "completion_price": "0.00000033",
+      "input_cache_read_price": "0.000000020625",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2521,9 +2521,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000000763",
-      "completion_price": "0.0000001526",
-      "input_cache_read_price": "0.00000001526",
+      "prompt_price": "0.00000007476",
+      "completion_price": "0.00000014952",
+      "input_cache_read_price": "0.000000014952",
       "knowledge_cutoff": null,
       "reasoning": true
     },

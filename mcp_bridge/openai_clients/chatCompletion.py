@@ -28,6 +28,19 @@ DEFAULT_TOOL_TIMEOUT_SECONDS = 60
 # failing a strong model's run on a transient blip.
 DEFAULT_UPSTREAM_RETRY_COUNT = 2
 DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS = 2.0
+
+
+def _diagnostic_snippet(text: str, limit: int = 300) -> str:
+    """Truncated, whitespace-collapsed excerpt of an upstream body for error details.
+
+    Some providers pad a slow response with a long run of blank/whitespace
+    keep-alive bytes before any real content (observed on large, overloaded
+    free-tier models); a naive `text[:limit]` would show only that padding
+    and hide the actual error. Collapsing whitespace first ensures the
+    limit is spent on real content.
+    """
+    collapsed = re.sub(r"\s+", " ", text).strip()
+    return collapsed[:limit] or "<empty body>"
 # Upper bound on how long we will wait for a provider's `Retry-After` hint.
 # Free-tier providers often ask for 60s; we honor it but cap it so a single
 # request cannot stall the worker for an unreasonable time.
@@ -1537,7 +1550,7 @@ async def chat_completions(
                             f"Upstream inference server did not return a usable response "
                             f"after {DEFAULT_UPSTREAM_RETRY_COUNT + 1} attempts "
                             f"(last status {upstream_response.status_code}): "
-                            f"{text[:300] or '<empty body>'}"
+                            f"{_diagnostic_snippet(text)}"
                         ),
                     )
 
@@ -1547,7 +1560,7 @@ async def chat_completions(
                     status_code=502,
                     detail=(
                         f"Upstream inference server returned status "
-                        f"{upstream_response.status_code}: {text[:300] or '<empty body>'}"
+                        f"{upstream_response.status_code}: {_diagnostic_snippet(text)}"
                     ),
                 )
 
