@@ -14,43 +14,15 @@ C_BLUE=$'\033[34m'
 C_MAGENTA=$'\033[35m'
 C_CYAN=$'\033[36m'
 
-# Estimate model strength from its ID and metadata (context length).
-# Higher score = stronger model. Uses parameter count from the ID plus
-# tier keywords as a heuristic.
-model_strength() {
-    local id="$1"
-    local context_length="${2:-0}"
-    local score=0
-
-    # Parameter count from the model ID (e.g. "120b", "550b", "30b").
-    local params
-    params=$(echo "$id" | grep -oE '[0-9]+b' | head -n1 | tr -d 'b')
-    if [[ -n "$params" ]]; then
-        score=$((params))
-    fi
-
-    # Tier keywords in the name.
-    local lower
-    lower=$(echo "$id" | tr '[:upper:]' '[:lower:]')
-    case "$lower" in
-        *ultra*|*super*|*pro*|*max*|*large*|*xl*|*turbo*) score=$((score + 50)) ;;
-        *nano*|*mini*|*flash*|*lightning*|*small*|*xs*|*tiny*|*preview*) score=$((score - 30)) ;;
-    esac
-
-    # Context length as a secondary signal (larger = stronger).
-    if (( context_length >= 100000 )); then
-        score=$((score + 20))
-    elif (( context_length >= 32000 )); then
-        score=$((score + 10))
-    fi
-
-    echo "$score"
-}
-
-# Minimum model strength to include in the test loop. Models below this are
-# skipped to avoid wasting time/resources on weak models.
-MIN_MODEL_STRENGTH="${MIN_MODEL_STRENGTH:-70}"
-# MIN_MODEL_STRENGTH="${MIN_MODEL_STRENGTH:-45}"
+# Minimum context length (tokens) to include in the test loop. OpenRouter's
+# free-tier catalog doesn't reliably expose parameter counts or benchmark
+# scores across providers (most IDs don't encode size, and benchmark data
+# only covers a subset of models), so there's no trustworthy basis for
+# ranking "strength" — this filters on context length alone. Tool-calling
+# support is already required by the openrouter_free_models selection below.
+# MIN_CONTEXT_LENGTH="${MIN_CONTEXT_LENGTH:-32000}"
+MIN_CONTEXT_LENGTH="${MIN_CONTEXT_LENGTH:-196608}"
+# MIN_CONTEXT_LENGTH="${MIN_CONTEXT_LENGTH:-262145}"
 
 models=()
 # models=(
@@ -83,18 +55,20 @@ if ! echo "$models_json" | jq -e '.data' >/dev/null 2>&1; then
 fi
 
 # Filter to free, tool-capable, non-mandatory-reasoning models.
+# openrouter_free_models=$(echo "$models_json" | \
+#   jq -r '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0") and ((.supported_parameters // []) | index("tools") != null) and ((.reasoning.mandatory // false) != true)) | .id')
 openrouter_free_models=$(echo "$models_json" | \
-  jq -r '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0") and ((.supported_parameters // []) | index("tools") != null) and ((.reasoning.mandatory // false) != true)) | .id')
+  jq -r '.data[] | select((.id | endswith(":free")) and (.pricing.prompt == "0") and ((.supported_parameters // []) | index("tools") != null)) | .id')
 
-echo "OpenRouter free models: ${openrouter_free_models}"
+
+# echo "OpenRouter free models: ${openrouter_free_models}"
 for model in ${openrouter_free_models}; do
     context_length=$(echo "$models_json" | jq -r --arg id "$model" '.data[] | select(.id == $id) | .context_length // 0')
-    strength=$(model_strength "$model" "$context_length")
-    if (( strength < MIN_MODEL_STRENGTH )); then
-        echo "${C_YELLOW}Skipping weak model: $model (strength=$strength < $MIN_MODEL_STRENGTH)${C_RESET}"
+    if (( context_length < MIN_CONTEXT_LENGTH )); then
+        echo "${C_YELLOW}Skipping model: $model (context_length=$context_length < $MIN_CONTEXT_LENGTH)${C_RESET}"
         continue
     fi
-    echo "${C_GREEN}Adding model: $model (strength=$strength)${C_RESET}"
+    echo "${C_GREEN}Adding model: $model (context_length=$context_length)${C_RESET}"
     models+=("$model")
 done
 # exit 0
