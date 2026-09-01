@@ -12,7 +12,7 @@ from lmos_openai_types import (
     FinishReason1,
 )
 
-from .utils import PersistentToolCache, ToolResultCache, call_tools, chat_completion_add_tools, sanitize_tool_result_content
+from .utils import ToolResultCache, call_tools, chat_completion_add_tools, get_tool_cache, sanitize_tool_result_content
 from .genericHttpxClient import get_client
 from mcp_bridge.config import config
 from mcp_bridge.logging import RequestTraceLogger
@@ -1434,7 +1434,7 @@ async def chat_completions(
     tool_client_cache: dict[str, Any] = {}
     seen_tool_calls: dict[str, int] = {}
     tool_result_cache = ToolResultCache()
-    persistent_tool_cache = PersistentToolCache()
+    persistent_tool_cache = get_tool_cache()
 
     # Per-server opt-in caching: only tools whose owning MCP server is
     # configured with `"cached": true` are read from / written to the caches.

@@ -224,6 +224,31 @@ These can be set in a `.env` file (gitignored) at the repo root, or as real
 environment variables (which take precedence). The app loads `.env` into the
 process environment at startup via `python-dotenv`.
 
+### Redis-backed tool cache (optional)
+
+Instead of (or in addition to) the on-disk cache, you can back the persistent
+tool cache with **Redis**. This is useful when you run multiple bridge
+instances behind a load balancer and want them to share one cache, or when you
+prefer a managed cache over local files.
+
+To enable it, set `REDIS_URL` (and optionally `REDIS_PREFIX`) in `.env`:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `REDIS_URL` | *(unset)* | Redis connection URL, e.g. `redis://user:pass@host:port`. When set, the bridge uses Redis for the persistent tool cache. |
+| `REDIS_PREFIX` | `mcp-bridge` | Key prefix so multiple bridges can share one Redis instance without colliding. |
+
+Behavior:
+
+- When `REDIS_URL` is set **and** Redis is reachable, the bridge uses a
+  `RedisToolCache` (same SHA-256 keys, same JSON payload, same TTL as the file
+  backend — so a cache populated by either backend is readable by the other).
+- If `REDIS_URL` is **not** set, or Redis is unreachable at startup, the bridge
+  **falls back to the on-disk cache** in `tool_cache/` automatically. No code
+  changes needed — just set the env vars to opt in.
+- The per-server `"cached": true` opt-in and the `MCP_BRIDGE_TOOL_CACHE_*`
+  switches apply to the Redis cache exactly as they do to the file cache.
+
 > **Docker note:** if you run MCP-Bridge in Docker, mount the cache directory so it persists on the host (otherwise it lives in the container's ephemeral filesystem and is lost on restart). Use a **named volume** (not a bind mount) so Docker initializes it with the image's ownership — the container runs as an unprivileged `appuser`, and a bind mount (`./tool_cache:...`) is owned by the host user's UID and would be read-only to it. Add to `compose.yml`:
 > ```yaml
 > volumes:

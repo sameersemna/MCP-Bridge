@@ -1,8 +1,25 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-08-31T18:01:20.426897+00:00",
-  "model_count": 395,
+  "fetched_at": "2026-09-01T08:30:17.440446+00:00",
+  "model_count": 420,
   "models": {
+    "ibm-granite/granite-4.2-8b": {
+      "name": "IBM: Granite 4.2 8B",
+      "context_length": 131072,
+      "max_completion_tokens": 117964,
+      "modality": "text->text",
+      "input_modalities": [
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000001",
+      "completion_price": "0.00000015",
+      "input_cache_read_price": "0.00000005",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
     "tencent/hy4-preview": {
       "name": "Tencent: Hy4 preview",
       "context_length": 1048576,
@@ -127,9 +144,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000022",
-      "completion_price": "0.00000066",
-      "input_cache_read_price": "0.000000007",
+      "prompt_price": "0.00000044",
+      "completion_price": "0.00000132",
+      "input_cache_read_price": "0.000000014",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -170,7 +187,7 @@
     "~z-ai/glm-latest": {
       "name": "Z.ai: GLM Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 943718,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -178,9 +195,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000011875",
-      "completion_price": "0.00000418",
-      "input_cache_read_price": "0.000000247",
+      "prompt_price": "0.00000117",
+      "completion_price": "0.00000396",
+      "input_cache_read_price": "0.000000234",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -319,7 +336,7 @@
     "qwen/qwen3.8-2.4t-a95b": {
       "name": "Qwen: Qwen3.8 2.4T A95B",
       "context_length": 1048576,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 262144,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -329,7 +346,7 @@
       ],
       "prompt_price": "0.000002",
       "completion_price": "0.000006",
-      "input_cache_read_price": "0.0000002",
+      "input_cache_read_price": "0.00000025",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -344,9 +361,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000002",
-      "completion_price": "0.000006",
-      "input_cache_read_price": "0.00000025",
+      "prompt_price": "0.0000025",
+      "completion_price": "0.00000625",
+      "input_cache_read_price": "0.0000005",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -380,9 +397,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000066",
-      "completion_price": "0.00000198",
-      "input_cache_read_price": "0.000000022",
+      "prompt_price": "0.0000011154",
+      "completion_price": "0.0000033462",
+      "input_cache_read_price": "0.00000003718",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -596,7 +613,7 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000003",
+      "prompt_price": "0.00000005",
       "completion_price": "0.00000016",
       "input_cache_read_price": "0.000000013",
       "knowledge_cutoff": null,
@@ -1095,6 +1112,25 @@
       "knowledge_cutoff": "2026-02-16",
       "reasoning": true
     },
+    "openai/gpt-5.6-luna-pro:batch": {
+      "name": "OpenAI: GPT-5.6 Luna Pro (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000001",
+      "completion_price": "0.0000006",
+      "input_cache_read_price": "0.00000001",
+      "knowledge_cutoff": "2026-02-16",
+      "reasoning": true
+    },
     "openai/gpt-5.6-luna": {
       "name": "OpenAI: GPT-5.6 Luna",
       "context_length": 1050000,
@@ -1111,6 +1147,25 @@
       "prompt_price": "0.0000002",
       "completion_price": "0.0000012",
       "input_cache_read_price": "0.00000002",
+      "knowledge_cutoff": "2026-02-16",
+      "reasoning": true
+    },
+    "openai/gpt-5.6-luna:batch": {
+      "name": "OpenAI: GPT-5.6 Luna (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000001",
+      "completion_price": "0.0000006",
+      "input_cache_read_price": "0.00000001",
       "knowledge_cutoff": "2026-02-16",
       "reasoning": true
     },
@@ -1133,6 +1188,25 @@
       "knowledge_cutoff": "2026-02-16",
       "reasoning": true
     },
+    "openai/gpt-5.6-terra-pro:batch": {
+      "name": "OpenAI: GPT-5.6 Terra Pro (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000001",
+      "completion_price": "0.000006",
+      "input_cache_read_price": "0.0000001",
+      "knowledge_cutoff": "2026-02-16",
+      "reasoning": true
+    },
     "openai/gpt-5.6-terra": {
       "name": "OpenAI: GPT-5.6 Terra",
       "context_length": 1050000,
@@ -1149,6 +1223,25 @@
       "prompt_price": "0.000002",
       "completion_price": "0.000012",
       "input_cache_read_price": "0.0000002",
+      "knowledge_cutoff": "2026-02-16",
+      "reasoning": true
+    },
+    "openai/gpt-5.6-terra:batch": {
+      "name": "OpenAI: GPT-5.6 Terra (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000001",
+      "completion_price": "0.000006",
+      "input_cache_read_price": "0.0000001",
       "knowledge_cutoff": "2026-02-16",
       "reasoning": true
     },
@@ -1171,6 +1264,25 @@
       "knowledge_cutoff": "2026-02-16",
       "reasoning": true
     },
+    "openai/gpt-5.6-sol-pro:batch": {
+      "name": "OpenAI: GPT-5.6 Sol Pro (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000001",
+      "completion_price": "0.000005",
+      "input_cache_read_price": "0.0000001",
+      "knowledge_cutoff": "2026-02-16",
+      "reasoning": true
+    },
     "openai/gpt-5.6-sol": {
       "name": "OpenAI: GPT-5.6 Sol",
       "context_length": 1050000,
@@ -1187,6 +1299,25 @@
       "prompt_price": "0.000002",
       "completion_price": "0.00001",
       "input_cache_read_price": "0.0000002",
+      "knowledge_cutoff": "2026-02-16",
+      "reasoning": true
+    },
+    "openai/gpt-5.6-sol:batch": {
+      "name": "OpenAI: GPT-5.6 Sol (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000001",
+      "completion_price": "0.000005",
+      "input_cache_read_price": "0.0000001",
       "knowledge_cutoff": "2026-02-16",
       "reasoning": true
     },
@@ -1273,9 +1404,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000000825",
-      "completion_price": "0.00000033",
-      "input_cache_read_price": "0.000000020625",
+      "prompt_price": "0.000000132",
+      "completion_price": "0.000000528",
+      "input_cache_read_price": "0.000000033",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1876,9 +2007,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000165",
-      "completion_price": "0.0000099",
-      "input_cache_read_price": "0.000000165",
+      "prompt_price": "0.0000015",
+      "completion_price": "0.000009",
+      "input_cache_read_price": "0.00000015",
       "knowledge_cutoff": "2025-01-01",
       "reasoning": true
     },
@@ -2345,6 +2476,25 @@
       "knowledge_cutoff": "2025-12-01",
       "reasoning": true
     },
+    "openai/gpt-5.5-pro:batch": {
+      "name": "OpenAI: GPT-5.5 Pro (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000015",
+      "completion_price": "0.00009",
+      "input_cache_read_price": null,
+      "knowledge_cutoff": "2025-12-01",
+      "reasoning": true
+    },
     "openai/gpt-5.5": {
       "name": "OpenAI: GPT-5.5",
       "context_length": 1050000,
@@ -2364,10 +2514,29 @@
       "knowledge_cutoff": "2025-12-01",
       "reasoning": true
     },
+    "openai/gpt-5.5:batch": {
+      "name": "OpenAI: GPT-5.5 (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000025",
+      "completion_price": "0.000015",
+      "input_cache_read_price": "0.00000025",
+      "knowledge_cutoff": "2025-12-01",
+      "reasoning": true
+    },
     "deepseek/deepseek-v4-pro": {
       "name": "DeepSeek: DeepSeek V4 Pro 0423",
       "context_length": 1048576,
-      "max_completion_tokens": 384000,
+      "max_completion_tokens": 393216,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -2375,9 +2544,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000001034256",
-      "completion_price": "0.000002068512",
-      "input_cache_read_price": "0.000000086188",
+      "prompt_price": "0.0000016",
+      "completion_price": "0.0000032",
+      "input_cache_read_price": "0.000000135",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2392,9 +2561,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000008246",
-      "completion_price": "0.00000016492",
-      "input_cache_read_price": "0.000000016492",
+      "prompt_price": "0.00000008092",
+      "completion_price": "0.00000016184",
+      "input_cache_read_price": "0.000000016184",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2896,6 +3065,25 @@
       "knowledge_cutoff": "2025-08-31",
       "reasoning": true
     },
+    "openai/gpt-5.4-nano:batch": {
+      "name": "OpenAI: GPT-5.4 Nano (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000001",
+      "completion_price": "0.000000625",
+      "input_cache_read_price": "0.00000001",
+      "knowledge_cutoff": "2025-08-31",
+      "reasoning": true
+    },
     "openai/gpt-5.4-mini": {
       "name": "OpenAI: GPT-5.4 Mini",
       "context_length": 400000,
@@ -2915,26 +3103,27 @@
       "knowledge_cutoff": "2025-08-31",
       "reasoning": true
     },
-    "mistralai/mistral-small-2603": {
-      "name": "Mistral: Mistral Small 4",
-      "context_length": 262144,
-      "max_completion_tokens": 209715,
-      "modality": "text+image->text",
+    "openai/gpt-5.4-mini:batch": {
+      "name": "OpenAI: GPT-5.4 Mini (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
       "input_modalities": [
-        "text",
-        "image"
+        "file",
+        "image",
+        "text"
       ],
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000015",
-      "completion_price": "0.0000006",
-      "input_cache_read_price": "0.000000015",
-      "knowledge_cutoff": null,
+      "prompt_price": "0.000000375",
+      "completion_price": "0.00000225",
+      "input_cache_read_price": "0.0000000375",
+      "knowledge_cutoff": "2025-08-31",
       "reasoning": true
     },
-    "mistralai/mistral-small-2603:batch": {
-      "name": "Mistral: Mistral Small 4 (batch)",
+    "mistralai/mistral-small-2603": {
+      "name": "Mistral: Mistral Small 4",
       "context_length": 262144,
       "max_completion_tokens": 209715,
       "modality": "text+image->text",
@@ -3078,6 +3267,25 @@
       "knowledge_cutoff": null,
       "reasoning": true
     },
+    "openai/gpt-5.4-pro:batch": {
+      "name": "OpenAI: GPT-5.4 Pro (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000015",
+      "completion_price": "0.00009",
+      "input_cache_read_price": null,
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
     "openai/gpt-5.4": {
       "name": "OpenAI: GPT-5.4",
       "context_length": 1050000,
@@ -3094,6 +3302,25 @@
       "prompt_price": "0.0000025",
       "completion_price": "0.000015",
       "input_cache_read_price": "0.00000025",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "openai/gpt-5.4:batch": {
+      "name": "OpenAI: GPT-5.4 (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000125",
+      "completion_price": "0.0000075",
+      "input_cache_read_price": "0.000000125",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -3876,6 +4103,25 @@
       "knowledge_cutoff": null,
       "reasoning": true
     },
+    "openai/gpt-5.2-pro:batch": {
+      "name": "OpenAI: GPT-5.2 Pro (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "image",
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000105",
+      "completion_price": "0.000084",
+      "input_cache_read_price": null,
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
     "openai/gpt-5.2": {
       "name": "OpenAI: GPT-5.2",
       "context_length": 400000,
@@ -3892,6 +4138,25 @@
       "prompt_price": "0.00000175",
       "completion_price": "0.000014",
       "input_cache_read_price": "0.000000175",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "openai/gpt-5.2:batch": {
+      "name": "OpenAI: GPT-5.2 (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000875",
+      "completion_price": "0.000007",
+      "input_cache_read_price": "0.0000000875",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -4040,24 +4305,6 @@
       "knowledge_cutoff": null,
       "reasoning": false
     },
-    "mistralai/ministral-8b-2512:batch": {
-      "name": "Mistral: Ministral 3 8B 2512 (batch)",
-      "context_length": 262144,
-      "max_completion_tokens": 209715,
-      "modality": "text+image->text",
-      "input_modalities": [
-        "text",
-        "image"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00000015",
-      "completion_price": "0.00000015",
-      "input_cache_read_price": "0.000000015",
-      "knowledge_cutoff": null,
-      "reasoning": false
-    },
     "mistralai/ministral-3b-2512": {
       "name": "Mistral: Ministral 3 3B 2512",
       "context_length": 131072,
@@ -4078,25 +4325,6 @@
     },
     "mistralai/mistral-large-2512": {
       "name": "Mistral: Mistral Large 3 2512",
-      "context_length": 262144,
-      "max_completion_tokens": 209715,
-      "modality": "text+image+file->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "file"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.0000005",
-      "completion_price": "0.0000015",
-      "input_cache_read_price": "0.00000005",
-      "knowledge_cutoff": null,
-      "reasoning": false
-    },
-    "mistralai/mistral-large-2512:batch": {
-      "name": "Mistral: Mistral Large 3 2512 (batch)",
       "context_length": 262144,
       "max_completion_tokens": 209715,
       "modality": "text+image+file->text",
@@ -4204,6 +4432,25 @@
       "prompt_price": "0.00000125",
       "completion_price": "0.00001",
       "input_cache_read_price": "0.000000125",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "openai/gpt-5.1:batch": {
+      "name": "OpenAI: GPT-5.1 (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "image",
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000625",
+      "completion_price": "0.000005",
+      "input_cache_read_price": "0.0000000625",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -4572,6 +4819,25 @@
       "knowledge_cutoff": "2024-09-30",
       "reasoning": true
     },
+    "openai/gpt-5-pro:batch": {
+      "name": "OpenAI: GPT-5 Pro (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "image",
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000075",
+      "completion_price": "0.00006",
+      "input_cache_read_price": null,
+      "knowledge_cutoff": "2024-09-30",
+      "reasoning": true
+    },
     "z-ai/glm-4.6": {
       "name": "Z.ai: GLM 4.6",
       "context_length": 204800,
@@ -4802,7 +5068,7 @@
     "qwen/qwen3-next-80b-a3b-instruct": {
       "name": "Qwen: Qwen3 Next 80B A3B Instruct",
       "context_length": 262144,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -4810,9 +5076,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000009",
+      "prompt_price": "0.0000001",
       "completion_price": "0.0000011",
-      "input_cache_read_price": null,
+      "input_cache_read_price": "0.00000007",
       "knowledge_cutoff": "2025-09-30",
       "reasoning": false
     },
@@ -4937,25 +5203,6 @@
       "knowledge_cutoff": "2025-06-30",
       "reasoning": false
     },
-    "mistralai/mistral-medium-3.1:batch": {
-      "name": "Mistral: Mistral Medium 3.1 (batch)",
-      "context_length": 131072,
-      "max_completion_tokens": 104857,
-      "modality": "text+image+file->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "file"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.0000004",
-      "completion_price": "0.000002",
-      "input_cache_read_price": "0.00000004",
-      "knowledge_cutoff": "2025-06-30",
-      "reasoning": false
-    },
     "z-ai/glm-4.5v": {
       "name": "Z.ai: GLM 4.5V",
       "context_length": 65536,
@@ -4993,6 +5240,25 @@
       "knowledge_cutoff": "2024-09-30",
       "reasoning": true
     },
+    "openai/gpt-5:batch": {
+      "name": "OpenAI: GPT-5 (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000625",
+      "completion_price": "0.000005",
+      "input_cache_read_price": "0.0000000625",
+      "knowledge_cutoff": "2024-09-30",
+      "reasoning": true
+    },
     "openai/gpt-5-mini": {
       "name": "OpenAI: GPT-5 Mini",
       "context_length": 400000,
@@ -5012,6 +5278,25 @@
       "knowledge_cutoff": "2024-05-31",
       "reasoning": true
     },
+    "openai/gpt-5-mini:batch": {
+      "name": "OpenAI: GPT-5 Mini (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000125",
+      "completion_price": "0.000001",
+      "input_cache_read_price": "0.0000000125",
+      "knowledge_cutoff": "2024-05-31",
+      "reasoning": true
+    },
     "openai/gpt-5-nano": {
       "name": "OpenAI: GPT-5 Nano",
       "context_length": 400000,
@@ -5028,6 +5313,25 @@
       "prompt_price": "0.00000005",
       "completion_price": "0.0000004",
       "input_cache_read_price": "0.000000005",
+      "knowledge_cutoff": "2024-05-31",
+      "reasoning": true
+    },
+    "openai/gpt-5-nano:batch": {
+      "name": "OpenAI: GPT-5 Nano (batch)",
+      "context_length": 400000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000025",
+      "completion_price": "0.0000002",
+      "input_cache_read_price": "0.0000000025",
       "knowledge_cutoff": "2024-05-31",
       "reasoning": true
     },
@@ -5139,24 +5443,6 @@
     },
     "mistralai/codestral-2508": {
       "name": "Mistral: Codestral 2508",
-      "context_length": 256000,
-      "max_completion_tokens": 204800,
-      "modality": "text+file->text",
-      "input_modalities": [
-        "text",
-        "file"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.0000003",
-      "completion_price": "0.0000009",
-      "input_cache_read_price": "0.00000003",
-      "knowledge_cutoff": "2025-03-31",
-      "reasoning": false
-    },
-    "mistralai/codestral-2508:batch": {
-      "name": "Mistral: Codestral 2508 (batch)",
       "context_length": 256000,
       "max_completion_tokens": 204800,
       "modality": "text+file->text",
@@ -5849,6 +6135,25 @@
       "knowledge_cutoff": "2024-06-30",
       "reasoning": true
     },
+    "openai/o3:batch": {
+      "name": "OpenAI: o3 (batch)",
+      "context_length": 200000,
+      "max_completion_tokens": 100000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "image",
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000001",
+      "completion_price": "0.000004",
+      "input_cache_read_price": "0.00000025",
+      "knowledge_cutoff": "2024-06-30",
+      "reasoning": true
+    },
     "openai/o4-mini": {
       "name": "OpenAI: o4 Mini",
       "context_length": 200000,
@@ -5865,6 +6170,25 @@
       "prompt_price": "0.0000011",
       "completion_price": "0.0000044",
       "input_cache_read_price": "0.000000275",
+      "knowledge_cutoff": "2024-06-30",
+      "reasoning": true
+    },
+    "openai/o4-mini:batch": {
+      "name": "OpenAI: o4 Mini (batch)",
+      "context_length": 200000,
+      "max_completion_tokens": 100000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "image",
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000055",
+      "completion_price": "0.0000022",
+      "input_cache_read_price": "0.0000001375",
       "knowledge_cutoff": "2024-06-30",
       "reasoning": true
     },
@@ -5887,6 +6211,25 @@
       "knowledge_cutoff": "2024-06-30",
       "reasoning": false
     },
+    "openai/gpt-4.1:batch": {
+      "name": "OpenAI: GPT-4.1 (batch)",
+      "context_length": 1047576,
+      "max_completion_tokens": 32768,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "image",
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000001",
+      "completion_price": "0.000004",
+      "input_cache_read_price": "0.00000025",
+      "knowledge_cutoff": "2024-06-30",
+      "reasoning": false
+    },
     "openai/gpt-4.1-mini": {
       "name": "OpenAI: GPT-4.1 Mini",
       "context_length": 1047576,
@@ -5906,6 +6249,25 @@
       "knowledge_cutoff": "2024-06-30",
       "reasoning": false
     },
+    "openai/gpt-4.1-mini:batch": {
+      "name": "OpenAI: GPT-4.1 Mini (batch)",
+      "context_length": 1047576,
+      "max_completion_tokens": 32768,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "image",
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000002",
+      "completion_price": "0.0000008",
+      "input_cache_read_price": "0.00000005",
+      "knowledge_cutoff": "2024-06-30",
+      "reasoning": false
+    },
     "openai/gpt-4.1-nano": {
       "name": "OpenAI: GPT-4.1 Nano",
       "context_length": 1047576,
@@ -5922,6 +6284,25 @@
       "prompt_price": "0.0000001",
       "completion_price": "0.0000004",
       "input_cache_read_price": "0.000000025",
+      "knowledge_cutoff": "2024-06-30",
+      "reasoning": false
+    },
+    "openai/gpt-4.1-nano:batch": {
+      "name": "OpenAI: GPT-4.1 Nano (batch)",
+      "context_length": 1047576,
+      "max_completion_tokens": 32768,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "image",
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000005",
+      "completion_price": "0.0000002",
+      "input_cache_read_price": "0.0000000125",
       "knowledge_cutoff": "2024-06-30",
       "reasoning": false
     },
@@ -5946,7 +6327,7 @@
     "meta-llama/llama-4-scout": {
       "name": "Meta: Llama 4 Scout",
       "context_length": 1310720,
-      "max_completion_tokens": 8192,
+      "max_completion_tokens": 16384,
       "modality": "text+image->text",
       "input_modalities": [
         "text",
@@ -5955,9 +6336,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000011",
-      "completion_price": "0.00000034",
-      "input_cache_read_price": "0.000000055",
+      "prompt_price": "0.0000001",
+      "completion_price": "0.0000003",
+      "input_cache_read_price": null,
       "knowledge_cutoff": "2024-08-31",
       "reasoning": false
     },
@@ -6276,6 +6657,24 @@
       "prompt_price": "0.0000011",
       "completion_price": "0.0000044",
       "input_cache_read_price": "0.00000055",
+      "knowledge_cutoff": "2023-10-31",
+      "reasoning": true
+    },
+    "openai/o3-mini:batch": {
+      "name": "OpenAI: o3 Mini (batch)",
+      "context_length": 200000,
+      "max_completion_tokens": 100000,
+      "modality": "text+file->text",
+      "input_modalities": [
+        "text",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000055",
+      "completion_price": "0.0000022",
+      "input_cache_read_price": "0.000000275",
       "knowledge_cutoff": "2023-10-31",
       "reasoning": true
     },
@@ -6605,7 +7004,7 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000003",
+      "prompt_price": "0.0000025",
       "completion_price": "0.000005",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2024-06-30",
@@ -6889,6 +7288,25 @@
       "knowledge_cutoff": "2023-10-31",
       "reasoning": false
     },
+    "openai/gpt-4o-mini:batch": {
+      "name": "OpenAI: GPT-4o-mini (batch)",
+      "context_length": 128000,
+      "max_completion_tokens": 16384,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000075",
+      "completion_price": "0.0000003",
+      "input_cache_read_price": "0.0000000375",
+      "knowledge_cutoff": "2023-10-31",
+      "reasoning": false
+    },
     "google/gemma-2-27b-it": {
       "name": "Google: Gemma 2 27B",
       "context_length": 8192,
@@ -6944,6 +7362,25 @@
       "knowledge_cutoff": "2023-10-31",
       "reasoning": false
     },
+    "openai/gpt-4o:batch": {
+      "name": "OpenAI: GPT-4o (batch)",
+      "context_length": 128000,
+      "max_completion_tokens": 16384,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000125",
+      "completion_price": "0.000005",
+      "input_cache_read_price": "0.000000625",
+      "knowledge_cutoff": "2023-10-31",
+      "reasoning": false
+    },
     "mistralai/mixtral-8x22b-instruct": {
       "name": "Mistral: Mixtral 8x22B Instruct",
       "context_length": 65536,
@@ -6993,6 +7430,24 @@
       ],
       "prompt_price": "0.00001",
       "completion_price": "0.00003",
+      "input_cache_read_price": null,
+      "knowledge_cutoff": "2023-12-31",
+      "reasoning": false
+    },
+    "openai/gpt-4-turbo:batch": {
+      "name": "OpenAI: GPT-4 Turbo (batch)",
+      "context_length": 128000,
+      "max_completion_tokens": 4096,
+      "modality": "text+image->text",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000005",
+      "completion_price": "0.000015",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2023-12-31",
       "reasoning": false
@@ -7134,7 +7589,7 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000005",
+      "prompt_price": "0.0000004",
       "completion_price": "0.00000075",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2023-06-30",
@@ -7187,6 +7642,23 @@
       ],
       "prompt_price": "0.0000005",
       "completion_price": "0.0000015",
+      "input_cache_read_price": null,
+      "knowledge_cutoff": "2021-09-30",
+      "reasoning": false
+    },
+    "openai/gpt-3.5-turbo:batch": {
+      "name": "OpenAI: GPT-3.5 Turbo (batch)",
+      "context_length": 16385,
+      "max_completion_tokens": 4096,
+      "modality": "text->text",
+      "input_modalities": [
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000025",
+      "completion_price": "0.00000075",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2021-09-30",
       "reasoning": false

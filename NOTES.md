@@ -23,3 +23,5 @@ MCP_BRIDGE_URL=http://host:port ./test_mcp_tools
 
 
 sudo ls /var/lib/docker/volumes/mcp-bridge_tool_cache/_data/
+
+rg --hidden -g '.env*' 'tax-'

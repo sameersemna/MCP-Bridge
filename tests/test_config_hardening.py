@@ -942,6 +942,106 @@ def test_call_tools_cache_enabled_when_predicate_true(monkeypatch: pytest.Monkey
     assert len(cache) == 1
 
 
+class _FakeRedis:
+    """Minimal in-memory stand-in for the redis client used by RedisToolCache."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, str] = {}
+
+    def ping(self) -> bool:
+        return True
+
+    def get(self, key: str) -> str | None:
+        return self._store.get(key)
+
+    def set(self, key: str, value: str, ex: int | None = None) -> bool:
+        self._store[key] = value
+        return True
+
+
+def _redis_cache_with_fake(monkeypatch: pytest.MonkeyPatch, ttl: int = 3600) -> tuple[openai_utils.RedisToolCache, _FakeRedis]:
+    fake = _FakeRedis()
+    cache = openai_utils.RedisToolCache(url="redis://localhost:6379/0", prefix="test", ttl_seconds=ttl)
+    cache._client = fake  # type: ignore[assignment]
+    return cache, fake
+
+
+def test_redis_tool_cache_roundtrips(monkeypatch: pytest.MonkeyPatch) -> None:
+    cache, fake = _redis_cache_with_fake(monkeypatch)
+    result = {"isError": False, "content": [{"type": "text", "text": "redis result"}]}
+
+    cache.put("google_search", "some query", result)
+    hit = cache.get("google_search", "some query")
+
+    assert hit is not None
+    assert hit.content[0].text == "redis result"
+    # Key is namespaced with the prefix.
+    assert any(k.startswith("test:") for k in fake._store)
+
+
+def test_redis_tool_cache_does_not_cache_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    cache, fake = _redis_cache_with_fake(monkeypatch)
+    cache.put("google_search", "some query", {"isError": True, "content": [{"type": "text", "text": "failed"}]})
+
+    assert cache.get("google_search", "some query") is None
+    assert fake._store == {}
+
+
+def test_redis_tool_cache_miss_on_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the Redis client is None (unreachable), get/put are no-ops."""
+    cache = openai_utils.RedisToolCache(url="redis://localhost:6379/0", prefix="test", ttl_seconds=3600)
+    cache._client = None  # type: ignore[assignment]
+
+    cache.put("google_search", "some query", {"isError": False, "content": [{"type": "text", "text": "x"}]})
+    assert cache.get("google_search", "some query") is None
+
+
+def test_get_tool_cache_falls_back_to_file_when_no_redis(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """Without REDIS_URL, get_tool_cache() returns the on-disk cache."""
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_TOOL_CACHE_DIR", str(tmp_path / "tool_cache"))
+
+    cache = openai_utils.get_tool_cache()
+    assert isinstance(cache, openai_utils.PersistentToolCache)
+
+
+def test_get_tool_cache_uses_redis_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With REDIS_URL set and Redis reachable, get_tool_cache() returns a RedisToolCache."""
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("REDIS_PREFIX", "test")
+
+    # Stub RedisToolCache so the factory sees a reachable client without a live server.
+    class _StubRedisCache(openai_utils.RedisToolCache):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._client = _FakeRedis()  # type: ignore[assignment]
+
+    monkeypatch.setattr(openai_utils, "RedisToolCache", _StubRedisCache)
+
+    cache = openai_utils.get_tool_cache()
+    assert isinstance(cache, openai_utils.RedisToolCache)
+
+
+def test_call_tools_serves_exact_match_from_redis_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        calls.append(payload)
+        return {"isError": False, "content": [{"type": "text", "text": "web result"}]}
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    cache, _ = _redis_cache_with_fake(monkeypatch)
+    query = "Hajr al-Asas foundation stone ceremony"
+
+    # First call hits the web and persists to Redis.
+    asyncio.run(openai_utils.call_tools([("google_search", json.dumps({"query": query}))], persistent_cache=cache))
+    # Second call (same exact query) is served from Redis.
+    asyncio.run(openai_utils.call_tools([("google_search", json.dumps({"query": query}))], persistent_cache=cache))
+
+    assert len(calls) == 1
+
+
 def test_chat_completion_add_tools_does_not_wait_for_every_unavailable_session(monkeypatch: pytest.MonkeyPatch) -> None:
     class UnavailableSession:
         name = "unavailable"

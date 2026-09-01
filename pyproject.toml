@@ -20,6 +20,7 @@ dependencies = [
     "opentelemetry-sdk>=1.33.1",
     "pydantic>=2.10.4",
     "pydantic-settings>=2.7.0",
+    "redis>=5.0.0",
     "sse-starlette>=2.2.0",
     "uvicorn>=0.34.0",
 ]

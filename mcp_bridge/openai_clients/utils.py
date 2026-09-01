@@ -1110,6 +1110,126 @@ class PersistentToolCache:
             logger.debug(f"tool cache write failed: {exc}")
 
 
+class RedisToolCache:
+    """Redis-backed, TTL-bounded cache of tool results.
+
+    Drop-in replacement for :class:`PersistentToolCache` with the same
+    ``get``/``put`` interface, so the tool loop and ``call_tools`` need no
+    changes. Keys are the same SHA-256 hash of ``(tool_name, query)`` used by
+    the file backend, namespaced with ``REDIS_PREFIX`` so multiple bridges can
+    share one Redis instance without colliding. Values are the same JSON payload
+    the file backend writes, so a cache populated by either backend is readable
+    by the other.
+
+    Uses the synchronous ``redis.Redis`` client (not ``redis.asyncio``) to keep
+    the interface identical to the file backend. Redis operations are fast and
+    the tool loop is already I/O-bound, so this does not meaningfully block the
+    event loop. If Redis is unreachable, the cache degrades gracefully to a
+    no-op (misses on read, silent drop on write) rather than raising.
+    """
+
+    def __init__(
+        self,
+        url: str | None = None,
+        prefix: str | None = None,
+        ttl_seconds: int | None = None,
+    ) -> None:
+        self._url = url or get_redis_url()
+        self._prefix = (prefix or get_redis_prefix()).rstrip(":")
+        self._ttl_seconds = ttl_seconds if ttl_seconds is not None else get_tool_cache_ttl_seconds()
+        self._enabled = get_tool_cache_enabled()
+        self._client: Any | None = None
+        if self._enabled and self._url:
+            try:
+                from redis import Redis  # local import keeps redis optional at import time
+                self._client = Redis.from_url(self._url, decode_responses=True)
+                # Fail fast: verify connectivity so we can log a clear warning
+                # and fall back to a no-op instead of failing on every request.
+                self._client.ping()
+            except Exception as exc:
+                logger.warning(f"redis unavailable ({exc}); Redis tool cache disabled")
+                self._client = None
+
+    def _key(self, tool_name: str, query: str) -> str:
+        return f"{self._prefix}:{_tool_cache_key(tool_name, query)}"
+
+    def get(self, tool_name: str, query: str) -> Any | None:
+        if not self._enabled or not query or self._client is None:
+            return None
+        try:
+            raw = self._client.get(self._key(tool_name, query))
+        except Exception as exc:
+            logger.debug(f"redis cache read failed: {exc}")
+            return None
+        if not raw:
+            return None
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        try:
+            return CallToolResult.model_validate(payload.get("result"))
+        except Exception:
+            return None
+
+    def put(self, tool_name: str, query: str, result: Any) -> None:
+        if not self._enabled or not query or result is None or self._client is None:
+            return
+        # Don't cache error results.
+        if isinstance(result, dict):
+            if result.get("isError"):
+                return
+        elif getattr(result, "isError", False):
+            return
+
+        try:
+            if isinstance(result, dict):
+                result_dict = result
+            else:
+                result_dict = result.model_dump(exclude_defaults=True, exclude_none=True)
+        except Exception:
+            return
+
+        payload = {
+            "tool_name": tool_name,
+            "query": query,
+            "cached_at": time.time(),
+            "result": result_dict,
+        }
+        try:
+            self._client.set(self._key(tool_name, query), json.dumps(payload, ensure_ascii=False), ex=self._ttl_seconds)
+        except Exception as exc:
+            logger.debug(f"redis cache write failed: {exc}")
+
+
+def get_redis_url() -> str:
+    """Return the Redis connection URL from ``REDIS_URL`` (or empty)."""
+    return os.getenv("REDIS_URL", "").strip()
+
+
+def get_redis_prefix() -> str:
+    """Return the Redis key prefix from ``REDIS_PREFIX`` (or a default)."""
+    return os.getenv("REDIS_PREFIX", "mcp-bridge").strip()
+
+
+def get_tool_cache() -> PersistentToolCache | RedisToolCache:
+    """Return the configured persistent tool cache.
+
+    If ``REDIS_URL`` is set (and Redis is reachable), returns a
+    :class:`RedisToolCache`. Otherwise falls back to the on-disk
+    :class:`PersistentToolCache`. This lets operators opt into Redis caching
+    purely by setting environment variables, with the existing file-based cache
+    as the default.
+    """
+    if get_redis_url():
+        redis_cache = RedisToolCache()
+        if redis_cache._client is not None:
+            logger.info("using Redis tool cache")
+            return redis_cache
+        logger.warning("Redis configured but unreachable; falling back to on-disk tool cache")
+    return PersistentToolCache()
+
+
 async def call_tool(
     tool_call_name: str, tool_call_json: str, timeout: int | None = None,
     trace_logger: RequestTraceLogger | None = None,
