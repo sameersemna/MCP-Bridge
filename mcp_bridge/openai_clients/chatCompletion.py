@@ -1533,14 +1533,22 @@ async def chat_completions(
                         )
                     raise HTTPException(
                         status_code=502,
-                        detail=f"Upstream inference server returned status {upstream_response.status_code}",
+                        detail=(
+                            f"Upstream inference server did not return a usable response "
+                            f"after {DEFAULT_UPSTREAM_RETRY_COUNT + 1} attempts "
+                            f"(last status {upstream_response.status_code}): "
+                            f"{text[:300] or '<empty body>'}"
+                        ),
                     )
 
             if upstream_response.status_code >= 400:
                 logger.error(f"upstream inference server returned status {upstream_response.status_code}: {text[:2000]}")
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Upstream inference server returned status {upstream_response.status_code}",
+                    detail=(
+                        f"Upstream inference server returned status "
+                        f"{upstream_response.status_code}: {text[:300] or '<empty body>'}"
+                    ),
                 )
 
             try:

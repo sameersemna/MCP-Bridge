@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -721,17 +722,40 @@ def test_stdio_client_adds_compatibility_path_to_subprocess_environment() -> Non
     assert compat_dir in pythonpath.split(os.pathsep)
 
 
-def test_session_maintainer_stops_after_initial_startup_failure() -> None:
+def test_session_maintainer_keeps_retrying_after_startup_failure() -> None:
+    # A remote MCP server can legitimately restart or blip while the bridge
+    # is running (e.g. an SSE server briefly going down). The maintainer must
+    # keep retrying indefinitely rather than permanently marking the client
+    # offline via `return` -- otherwise recovering from a transient failure
+    # requires a full bridge restart, even after the remote server recovers.
     class BrokenClient(GenericMcpClient):
         def __init__(self) -> None:
             super().__init__("broken")
+            self.attempts = 0
 
         async def _maintain_session(self) -> None:
+            self.attempts += 1
             raise RuntimeError("startup failed")
 
-    client = BrokenClient()
+    async def run() -> int:
+        client = BrokenClient()
+        task = asyncio.create_task(client._session_maintainer())
+        # reconnect_delay starts at 0.5s and doubles up to a 5s cap, so this
+        # window covers a couple of retries without waiting for the cap.
+        await asyncio.sleep(1.2)
 
-    asyncio.run(asyncio.wait_for(client._session_maintainer(), timeout=0.2))
+        assert not task.done()
+        assert client.session is None
+        assert client._offline is True
+
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        return client.attempts
+
+    attempts = asyncio.run(run())
+    assert attempts >= 2
 
 
 def test_call_tool_uses_a_longer_default_timeout() -> None:

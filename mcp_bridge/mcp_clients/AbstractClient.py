@@ -135,6 +135,15 @@ class GenericMcpClient(ABC):
         return exc.__class__.__name__ in {"HTTPStatusError", "ConnectError", "ReadTimeout", "WriteError"}
 
     async def _session_maintainer(self):
+        # Always keep retrying (with capped exponential backoff) rather than
+        # permanently giving up on a transport error or a failed connection
+        # attempt. A remote MCP server (e.g. an SSE server) can legitimately
+        # restart or blip while the bridge is running; previously any error
+        # not classified as a plain retry (a transport error, or any error
+        # while `self.session` was already `None`, which is always true here
+        # since subclasses clear `self.session` before re-raising) marked the
+        # client permanently offline via `return`, requiring a full bridge
+        # restart to ever reconnect even after the remote server recovered.
         reconnect_delay = 0.5
         while True:
             try:
@@ -143,20 +152,12 @@ class GenericMcpClient(ABC):
                 logger.error(f"failed to maintain session for {self.name}: file {e.filename} not found.")
             except Exception as e:
                 if self._is_transport_error(e):
-                    logger.warning(f"transport error for {self.name}: {e}; leaving client offline")
-                    self.session = None
-                    self._offline = True
-                    return
-
-                logger.error(f"failed to maintain session for {self.name}: {type(e)} {e.args}")
-                if self.session is None:
-                    logger.warning(f"{self.name} never established a session; leaving client offline")
-                    self.session = None
-                    self._offline = True
-                    return
+                    logger.warning(f"transport error for {self.name}: {e}; will keep retrying")
+                else:
+                    logger.error(f"failed to maintain session for {self.name}: {type(e)} {e.args}")
 
             self.session = None
-            self._offline = False
+            self._offline = True
             logger.debug(f"restarting session for {self.name} in {reconnect_delay}s")
             await asyncio.sleep(reconnect_delay)
             reconnect_delay = min(reconnect_delay * 2, 5.0)

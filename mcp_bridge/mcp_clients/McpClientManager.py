@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover - fallback for environments without the 
 
 from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
+from mcp_bridge.logging import redact_sensitive_data
 
 from .DockerClient import DockerClient
 from .SseClient import HttpClient, SseClient
@@ -34,6 +35,48 @@ from .StdioClient import StdioClient
 DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS = 10.0
 
 client_types = Union[StdioClient, SseClient, HttpClient, DockerClient]
+
+# CLI flags (e.g. `--password`, `--api-key`) whose *following* arg value is a
+# secret. `redact_sensitive_data` only redacts dict values by key name, which
+# covers `env` and `auth`, but a value passed as a bare CLI arg inside
+# `args` (e.g. redis-mcp-server's `--password <value>`) has no key to match
+# against, so it needs this separate pass.
+_SENSITIVE_ARG_FLAG_KEYWORDS = ("password", "token", "secret", "key", "authorization")
+
+
+def _redact_server_config_for_logging(server_config: Any) -> Any:
+    """Best-effort redaction of a server config for a debug log line.
+
+    Falls back to the original object on any unexpected shape so that a
+    logging helper can never break client construction.
+    """
+    try:
+        if hasattr(server_config, "model_dump"):
+            data = server_config.model_dump()
+        elif isinstance(server_config, dict):
+            data = dict(server_config)
+        elif hasattr(server_config, "__dict__"):
+            data = dict(vars(server_config))
+        else:
+            return server_config
+
+        data = redact_sensitive_data(data)
+
+        args = data.get("args")
+        if isinstance(args, list):
+            redacted_args = list(args)
+            for i, item in enumerate(redacted_args[:-1]):
+                if (
+                    isinstance(item, str)
+                    and item.startswith("-")
+                    and any(keyword in item.lower() for keyword in _SENSITIVE_ARG_FLAG_KEYWORDS)
+                ):
+                    redacted_args[i + 1] = "[REDACTED]"
+            data["args"] = redacted_args
+
+        return data
+    except Exception:
+        return server_config
 
 
 def _is_disabled_server(server_config: Any) -> bool:
@@ -137,7 +180,7 @@ class MCPClientManager:
             )
 
     async def construct_client(self, name: str, server_config: Any) -> client_types:
-        logger.debug(f"Constructing client for {server_config}")
+        logger.debug(f"Constructing client for {_redact_server_config_for_logging(server_config)}")
 
         try:
             client_class = self._get_client_class(server_config)

@@ -1,8 +1,25 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-01T08:30:17.440446+00:00",
-  "model_count": 420,
+  "fetched_at": "2026-09-01T15:19:29.587440+00:00",
+  "model_count": 418,
   "models": {
+    "inception/mercury-2.5-preview": {
+      "name": "Inception: Mercury 2.5 Preview",
+      "context_length": 260000,
+      "max_completion_tokens": 65536,
+      "modality": "text->text",
+      "input_modalities": [
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000004",
+      "completion_price": "0.00000015",
+      "input_cache_read_price": "0.000000004",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
     "ibm-granite/granite-4.2-8b": {
       "name": "IBM: Granite 4.2 8B",
       "context_length": 131072,
@@ -144,9 +161,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000044",
-      "completion_price": "0.00000132",
-      "input_cache_read_price": "0.000000014",
+      "prompt_price": "0.00000022",
+      "completion_price": "0.00000066",
+      "input_cache_read_price": "0.000000007",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -397,9 +414,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000011154",
-      "completion_price": "0.0000033462",
-      "input_cache_read_price": "0.00000003718",
+      "prompt_price": "0.00000066",
+      "completion_price": "0.00000198",
+      "input_cache_read_price": "0.000000022",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -605,7 +622,7 @@
     "~deepseek/deepseek-v4-flash-latest": {
       "name": "DeepSeek V4 Flash Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 393216,
+      "max_completion_tokens": 131072,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -613,9 +630,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000005",
-      "completion_price": "0.00000016",
-      "input_cache_read_price": "0.000000013",
+      "prompt_price": "0.00000004998",
+      "completion_price": "0.00000009996",
+      "input_cache_read_price": "0.000000009996",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -726,25 +743,6 @@
       "prompt_price": "0.00000003",
       "completion_price": "0.00000013",
       "input_cache_read_price": "0.000000006",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
-    "anthropic/claude-opus-5-fast": {
-      "name": "Claude Opus 5 (Fast)",
-      "context_length": 1000000,
-      "max_completion_tokens": 128000,
-      "modality": "text+image+file->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "file"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00001",
-      "completion_price": "0.00005",
-      "input_cache_read_price": "0.000001",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1899,25 +1897,6 @@
       "knowledge_cutoff": null,
       "reasoning": true
     },
-    "anthropic/claude-opus-4.8-fast": {
-      "name": "Anthropic: Claude Opus 4.8 (Fast)",
-      "context_length": 1000000,
-      "max_completion_tokens": 128000,
-      "modality": "text+image+file->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "file"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00001",
-      "completion_price": "0.00005",
-      "input_cache_read_price": "0.000001",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
     "anthropic/claude-opus-4.8": {
       "name": "Anthropic: Claude Opus 4.8",
       "context_length": 1000000,
@@ -2032,25 +2011,6 @@
       "completion_price": "0.0000045",
       "input_cache_read_price": "0.000000075",
       "knowledge_cutoff": "2025-01-01",
-      "reasoning": true
-    },
-    "anthropic/claude-opus-4.7-fast": {
-      "name": "Anthropic: Claude Opus 4.7 (Fast)",
-      "context_length": 1000000,
-      "max_completion_tokens": 128000,
-      "modality": "text+image+file->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "file"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00003",
-      "completion_price": "0.00015",
-      "input_cache_read_price": "0.000003",
-      "knowledge_cutoff": null,
       "reasoning": true
     },
     "perceptron/perceptron-mk1": {
@@ -2561,9 +2521,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000008092",
-      "completion_price": "0.00000016184",
-      "input_cache_read_price": "0.000000016184",
+      "prompt_price": "0.0000000763",
+      "completion_price": "0.0000001526",
+      "input_cache_read_price": "0.00000001526",
       "knowledge_cutoff": null,
       "reasoning": true
     },
