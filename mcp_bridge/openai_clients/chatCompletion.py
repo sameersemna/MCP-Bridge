@@ -30,17 +30,100 @@ DEFAULT_UPSTREAM_RETRY_COUNT = 2
 DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS = 2.0
 
 
-def _diagnostic_snippet(text: str, limit: int = 300) -> str:
-    """Truncated, whitespace-collapsed excerpt of an upstream body for error details.
+def _extract_error_messages(node: Any, *, depth: int = 0, max_depth: int = 6) -> list[str]:
+    """Recursively pull human-readable message strings out of a parsed error body.
 
-    Some providers pad a slow response with a long run of blank/whitespace
-    keep-alive bytes before any real content (observed on large, overloaded
-    free-tier models); a naive `text[:limit]` would show only that padding
-    and hide the actual error. Collapsing whitespace first ensures the
-    limit is spent on real content.
+    OpenRouter (and similar aggregators) commonly wrap a backend's error inside
+    several layers of JSON, where each layer's payload is itself a JSON
+    document serialized into a string field (``metadata.raw``, ``details``,
+    ...): ``{"error": {"message": "...", "metadata": {"raw": "{\\"error\\":
+    {\\"details\\": \\"{\\\\\\"error\\\\\\": {\\\\\\"message\\\\\\": ...\\"}}"}}}}``.
+    Each nesting level adds backslash-escaping overhead with no new
+    information, so a naive fixed-length truncation of the raw body is spent
+    entirely on punctuation and never reaches the actual reason.
+
+    This walks the parsed structure, and whenever it finds a string value
+    under a message-shaped key (``message``/``details``/``raw``/``detail``)
+    that itself parses as JSON, it unwraps and recurses into it instead of
+    treating it as literal text. The result is an ordered list of every real
+    message found, outermost first, so the caller can join them into a
+    "outer context -> ... -> actual reason" chain.
+    """
+    if depth > max_depth:
+        return []
+
+    messages: list[str] = []
+    if isinstance(node, dict):
+        message_keys = ("message", "details", "raw", "detail")
+        for key in message_keys:
+            value = node.get(key)
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped[:1] in "{[":
+                    try:
+                        parsed = json.loads(stripped)
+                    except (json.JSONDecodeError, ValueError):
+                        parsed = None
+                    if parsed is not None:
+                        nested = _extract_error_messages(parsed, depth=depth + 1, max_depth=max_depth)
+                        if nested:
+                            messages.extend(nested)
+                            continue
+                if stripped:
+                    messages.append(stripped)
+            elif isinstance(value, (dict, list)):
+                messages.extend(_extract_error_messages(value, depth=depth + 1, max_depth=max_depth))
+        for key, value in node.items():
+            if key in message_keys:
+                continue
+            if isinstance(value, (dict, list)):
+                messages.extend(_extract_error_messages(value, depth=depth + 1, max_depth=max_depth))
+    elif isinstance(node, list):
+        for item in node:
+            messages.extend(_extract_error_messages(item, depth=depth + 1, max_depth=max_depth))
+
+    return messages
+
+
+def _diagnostic_snippet(text: str, limit: int = 500) -> str:
+    """Human-readable excerpt of an upstream error body for error details.
+
+    Tries to unwrap nested JSON-in-JSON error structures (see
+    ``_extract_error_messages``) into a readable "outer -> ... -> actual
+    reason" chain first, since a naive truncation of a deeply nested body
+    tends to cut off before the real message ever starts. Falls back to a
+    whitespace-collapsed truncation of the raw body when the body isn't JSON
+    or carries no recognizable message fields.
+
+    Some providers also pad a slow response with a long run of blank/
+    whitespace keep-alive bytes before any real content (observed on large,
+    overloaded free-tier models); collapsing whitespace before truncating
+    the fallback path ensures the limit is spent on real content.
     """
     collapsed = re.sub(r"\s+", " ", text).strip()
-    return collapsed[:limit] or "<empty body>"
+    if not collapsed:
+        return "<empty body>"
+
+    try:
+        parsed = json.loads(collapsed)
+    except (json.JSONDecodeError, ValueError):
+        return collapsed[:limit]
+
+    messages = _extract_error_messages(parsed)
+    if not messages:
+        return collapsed[:limit]
+
+    seen: set[str] = set()
+    unique_messages = []
+    for message in messages:
+        if message not in seen:
+            seen.add(message)
+            unique_messages.append(message)
+
+    joined = " -> ".join(unique_messages)
+    if len(joined) <= limit:
+        return joined
+    return joined[: limit - 1].rstrip() + "…"
 # Upper bound on how long we will wait for a provider's `Retry-After` hint.
 # Free-tier providers often ask for 60s; we honor it but cap it so a single
 # request cannot stall the worker for an unreasonable time.
@@ -600,6 +683,46 @@ def _should_stop_tool_loop_on_tool_errors(
         return True
 
     return False
+
+
+def _append_placeholder_tool_results(
+    request_messages: list[ChatCompletionRequestMessage],
+    assistant_message: Any,
+    *,
+    reason: str,
+) -> None:
+    """Append a placeholder ``tool`` message for every pending tool call.
+
+    Several tool-loop bail-out paths (repeated-call detection, the turn limit,
+    weak evidence, the hard context budget) decide to stop the loop -- or
+    divert to the synthesis endpoint -- right after the model has issued a
+    ``tool_calls`` assistant message but *before* those calls are ever
+    dispatched. An OpenAI-compatible conversation is structurally invalid if
+    an assistant ``tool_calls`` message isn't immediately followed by a
+    matching ``tool`` message for every call id; strict providers (observed
+    with Minimax) reject the very next request outright with a 400 "invalid
+    params" error, which surfaces to the bridge's caller as an opaque failure
+    with no indication that the tool calls were simply never answered.
+
+    This appends a lightweight placeholder ``tool`` reply for each pending
+    call instead of actually running it, keeping the conversation valid for
+    whatever request comes next (the synthesis call, or the loop's own retry)
+    without spending extra tool-call budget on calls the loop already decided
+    to abandon.
+    """
+    for tool_call in _extract_tool_calls(assistant_message):
+        call_id = tool_call.get("id") if isinstance(tool_call, dict) else getattr(tool_call, "id", None)
+        if not call_id:
+            continue
+        request_messages.append(
+            ChatCompletionRequestMessage.model_validate(
+                {
+                    "role": "tool",
+                    "content": f"[not executed: {reason}]",
+                    "tool_call_id": call_id,
+                }
+            )
+        )
 
 
 def _build_synthesis_request(
@@ -1789,6 +1912,11 @@ async def chat_completions(
                 logger.warning(
                     "detected repeated tool call(s); stopping tool loop and synthesizing a final answer"
                 )
+                _append_placeholder_tool_results(
+                    request.messages,
+                    response.choices[0].message,
+                    reason="tool loop stopped: the same tool call was repeated without new information",
+                )
                 synthesized_response = await _try_synthesize_tool_loop_result(
                     client,
                     request,
@@ -1815,6 +1943,11 @@ async def chat_completions(
                         max_tool_turns=max_tool_turns,
                     )
                 )
+                _append_placeholder_tool_results(
+                    request.messages,
+                    response.choices[0].message,
+                    reason="tool loop stopped: reached its turn limit",
+                )
                 synthesized_response = await _try_synthesize_tool_loop_result(
                     client,
                     request,
@@ -1831,6 +1964,11 @@ async def chat_completions(
 
             if _has_only_weak_tool_evidence(request.messages):
                 logger.warning("tool evidence is weak or empty; stopping tool loop before another iteration")
+                _append_placeholder_tool_results(
+                    request.messages,
+                    response.choices[0].message,
+                    reason="tool loop stopped: gathered evidence was too weak to continue",
+                )
                 synthesized_response = await _try_synthesize_tool_loop_result(
                     client,
                     request,
@@ -1852,6 +1990,11 @@ async def chat_completions(
                     f"tool loop context budget exceeded ({prompt_tokens} > {max_context_tokens} tokens); "
                     "stopping tool loop and synthesizing a final answer"
                 )
+                _append_placeholder_tool_results(
+                    request.messages,
+                    response.choices[0].message,
+                    reason="tool loop stopped: conversation context grew too large",
+                )
                 synthesized_response = await _try_synthesize_tool_loop_result(
                     client,
                     request,
@@ -1865,17 +2008,6 @@ async def chat_completions(
                     stop_reason="max_context_tokens",
                     request_messages=request.messages,
                 )
-
-            # Proactive context compression: if the budget is nearly exceeded,
-            # compress older tool messages into a summary so the loop can keep
-            # going instead of stopping early.
-            if _context_budget_nearly_exceeded(response, max_context_tokens):
-                if _compress_tool_context(request.messages):
-                    logger.info(
-                        "context budget nearly exceeded; compressed older tool messages; "
-                        "continuing tool loop"
-                    )
-                    continue
 
             tool_turns_completed += 1
 
@@ -1984,4 +2116,18 @@ async def chat_completions(
                     logger.warning(
                         f"tool call failures detected; feeding errors back to the model for correction: {'; '.join(tool_errors)}"
                     )
-                    continue
+
+                # Proactive context compression: if the budget is nearly exceeded,
+                # compress older tool messages into a summary so the loop can keep
+                # going instead of stopping early. Deliberately placed AFTER this
+                # round's tool calls have been dispatched and answered (above):
+                # compressing before dispatch would leave the assistant's
+                # `tool_calls` message with no matching `tool` replies yet, which
+                # strict providers (observed with Minimax) reject outright as a
+                # malformed conversation.
+                if _context_budget_nearly_exceeded(response, max_context_tokens):
+                    if _compress_tool_context(request.messages):
+                        logger.info(
+                            "context budget nearly exceeded; compressed older tool messages; "
+                            "continuing tool loop"
+                        )

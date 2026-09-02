@@ -223,6 +223,136 @@ def test_chat_completions_retries_429_and_honors_retry_after(monkeypatch):
     assert response.choices[0].message.content == "Recovered successfully."
 
 
+def _multi_tool_calls_response(calls: list[tuple[str, str, str]], *, prompt_tokens: int = 100) -> str:
+    """Like `_tool_calls_response` but with several tool calls in one turn.
+
+    `calls` is a list of (call_id, tool_name, arguments_json) tuples.
+    """
+    return json.dumps(
+        {
+            "id": "gen-multi",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {"name": tool_name, "arguments": arguments},
+                            }
+                            for call_id, tool_name, arguments in calls
+                        ],
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": 10, "total_tokens": prompt_tokens + 10},
+        }
+    )
+
+
+def test_pending_tool_calls_are_dispatched_before_proactive_compression(monkeypatch):
+    """Regression test for a real failure: when the context budget is "nearly
+    exceeded", the bridge used to compress older tool messages and retry the
+    upstream call *before* dispatching the CURRENT round's tool calls. That
+    left the just-appended assistant `tool_calls` message with no matching
+    `tool` replies -- an invalid OpenAI-style conversation that strict
+    providers (observed with Minimax, error code 2013 "invalid params") reject
+    outright with a 400, surfacing as an opaque failure to the bridge's caller.
+
+    This reproduces the exact shape: round 1 dispatches enough tool calls to
+    give `_compress_tool_context` something to compress (more than its
+    `keep_recent=6`); round 2 issues one more tool call and reports high
+    enough `prompt_tokens` to cross the "nearly exceeded" (70%) threshold
+    without crossing the hard limit. The fix must dispatch round 2's tool
+    call (and append its result) *before* compressing and moving on.
+    """
+    round1_calls = [(f"call_{i}", "search", f'{{"query": "q{i}"}}') for i in range(8)]
+    round2_call_id = "call_round2"
+
+    max_ctx = chat_completion_module.get_max_context_tokens("test")
+    nearly_exceeded_prompt_tokens = int(max_ctx * 0.7) + 100
+    assert nearly_exceeded_prompt_tokens < max_ctx, "test assumption: nearly-exceeded but not hard-exceeded"
+
+    fake_client = FakeClient(
+        [
+            FakeResponse(200, _multi_tool_calls_response(round1_calls)),
+            FakeResponse(
+                200,
+                _multi_tool_calls_response(
+                    [(round2_call_id, "search", '{"query": "one more"}')],
+                    prompt_tokens=nearly_exceeded_prompt_tokens,
+                ),
+            ),
+            FakeResponse(200, _stop_response("Final answer after compression.")),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    async def fake_call_tools(tool_calls, **kwargs):
+        return [
+            CallToolResult(
+                content=[TextContent(type="text", text=f"result for {name} {arguments}")],
+                isError=False,
+            )
+            for name, arguments in tool_calls
+        ]
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(chat_completion_module, "call_tools", fake_call_tools)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "do a lot of research"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    response = asyncio.run(chat_completion_module.chat_completions(request, None))
+
+    assert response.choices[0].message.content == "Final answer after compression."
+    # Three upstream calls: round 1, round 2, and the final answer.
+    assert len(fake_client.posts) == 3
+
+    # The THIRD upstream call's request is what would have been rejected by a
+    # strict provider: it must NOT contain round 2's assistant `tool_calls`
+    # message without a matching `tool` reply for `call_round2`.
+    third_request_messages = fake_client.posts[2][1]["json"]["messages"]
+
+    round2_assistant_index = next(
+        i
+        for i, m in enumerate(third_request_messages)
+        if m.get("role") == "assistant"
+        and any(tc.get("id") == round2_call_id for tc in (m.get("tool_calls") or []))
+    )
+    subsequent_tool_call_ids = {
+        m.get("tool_call_id") for m in third_request_messages[round2_assistant_index + 1 :] if m.get("role") == "tool"
+    }
+    assert round2_call_id in subsequent_tool_call_ids, (
+        "round 2's tool call must be answered (dispatched or placeholder) before any further "
+        "upstream call -- an unanswered `tool_calls` message is an invalid conversation for "
+        "strict providers"
+    )
+    # It's the REAL dispatched result (not just a placeholder), proving dispatch
+    # happened before compression ran.
+    real_reply = next(
+        m
+        for m in third_request_messages[round2_assistant_index + 1 :]
+        if m.get("role") == "tool" and m.get("tool_call_id") == round2_call_id
+    )
+    assert "result for search" in str(real_reply.get("content"))
+
+
 def test_get_retry_after_seconds_parses_header_and_body():
     """The Retry-After hint is parsed from the HTTP header and the JSON body,
     and is capped at the configured maximum."""
