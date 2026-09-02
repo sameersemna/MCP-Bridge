@@ -1,8 +1,50 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-02T14:21:11.981272+00:00",
-  "model_count": 421,
+  "fetched_at": "2026-09-02T17:14:34.573204+00:00",
+  "model_count": 423,
   "models": {
+    "google/gemini-3.8-flash": {
+      "name": "Google: Gemini 3.8 Flash",
+      "context_length": 1048576,
+      "max_completion_tokens": 65536,
+      "modality": "text+image+file+audio+video->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "file",
+        "audio"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000075",
+      "completion_price": "0.00000375",
+      "input_cache_read_price": "0.000000075",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "google/gemini-3.8-flash:batch": {
+      "name": "Google: Gemini 3.8 Flash (batch)",
+      "context_length": 1048576,
+      "max_completion_tokens": 65536,
+      "modality": "text+image+file+audio+video->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "file",
+        "audio"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000375",
+      "completion_price": "0.000001875",
+      "input_cache_read_price": "0.0000000375",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
     "anthropic/claude-fable-5.1": {
       "name": "Anthropic: Claude Fable 5.1",
       "context_length": 1000000,
@@ -382,9 +424,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000001875",
-      "completion_price": "0.0000009375",
-      "input_cache_read_price": "0.00000001875",
+      "prompt_price": "0.000000375",
+      "completion_price": "0.000001875",
+      "input_cache_read_price": "0.0000000375",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -471,9 +513,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000011154",
-      "completion_price": "0.0000033462",
-      "input_cache_read_price": "0.00000003718",
+      "prompt_price": "0.00000066",
+      "completion_price": "0.00000198",
+      "input_cache_read_price": "0.000000022",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1459,9 +1501,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000132",
-      "completion_price": "0.000000528",
-      "input_cache_read_price": "0.000000033",
+      "prompt_price": "0.0000000825",
+      "completion_price": "0.00000033",
+      "input_cache_read_price": "0.000000020625",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2561,9 +2603,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000001035996",
-      "completion_price": "0.000002071992",
-      "input_cache_read_price": "0.000000086333",
+      "prompt_price": "0.000001030776",
+      "completion_price": "0.000002061552",
+      "input_cache_read_price": "0.000000085898",
       "knowledge_cutoff": null,
       "reasoning": true
     },

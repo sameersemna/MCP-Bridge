@@ -44,6 +44,66 @@ def test_redact_sensitive_data_masks_secrets() -> None:
     assert redacted["message"] == "ok"
 
 
+def test_redact_sensitive_data_preserves_llm_usage_token_counts() -> None:
+    """Regression test: `prompt_tokens`/`completion_tokens`/etc. contain the
+    substring "token" but are plain numeric usage counts, not secrets.
+    Blanking them made it impossible to diagnose a `max_context_tokens`
+    failure from the trace log alone -- exactly the data needed to answer
+    "why did this budget get exceeded"."""
+    usage = {
+        "prompt_tokens": 68385,
+        "completion_tokens": 512,
+        "total_tokens": 68897,
+        "completion_tokens_details": {"audio_tokens": 0, "reasoning_tokens": 175},
+        "prompt_tokens_details": {"audio_tokens": 0, "cached_tokens": 47872},
+    }
+
+    redacted = redact_sensitive_data(usage)
+
+    assert redacted["prompt_tokens"] == 68385
+    assert redacted["completion_tokens"] == 512
+    assert redacted["total_tokens"] == 68897
+    assert redacted["completion_tokens_details"]["reasoning_tokens"] == 175
+    assert redacted["prompt_tokens_details"]["cached_tokens"] == 47872
+
+    # A genuine credential named "token" (not "*_tokens") must still be masked.
+    assert redact_sensitive_data({"access_token": "abc123"})["access_token"] == "[REDACTED]"
+
+
+def test_redact_sensitive_data_preserves_tool_schema_for_key_named_params() -> None:
+    """Regression test: an MCP tool's JSON Schema can name an ordinary
+    parameter `key` (Redis GET/SET, ...) or `password` (an IMAP tool's login
+    field name) -- these are schema METADATA (a dict with "type"/
+    "description"), not an actual secret value, and blanking them destroyed
+    real diagnostic value in `tools_discovered` trace events (which fields a
+    tool accepts). An actual secret VALUE under the same key names (a real
+    credential passed as a tool-call argument) must still be redacted."""
+    tool_schema = {
+        "type": "function",
+        "function": {
+            "name": "get",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "The Redis key to look up"},
+                },
+            },
+        },
+    }
+
+    redacted = redact_sensitive_data(tool_schema)
+    key_param = redacted["function"]["parameters"]["properties"]["key"]
+    assert key_param["type"] == "string"
+    assert key_param["description"] == "The Redis key to look up"
+
+    # A real argument VALUE for a sensitive-named field (not schema-shaped) is
+    # still redacted.
+    tool_call_arguments = {"key": "user:12345:session", "password": "hunter2"}
+    redacted_arguments = redact_sensitive_data(tool_call_arguments)
+    assert redacted_arguments["key"] == "[REDACTED]"
+    assert redacted_arguments["password"] == "[REDACTED]"
+
+
 def test_settings_reject_invalid_ports() -> None:
     with pytest.raises(ValidationError):
         Settings(network={"port": 70000})

@@ -11,6 +11,44 @@ from loguru import logger
 
 SENSITIVE_KEYWORDS = ("key", "token", "secret", "password", "authorization")
 
+# Field names that legitimately contain a sensitive keyword as a substring but
+# are plain numeric usage counts, not secrets (OpenAI/OpenRouter `usage`
+# blocks). Blanking these to "[REDACTED]" destroyed the ability to diagnose
+# context-budget failures from the trace log alone -- e.g. a
+# `degraded_response` event with reason "max_context_tokens" but every
+# `prompt_tokens`/`completion_tokens` value hidden.
+_SAFE_COUNT_FIELD_NAMES = frozenset(
+    {
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "reasoning_tokens",
+        "audio_tokens",
+        "cached_tokens",
+        "max_tokens",
+        "max_completion_tokens",
+        "prompt_tokens_details",
+        "completion_tokens_details",
+        "context_length",
+        "max_context_tokens",
+    }
+)
+
+
+def _looks_like_schema_definition(value: Any) -> bool:
+    """Return True if `value` looks like a JSON Schema property definition
+    (carries a "type" key) rather than an actual secret value.
+
+    MCP tool schemas name ordinary parameters with words that also match a
+    sensitive keyword -- Redis's `key`, S3's `key` object path, and similar.
+    Those are schema metadata (a dict describing the parameter's type and
+    description), never a real credential, so they're recursed into (keeping
+    the description intact) rather than blanked outright. An actual secret
+    value (a real API key or password string passed as a tool-call argument)
+    is never shaped like this, so it's still redacted normally.
+    """
+    return isinstance(value, Mapping) and "type" in value
+
 
 def _default_log_dir() -> Path:
     repo_root = Path(__file__).resolve().parent.parent
@@ -48,10 +86,17 @@ def redact_sensitive_data(value: Any) -> Any:
     if isinstance(value, Mapping):
         redacted: dict[str, Any] = {}
         for key, item in value.items():
-            if any(keyword in str(key).lower() for keyword in SENSITIVE_KEYWORDS):
-                redacted[str(key)] = "[REDACTED]"
+            key_str = str(key)
+            key_lower = key_str.lower()
+            if key_lower in _SAFE_COUNT_FIELD_NAMES:
+                redacted[key_str] = redact_sensitive_data(item)
+            elif any(keyword in key_lower for keyword in SENSITIVE_KEYWORDS):
+                if _looks_like_schema_definition(item):
+                    redacted[key_str] = redact_sensitive_data(item)
+                else:
+                    redacted[key_str] = "[REDACTED]"
             else:
-                redacted[str(key)] = redact_sensitive_data(item)
+                redacted[key_str] = redact_sensitive_data(item)
         return redacted
 
     if isinstance(value, list):
