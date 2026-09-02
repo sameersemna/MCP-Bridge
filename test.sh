@@ -132,6 +132,29 @@ if grep -qE '<\|tool_call|<tool_call|<function=|<\|function|<dots_function_call|
   exit 0
 fi
 
+# The bridge marks a synthesized fallback (tool loop stopped early, empty
+# completion, tool-call failures, ...) with an invisible HTML comment at the
+# start of the content: <!-- mcp-bridge:degraded reason="..." trace="..." -->.
+# It's inert in the rendered PDF (pandoc drops HTML comments), but it means
+# this "response" is NOT the model's own answer -- it's a stand-in the bridge
+# generated because something upstream went wrong mid-run. This is exactly
+# the failure mode that produced a plausible-looking-but-garbage report in
+# the past: non-empty content that passed the check above yet wasn't a real
+# answer. Surface it loudly and skip, same as the pseudo-tool-call case.
+degraded_marker=$(grep -oE '<!-- mcp-bridge:degraded[^>]*-->' response.md | head -n 1 || true)
+if [[ -n "$degraded_marker" ]]; then
+  degraded_reason=$(echo "$degraded_marker" | grep -oE 'reason="[^"]*"' | sed -E 's/reason="(.*)"/\1/')
+  degraded_trace=$(echo "$degraded_marker" | grep -oE 'trace="[^"]*"' | sed -E 's/trace="(.*)"/\1/')
+  echo "${C_YELLOW}WARNING: Model ${MODEL}'s response is a synthesized fallback, not a real answer.${C_RESET}" >&2
+  echo "${C_YELLOW}         Reason: ${degraded_reason:-unknown}${C_RESET}" >&2
+  if [[ -n "$degraded_trace" ]]; then
+    echo "${C_YELLOW}         Full trace: ${degraded_trace}${C_RESET}" >&2
+  fi
+  echo "${C_YELLOW}         Skipping model ${MODEL}.${C_RESET}" >&2
+  rm -f response.md
+  exit 0
+fi
+
 cat response.md | head -c 250
 
 # bolt://localhost:7687

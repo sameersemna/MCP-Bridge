@@ -109,6 +109,16 @@ class RequestTraceLogger:
         self._write()
 
     def _write(self) -> None:
+        # A trace file should be self-describing at a glance: whether this
+        # request hard-failed (an "error" event -- the request never got a
+        # response) or soft-degraded (a "degraded_response" event -- it got a
+        # 200 but the content is a synthesized fallback, not the model's own
+        # answer). Without these, telling a real answer from a degraded one
+        # required opening the file and reading through every event by hand.
+        error_events = [event for event in self.events if event["type"] == "error"]
+        degraded_events = [event for event in self.events if event["type"] == "degraded_response"]
+        recovered_events = [event for event in self.events if event["type"] == "early_stop_recovered"]
+
         payload = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "method": self.method,
@@ -130,6 +140,11 @@ class RequestTraceLogger:
                     }
                 ),
                 "llm_responses": sum(1 for event in self.events if event["type"] == "llm_response"),
+                "failed": bool(error_events),
+                "failure_reason": error_events[0].get("detail") if error_events else None,
+                "degraded": bool(degraded_events),
+                "degradation_reason": degraded_events[0].get("reason") if degraded_events else None,
+                "early_stop_recovered": bool(recovered_events),
             },
         }
         try:

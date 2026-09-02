@@ -422,43 +422,132 @@ def _context_budget_nearly_exceeded(
     return prompt_tokens > (max_context_tokens * threshold)
 
 
+def _message_role(message: ChatCompletionRequestMessage | Any) -> Any:
+    message_root = getattr(message, "root", message)
+    if isinstance(message_root, dict):
+        return message_root.get("role")
+    role = getattr(message_root, "role", None)
+    return getattr(role, "value", role)
+
+
+def _message_tool_call_ids(message: ChatCompletionRequestMessage | Any) -> set[str]:
+    message_root = getattr(message, "root", message)
+    if isinstance(message_root, dict):
+        tool_calls = message_root.get("tool_calls") or []
+    else:
+        # `message_root.tool_calls` (e.g. `ChatCompletionRequestAssistantMessage.tool_calls`)
+        # is itself a further RootModel-wrapped list, same as on the response
+        # side -- `_extract_tool_calls` already knows how to unwrap that.
+        tool_calls = _extract_tool_calls(message_root)
+    ids: set[str] = set()
+    for tool_call in tool_calls:
+        call_id = tool_call.get("id") if isinstance(tool_call, dict) else getattr(tool_call, "id", None)
+        if call_id:
+            ids.add(call_id)
+    return ids
+
+
+def _message_tool_call_id(message: ChatCompletionRequestMessage | Any) -> str | None:
+    message_root = getattr(message, "root", message)
+    if isinstance(message_root, dict):
+        return message_root.get("tool_call_id")
+    return getattr(message_root, "tool_call_id", None)
+
+
+def _group_tool_rounds(
+    request_messages: list[ChatCompletionRequestMessage],
+) -> list[tuple[int, list[int]]]:
+    """Group messages into whole ``(assistant_index, [tool_message_indices])`` rounds.
+
+    A round is an assistant ``tool_calls`` message together with EVERY
+    ``tool`` role message that answers one of its call ids. Compression must
+    only ever add or remove whole rounds together: an assistant
+    ``tool_calls`` message left in the conversation without ALL of its own
+    matching ``tool`` replies is structurally invalid, and strict providers
+    (observed with Minimax) reject the very next request outright with
+    "invalid params ... tool call result does not follow tool call".
+
+    Any assistant ``tool_calls`` message whose full set of matching replies
+    can't be found contiguously right after it (should not normally happen
+    given how this module builds the conversation) is left out of the
+    result entirely, so it -- and everything after it up to the next clean
+    round boundary -- is never touched by compression.
+    """
+    rounds: list[tuple[int, list[int]]] = []
+    count = len(request_messages)
+    index = 0
+    while index < count:
+        message = request_messages[index]
+        if _message_role(message) != "assistant":
+            index += 1
+            continue
+
+        expected_ids = _message_tool_call_ids(message)
+        if not expected_ids:
+            index += 1
+            continue
+
+        tool_indices: list[int] = []
+        seen_ids: set[str] = set()
+        cursor = index + 1
+        while cursor < count and seen_ids != expected_ids:
+            candidate = request_messages[cursor]
+            if _message_role(candidate) != "tool":
+                break
+            call_id = _message_tool_call_id(candidate)
+            if call_id in expected_ids:
+                seen_ids.add(call_id)
+            tool_indices.append(cursor)
+            cursor += 1
+
+        if seen_ids == expected_ids:
+            rounds.append((index, tool_indices))
+            index = cursor
+        else:
+            index += 1
+
+    return rounds
+
+
 def _compress_tool_context(
     request_messages: list[ChatCompletionRequestMessage],
     *,
-    keep_recent: int = 6,
+    keep_recent_rounds: int = 3,
 ) -> bool:
-    """Compress older tool messages into a single compact summary.
+    """Compress older whole tool-calling rounds into a single compact summary.
 
     Long research workflows accumulate many tool messages (search results,
     fetched pages) that bloat the prompt context. When the budget is nearly
-    exceeded, this replaces the OLDEST tool messages with a single summarized
-    ``role: "tool"`` message, freeing context so the loop can continue.
+    exceeded, this replaces the OLDEST rounds -- each an assistant
+    ``tool_calls`` message plus every one of its ``tool`` replies -- with a
+    single summarized ``role: "user"`` message, freeing context so the loop
+    can continue.
+
+    Compression always operates on WHOLE rounds via ``_group_tool_rounds``,
+    never on individual tool messages: removing a tool reply while leaving
+    its assistant ``tool_calls`` message in place (or vice versa) breaks the
+    strict pairing some providers enforce, and the very next upstream
+    request is rejected outright ("invalid params ... tool call result does
+    not follow tool call").
 
     Returns True if compression was performed, False otherwise.
     """
-    if not request_messages:
+    rounds = _group_tool_rounds(request_messages)
+    if len(rounds) <= keep_recent_rounds:
+        # Not enough whole rounds to compress meaningfully.
         return False
 
-    # Identify tool messages and their indices.
-    tool_indices: list[int] = []
-    for index, message in enumerate(request_messages):
-        role = getattr(getattr(message, "root", message), "role", None)
-        if role == "tool":
-            tool_indices.append(index)
-
-    if len(tool_indices) <= keep_recent:
-        # Not enough tool messages to compress meaningfully.
-        return False
-
-    # Keep the most recent `keep_recent` tool messages; compress the older ones.
-    compress_indices = tool_indices[:-keep_recent]
-    keep_indices = set(tool_indices[-keep_recent:])
+    compress_rounds = rounds[:-keep_recent_rounds]
+    compress_indices: set[int] = {
+        message_index for assistant_index, tool_indices in compress_rounds for message_index in (assistant_index, *tool_indices)
+    }
 
     tool_texts: list[str] = []
-    for index in compress_indices:
-        text = _extract_tool_message_text(request_messages[index])
-        if text:
-            tool_texts.append(text)
+    for _assistant_index, tool_indices in compress_rounds:
+        for index in tool_indices:
+            text = _extract_tool_message_text(request_messages[index])
+            if text:
+                tool_texts.append(text)
 
     if not tool_texts:
         return False
@@ -467,8 +556,9 @@ def _compress_tool_context(
     if not summary:
         return False
 
-    # Build the new message list: drop the compressed tool messages and insert
-    # a single summary message in their place.
+    # Build the new message list: drop every message belonging to a
+    # compressed round (the assistant `tool_calls` message AND all of its
+    # `tool` replies together) and insert one summary message in their place.
     #
     # The summary is emitted as a `role: "user"` message (NOT a `role: "tool"`
     # message) because a `tool` message must carry a `tool_call_id` that matches
@@ -480,9 +570,6 @@ def _compress_tool_context(
     new_messages: list[ChatCompletionRequestMessage] = []
     inserted = False
     for index, message in enumerate(request_messages):
-        if index in keep_indices:
-            new_messages.append(message)
-            continue
         if index in compress_indices:
             if not inserted:
                 new_messages.append(
@@ -503,8 +590,9 @@ def _compress_tool_context(
     # Replace the list in place.
     request_messages[:] = new_messages
     logger.info(
-        f"compressed {len(compress_indices)} older tool message(s) into a summary; "
-        f"kept {len(keep_indices)} recent tool message(s)"
+        f"compressed {len(compress_rounds)} older tool-calling round(s) "
+        f"({len(compress_indices)} message(s)) into a summary; "
+        f"kept {len(rounds) - len(compress_rounds)} recent round(s)"
     )
     return True
 
@@ -756,6 +844,8 @@ def _build_synthesis_request(
         instruction += " The tool workflow stopped because the same tool call was repeated without new information, so synthesize the best answer from the evidence already gathered."
     elif stop_reason == "unfulfilled_action_stub":
         instruction += " A previous attempt only announced an action (e.g. \"Let me fetch...\") without completing it or calling any tool, so actually answer the question now using whatever information is already available."
+    elif stop_reason == "upstream_failure_after_evidence":
+        instruction += " The upstream provider failed on what should have been the final turn, so if some information is incomplete, say so clearly."
 
     synthesis_request.messages.append(
         ChatCompletionRequestMessage.model_validate(
@@ -974,6 +1064,8 @@ def _build_tool_loop_stop_response(
         intro_line = "Note: The tool workflow stopped because the same tool call was repeated without new information."
     elif stop_reason == "unfulfilled_action_stub":
         intro_line = "Note: A previous attempt announced an action but did not complete it or call any tool."
+    elif stop_reason == "upstream_failure_after_evidence":
+        intro_line = "Note: The upstream provider failed on what should have been the final turn."
     else:
         intro_line = "Note: The workflow stopped before it could finish."
     return _build_synthesized_response(
@@ -982,6 +1074,74 @@ def _build_tool_loop_stop_response(
         request_messages=request_messages,
         intro_line=intro_line,
     )
+
+
+def _degraded_marker_comment(reason: str, trace_path: str | None) -> str:
+    """An HTML comment marking a response as a synthesized fallback, not a
+    genuine model answer.
+
+    HTML comments are inert through this project's markdown -> HTML -> PDF
+    pipeline (pandoc/weasyprint render nothing for them), so this is invisible
+    in a generated report, but a caller (or a script like ``test.sh``) can
+    grep ``response.md`` for it to catch a response that *looks* complete but
+    isn't -- the exact failure mode that motivated this: a plausible-looking
+    answer that was actually a degraded stand-in for one the model never
+    produced.
+    """
+    attrs = f'reason="{reason}"'
+    if trace_path:
+        attrs += f' trace="{trace_path}"'
+    return f"<!-- mcp-bridge:degraded {attrs} -->"
+
+
+def _finalize_degraded_response(
+    response: CreateChatCompletionResponse,
+    *,
+    trace_logger: RequestTraceLogger | None,
+    reason: str,
+) -> CreateChatCompletionResponse:
+    """Mark a response as a degraded/synthesized fallback -- not the model's
+    own answer to the original question.
+
+    Records a ``degraded_response`` trace event (so the full trace file is
+    self-describing, see ``RequestTraceLogger``'s summary) and prepends an
+    invisible marker comment to the content (see ``_degraded_marker_comment``)
+    naming the reason and, when available, the exact trace file to open for
+    the full story. Every deterministic tool-loop fallback (empty content,
+    turn limit, repeated calls, context budget, tool failures, unfulfilled
+    action stubs) funnels through here before returning to the caller.
+    """
+    trace_path = str(trace_logger.path) if trace_logger is not None else None
+    if trace_logger is not None:
+        trace_logger.record("degraded_response", reason=reason, trace_path=trace_path)
+
+    message = response.choices[0].message
+    content = getattr(message, "content", None)
+    marker = _degraded_marker_comment(reason, trace_path)
+    message.content = f"{marker}\n{content}" if content else marker
+    return response
+
+
+def _finalize_recovered_response(
+    response: CreateChatCompletionResponse,
+    *,
+    trace_logger: RequestTraceLogger | None,
+    reason: str,
+) -> CreateChatCompletionResponse:
+    """Record that the tool loop stopped early (for `reason`) but the model
+    itself still produced a real synthesized answer (via
+    ``_try_synthesize_tool_loop_result``'s success path), rather than falling
+    back to the deterministic evidence dump.
+
+    Unlike ``_finalize_degraded_response``, this does NOT touch the response
+    content -- the model wrote a genuine answer, so polluting it with a marker
+    would be misleading. This purely records a trace event so a later
+    debugging pass can see that the run took an unusual path even though the
+    output looks like a normal answer.
+    """
+    if trace_logger is not None:
+        trace_logger.record("early_stop_recovered", reason=reason)
+    return response
 
 
 def _looks_like_empty_search_fallback(message: str) -> bool:
@@ -1435,6 +1595,7 @@ async def _handle_stub_or_stop(
     response: CreateChatCompletionResponse,
     stub_retry_count: int,
     max_stub_retries: int,
+    trace_logger: RequestTraceLogger | None = None,
 ) -> Any:
     """Decide what to do when the model produced no usable tool call.
 
@@ -1468,11 +1629,17 @@ async def _handle_stub_or_stop(
         request_messages=request.messages,
     )
     if synthesized_response is not None:
-        return synthesized_response
-    return _build_tool_loop_stop_response(
-        response,
-        stop_reason="unfulfilled_action_stub",
-        request_messages=request.messages,
+        return _finalize_recovered_response(
+            synthesized_response, trace_logger=trace_logger, reason="unfulfilled_action_stub"
+        )
+    return _finalize_degraded_response(
+        _build_tool_loop_stop_response(
+            response,
+            stop_reason="unfulfilled_action_stub",
+            request_messages=request.messages,
+        ),
+        trace_logger=trace_logger,
+        reason="unfulfilled_action_stub",
     )
 
 
@@ -1548,6 +1715,51 @@ def _get_retry_after_seconds(response: Any) -> float:
         pass
 
     return 0.0
+
+
+def _record_and_raise_upstream_failure(
+    trace_logger: RequestTraceLogger | None,
+    *,
+    status_code: int,
+    stage: str,
+    detail: str,
+    model: str | None = None,
+    raw_body: str | None = None,
+) -> HTTPException:
+    """Record a hard failure to the request trace, then build the
+    ``HTTPException`` to raise for it.
+
+    Every upstream/parse failure that aborts the request funnels through
+    here, so a failed request is never silently unrecorded. The trace file
+    gets the FULL, untruncated body under a single well-known ``"error"``
+    event type -- easy to find across every trace file with
+    ``grep -l '"type": "error"' logs/*.json`` -- and the client-visible
+    ``detail`` (which callers like ``test.sh`` print directly) is extended
+    with the trace file's path, so a human can go straight from terminal
+    output to the full story instead of first reconstructing which trace file
+    corresponds to which request (previously done by hand, correlating
+    timestamps and models across ``logs/*.json``).
+
+    Returns the exception rather than raising it, so the caller can still use
+    ``raise ... from e`` for exception chaining where relevant.
+    """
+    trace_path: str | None = None
+    if trace_logger is not None:
+        trace_path = str(trace_logger.path)
+        trace_logger.record(
+            "error",
+            status_code=status_code,
+            stage=stage,
+            model=model,
+            detail=detail,
+            raw_body=raw_body,
+        )
+
+    full_detail = detail
+    if trace_path:
+        full_detail = f"{detail} (full detail in trace log: {trace_path})"
+
+    return HTTPException(status_code=status_code, detail=full_detail)
 
 
 async def chat_completions(
@@ -1636,11 +1848,13 @@ async def chat_completions(
                         synthesized = await _try_synthesize_tool_loop_result(
                             client,
                             request,
-                            stop_reason="max_tool_turns",
+                            stop_reason="upstream_failure_after_evidence",
                             request_messages=request.messages,
                         )
                         if synthesized is not None:
-                            return synthesized
+                            return _finalize_recovered_response(
+                                synthesized, trace_logger=trace_logger, reason="upstream_failure_after_evidence"
+                            )
                         # The upstream failed this turn, so there is no valid
                         # parsed `response` to base the fallback on. Build a
                         # synthetic one; `_build_tool_loop_stop_response` only
@@ -1648,43 +1862,55 @@ async def chat_completions(
                         # a *valid* `CreateChatCompletionResponse` (all required
                         # fields present) or `model_validate` raises before the
                         # fallback can run.
-                        return _build_tool_loop_stop_response(
-                            CreateChatCompletionResponse.model_validate(
-                                {
-                                    "id": "chatcmpl-fallback",
-                                    "object": "chat.completion",
-                                    "created": int(time.time()),
-                                    "model": getattr(request, "model", "") or "unknown",
-                                    "choices": [
-                                        {
-                                            "index": 0,
-                                            "finish_reason": "stop",
-                                            "message": {"role": "assistant", "content": ""},
-                                        }
-                                    ],
-                                }
+                        return _finalize_degraded_response(
+                            _build_tool_loop_stop_response(
+                                CreateChatCompletionResponse.model_validate(
+                                    {
+                                        "id": "chatcmpl-fallback",
+                                        "object": "chat.completion",
+                                        "created": int(time.time()),
+                                        "model": getattr(request, "model", "") or "unknown",
+                                        "choices": [
+                                            {
+                                                "index": 0,
+                                                "finish_reason": "stop",
+                                                "message": {"role": "assistant", "content": ""},
+                                            }
+                                        ],
+                                    }
+                                ),
+                                stop_reason="upstream_failure_after_evidence",
+                                request_messages=request.messages,
                             ),
-                            stop_reason="max_tool_turns",
-                            request_messages=request.messages,
+                            trace_logger=trace_logger,
+                            reason="upstream_failure_after_evidence",
                         )
-                    raise HTTPException(
+                    raise _record_and_raise_upstream_failure(
+                        trace_logger,
                         status_code=502,
+                        stage="upstream_retry_exhausted",
                         detail=(
                             f"Upstream inference server did not return a usable response "
                             f"after {DEFAULT_UPSTREAM_RETRY_COUNT + 1} attempts "
                             f"(last status {upstream_response.status_code}): "
                             f"{_diagnostic_snippet(text)}"
                         ),
+                        model=getattr(request, "model", None),
+                        raw_body=text,
                     )
 
             if upstream_response.status_code >= 400:
                 logger.error(f"upstream inference server returned status {upstream_response.status_code}: {text[:2000]}")
-                raise HTTPException(
+                raise _record_and_raise_upstream_failure(
+                    trace_logger,
                     status_code=502,
+                    stage="upstream_error_status",
                     detail=(
                         f"Upstream inference server returned status "
                         f"{upstream_response.status_code}: {_diagnostic_snippet(text)}"
                     ),
+                    model=getattr(request, "model", None),
+                    raw_body=text,
                 )
 
             try:
@@ -1720,25 +1946,37 @@ async def chat_completions(
                 logger.error("error parsing upstream chat completion response")
                 logger.error(f"upstream status={upstream_response.status_code}; raw body: {text[:2000]}")
                 logger.error(e)
-                raise HTTPException(
+                raise _record_and_raise_upstream_failure(
+                    trace_logger,
                     status_code=502,
+                    stage="response_parse_failure",
                     detail="Failed to parse upstream chat completion response",
+                    model=getattr(request, "model", None),
+                    raw_body=text,
                 ) from e
 
             if not response.choices:
                 logger.error("upstream chat completion response contained no choices")
-                raise HTTPException(
+                raise _record_and_raise_upstream_failure(
+                    trace_logger,
                     status_code=502,
+                    stage="no_choices",
                     detail="Upstream chat completion response contained no choices",
+                    model=getattr(request, "model", None),
+                    raw_body=text,
                 )
 
             msg = response.choices[0].message
             if _should_use_empty_content_fallback(msg, finish_reason_value := response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None):
                 logger.warning("upstream model returned empty assistant content without tool calls; synthesizing a fallback response from tool evidence")
-                return _build_empty_content_response(
-                    response,
-                    request_messages=request.messages,
-                    stop_reason="empty_response",
+                return _finalize_degraded_response(
+                    _build_empty_content_response(
+                        response,
+                        request_messages=request.messages,
+                        stop_reason="empty_response",
+                    ),
+                    trace_logger=trace_logger,
+                    reason="empty_response",
                 )
 
             msg = ChatCompletionRequestMessage(
@@ -1800,13 +2038,17 @@ async def chat_completions(
                             "(e.g. <|tool_call_start|> / <tool_call> / <function=...>); "
                             "model does not support structured tool calls via the bridge"
                         )
-                        raise HTTPException(
+                        raise _record_and_raise_upstream_failure(
+                            trace_logger,
                             status_code=502,
+                            stage="unsupported_pseudo_tool_call_format",
                             detail=(
                                 "The model does not support structured tool calls and "
                                 "emitted tool-call markers as plain text. Use a model "
                                 "with native tool-call support."
                             ),
+                            model=getattr(request, "model", None),
+                            raw_body=assistant_text,
                         )
                 else:
                     stub_result = await _handle_stub_or_stop(
@@ -1816,6 +2058,7 @@ async def chat_completions(
                         response=response,
                         stub_retry_count=stub_retry_count,
                         max_stub_retries=max_stub_retries,
+                        trace_logger=trace_logger,
                     )
                     if stub_result is _RETRY_TOOL_LOOP:
                         stub_retry_count += 1
@@ -1891,6 +2134,7 @@ async def chat_completions(
                         response=response,
                         stub_retry_count=stub_retry_count,
                         max_stub_retries=max_stub_retries,
+                        trace_logger=trace_logger,
                     )
                     if stub_result is _RETRY_TOOL_LOOP:
                         stub_retry_count += 1
@@ -1924,11 +2168,17 @@ async def chat_completions(
                     request_messages=request.messages,
                 )
                 if synthesized_response is not None:
-                    return synthesized_response
-                return _build_tool_loop_stop_response(
-                    response,
-                    stop_reason="repeated_tool_calls",
-                    request_messages=request.messages,
+                    return _finalize_recovered_response(
+                        synthesized_response, trace_logger=trace_logger, reason="repeated_tool_calls"
+                    )
+                return _finalize_degraded_response(
+                    _build_tool_loop_stop_response(
+                        response,
+                        stop_reason="repeated_tool_calls",
+                        request_messages=request.messages,
+                    ),
+                    trace_logger=trace_logger,
+                    reason="repeated_tool_calls",
                 )
 
             if not should_continue_tool_loop(
@@ -1955,11 +2205,17 @@ async def chat_completions(
                     request_messages=request.messages,
                 )
                 if synthesized_response is not None:
-                    return synthesized_response
-                return _build_tool_loop_stop_response(
-                    response,
-                    stop_reason="max_tool_turns",
-                    request_messages=request.messages,
+                    return _finalize_recovered_response(
+                        synthesized_response, trace_logger=trace_logger, reason="max_tool_turns"
+                    )
+                return _finalize_degraded_response(
+                    _build_tool_loop_stop_response(
+                        response,
+                        stop_reason="max_tool_turns",
+                        request_messages=request.messages,
+                    ),
+                    trace_logger=trace_logger,
+                    reason="max_tool_turns",
                 )
 
             if _has_only_weak_tool_evidence(request.messages):
@@ -1976,11 +2232,17 @@ async def chat_completions(
                     request_messages=request.messages,
                 )
                 if synthesized_response is not None:
-                    return synthesized_response
-                return _build_tool_loop_stop_response(
-                    response,
-                    stop_reason="max_tool_turns",
-                    request_messages=request.messages,
+                    return _finalize_recovered_response(
+                        synthesized_response, trace_logger=trace_logger, reason="max_tool_turns"
+                    )
+                return _finalize_degraded_response(
+                    _build_tool_loop_stop_response(
+                        response,
+                        stop_reason="max_tool_turns",
+                        request_messages=request.messages,
+                    ),
+                    trace_logger=trace_logger,
+                    reason="max_tool_turns",
                 )
 
             max_context_tokens = get_max_context_tokens(getattr(request, "model", None))
@@ -2002,11 +2264,17 @@ async def chat_completions(
                     request_messages=request.messages,
                 )
                 if synthesized_response is not None:
-                    return synthesized_response
-                return _build_tool_loop_stop_response(
-                    response,
-                    stop_reason="max_context_tokens",
-                    request_messages=request.messages,
+                    return _finalize_recovered_response(
+                        synthesized_response, trace_logger=trace_logger, reason="max_context_tokens"
+                    )
+                return _finalize_degraded_response(
+                    _build_tool_loop_stop_response(
+                        response,
+                        stop_reason="max_context_tokens",
+                        request_messages=request.messages,
+                    ),
+                    trace_logger=trace_logger,
+                    reason="max_context_tokens",
                 )
 
             tool_turns_completed += 1
@@ -2105,7 +2373,11 @@ async def chat_completions(
                         logger.warning(
                             f"tool call failures detected; stopping tool loop: {'; '.join(tool_errors)}"
                         )
-                        return _build_tool_error_response(response, tool_errors)
+                        return _finalize_degraded_response(
+                            _build_tool_error_response(response, tool_errors),
+                            trace_logger=trace_logger,
+                            reason="tool_call_failure",
+                        )
 
                     # Recoverable failures (e.g. a validation error on one tool
                     # call). The error messages were already appended to

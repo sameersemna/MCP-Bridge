@@ -14,13 +14,18 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _compress_tool_context,
     _context_budget_exceeded,
     _context_budget_nearly_exceeded,
+    _degraded_marker_comment,
     _detect_repeated_tool_calls,
     _extract_message_text,
     _extract_tool_calls,
     _extract_tool_message_text,
+    _finalize_degraded_response,
+    _finalize_recovered_response,
     _format_tool_loop_stop_message,
+    _group_tool_rounds,
     _has_only_weak_tool_evidence,
     _parse_pseudo_tool_calls,
+    _record_and_raise_upstream_failure,
     _record_timing,
     _should_stop_tool_loop_on_tool_errors,
     _should_use_empty_content_fallback,
@@ -34,6 +39,7 @@ from mcp_bridge.openai_clients.chatCompletion import (
 class DummyTraceLogger:
     def __init__(self) -> None:
         self.events: list[dict[str, object]] = []
+        self.path = "logs/dummy-trace.json"
 
     def record(self, event_type: str, **payload: object) -> None:
         self.events.append({"type": event_type, **payload})
@@ -1027,48 +1033,67 @@ def test_context_budget_nearly_exceeded_false_when_well_under():
     assert _context_budget_nearly_exceeded(response, 60000) is False
 
 
+def _assistant_tool_call_message(call_ids: list[str]) -> ChatCompletionRequestMessage:
+    return ChatCompletionRequestMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": call_id, "type": "function", "function": {"name": "search", "arguments": "{}"}}
+                for call_id in call_ids
+            ],
+        }
+    )
+
+
+def _tool_result_message(call_id: str, text: str) -> ChatCompletionRequestMessage:
+    return ChatCompletionRequestMessage.model_validate(
+        {
+            "role": "tool",
+            "content": [{"type": "text", "text": text}],
+            "tool_call_id": call_id,
+        }
+    )
+
+
+def _assert_no_orphaned_tool_calls_message(messages: list[ChatCompletionRequestMessage]) -> None:
+    """Every assistant `tool_calls` message must have ALL of its ids answered
+    immediately afterward. This is the actual OpenAI protocol invariant that
+    strict providers (observed with Minimax) enforce -- not merely "the id
+    exists somewhere in the conversation", but "every call in THIS message is
+    answered right here, in full, by the very next messages".
+    """
+    grouped_assistant_indices = {assistant_index for assistant_index, _ in _group_tool_rounds(messages)}
+    for index, message in enumerate(messages):
+        inner = getattr(message, "root", message)
+        if getattr(inner, "role", None) == "assistant" and _extract_tool_calls(inner):
+            assert index in grouped_assistant_indices, (
+                f"assistant tool_calls message at index {index} has no matching group of "
+                "tool replies immediately after it -- this is exactly the shape strict "
+                "providers reject as 'tool call result does not follow tool call'"
+            )
+
+
 def test_compress_tool_context_reduces_message_count():
-    # Build a realistic conversation: each `tool` message is preceded by an
-    # assistant message whose `tool_calls[].id` matches the tool message's
-    # `tool_call_id` (the OpenAI protocol invariant).
+    # Build a realistic conversation: each round is one assistant `tool_calls`
+    # message followed immediately by its own matching `tool` reply.
     messages = [
         ChatCompletionRequestMessage.model_validate({"role": "system", "content": "system"}),
     ]
     for index in range(10):
-        messages.append(
-            ChatCompletionRequestMessage.model_validate(
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": f"call_{index}",
-                            "type": "function",
-                            "function": {"name": "search", "arguments": "{}"},
-                        }
-                    ],
-                }
-            )
-        )
-        messages.append(
-            ChatCompletionRequestMessage.model_validate(
-                {
-                    "role": "tool",
-                    "content": [{"type": "text", "text": f"Search result {index} with some useful evidence"}],
-                    "tool_call_id": f"call_{index}",
-                }
-            )
-        )
+        messages.append(_assistant_tool_call_message([f"call_{index}"]))
+        messages.append(_tool_result_message(f"call_{index}", f"Search result {index} with some useful evidence"))
 
-    compressed = _compress_tool_context(messages, keep_recent=3)
+    compressed = _compress_tool_context(messages, keep_recent_rounds=3)
 
     assert compressed is True
-    # 1 system + 10 assistant + 1 summary + 3 recent tool messages = 15
-    # (assistant messages are never removed; only the 7 oldest tool messages
-    # are collapsed into the single summary)
-    assert len(messages) == 15
-    # The summary message should be present, as a `user` message (not `tool`),
-    # so it does not require a matching assistant tool_call id.
+    # 1 system + 1 summary + 3 kept rounds (assistant + tool, each) = 8.
+    # The 7 oldest ROUNDS (assistant message AND its tool reply together) are
+    # collapsed into the single summary -- unlike the old per-message
+    # compression, the assistant messages of compressed rounds are removed
+    # too, since leaving them behind with no matching reply is exactly the
+    # bug this function now guards against.
+    assert len(messages) == 8
     summary_texts = [
         _extract_message_text(m) or ""
         for m in messages
@@ -1076,48 +1101,164 @@ def test_compress_tool_context_reduces_message_count():
     ]
     assert any("summarized" in text for text in summary_texts)
 
-    # Protocol validity: every remaining `tool` message must carry a
-    # `tool_call_id` that matches a preceding assistant `tool_calls[].id`.
-    # (This is the invariant that the old "context-compression" id violated.)
-    assistant_tool_call_ids = set()
-    for m in messages:
-        inner = getattr(m, "root", m)
-        role = getattr(inner, "role", None)
-        if role == "assistant":
-            for tc in _extract_tool_calls(inner):
-                tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
-                if tc_id:
-                    assistant_tool_call_ids.add(tc_id)
-    for m in messages:
-        inner = getattr(m, "root", m)
-        role = getattr(inner, "role", None)
-        if role == "tool":
-            tool_call_id = getattr(inner, "tool_call_id", None)
-            assert tool_call_id in assistant_tool_call_ids, (
-                f"tool message has orphaned tool_call_id={tool_call_id!r}"
-            )
+    _assert_no_orphaned_tool_calls_message(messages)
 
 
-def test_compress_tool_context_returns_false_when_few_messages():
+def test_compress_tool_context_never_splits_a_multi_call_round():
+    """Regression test for the actual reported failure: a round with several
+    tool calls must be compressed or kept as one atomic unit. The old
+    implementation cut by raw tool-MESSAGE count, so a round with multiple
+    calls could straddle the cut -- some of its replies kept, some
+    compressed away, while its assistant `tool_calls` message (which lists
+    ALL the ids) was always kept. That leaves an assistant message
+    referencing call ids whose replies no longer immediately follow it,
+    which Minimax's backend rejects with "invalid params ... tool call
+    result does not follow tool call (2013)".
+
+    Round sizes here are [1, 1, 3, 1, 1] (7 tool messages total). Keeping the
+    last 3 tool MESSAGES (the old behavior) would land exactly inside the
+    3-call round, keeping only its last reply. Keeping the last 2 ROUNDS
+    (this test) must keep or drop round 3 -- with 3 calls -- as a whole.
+    """
+    messages = [ChatCompletionRequestMessage.model_validate({"role": "system", "content": "system"})]
+    round_call_ids = [["call_1"], ["call_2"], ["call_3a", "call_3b", "call_3c"], ["call_4"], ["call_5"]]
+    for call_ids in round_call_ids:
+        messages.append(_assistant_tool_call_message(call_ids))
+        for call_id in call_ids:
+            messages.append(_tool_result_message(call_id, f"result for {call_id}"))
+
+    compressed = _compress_tool_context(messages, keep_recent_rounds=2)
+
+    assert compressed is True
+    _assert_no_orphaned_tool_calls_message(messages)
+
+    # The two most recent rounds (call_4, call_5) must survive untouched.
+    remaining_tool_call_ids = {
+        _message_tool_call_id_for_test(m) for m in messages if getattr(getattr(m, "root", m), "role", None) == "tool"
+    }
+    assert remaining_tool_call_ids == {"call_4", "call_5"}
+
+
+def _message_tool_call_id_for_test(message: ChatCompletionRequestMessage) -> str | None:
+    inner = getattr(message, "root", message)
+    return getattr(inner, "tool_call_id", None)
+
+
+def test_compress_tool_context_returns_false_when_few_rounds():
     messages = [
         ChatCompletionRequestMessage.model_validate({"role": "system", "content": "system"}),
-        ChatCompletionRequestMessage.model_validate(
-            {
-                "role": "tool",
-                "content": [{"type": "text", "text": "Search result 1"}],
-                "tool_call_id": "call_1",
-            }
-        ),
-        ChatCompletionRequestMessage.model_validate(
-            {
-                "role": "tool",
-                "content": [{"type": "text", "text": "Search result 2"}],
-                "tool_call_id": "call_2",
-            }
-        ),
+        _assistant_tool_call_message(["call_1"]),
+        _tool_result_message("call_1", "Search result 1"),
+        _assistant_tool_call_message(["call_2"]),
+        _tool_result_message("call_2", "Search result 2"),
     ]
 
-    compressed = _compress_tool_context(messages, keep_recent=3)
+    # Only 2 whole rounds exist; keep_recent_rounds=3 means there's nothing
+    # old enough to compress.
+    compressed = _compress_tool_context(messages, keep_recent_rounds=3)
 
     assert compressed is False
-    assert len(messages) == 3
+    assert len(messages) == 5
+
+
+def _fake_response_with_content(content: str | None) -> CreateChatCompletionResponse:
+    return CreateChatCompletionResponse.model_validate(
+        {
+            "id": "gen-1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": content or ""},
+                }
+            ],
+        }
+    )
+
+
+def test_record_and_raise_upstream_failure_logs_full_detail_and_points_to_trace():
+    """A hard failure must be traceable in full: the trace file gets the FULL
+    raw upstream body under a well-known event type, and the client-visible
+    detail (what test.sh prints via `cat response.json`) points at the exact
+    trace file to open for the rest of the story."""
+    trace_logger = DummyTraceLogger()
+    raw_body = '{"error": {"message": "some very long provider-specific error body"}}'
+
+    exc = _record_and_raise_upstream_failure(
+        trace_logger,
+        status_code=502,
+        stage="upstream_error_status",
+        detail="Upstream inference server returned status 400: invalid params (2013)",
+        model="minimax/minimax-m2.7:free",
+        raw_body=raw_body,
+    )
+
+    assert exc.status_code == 502
+    # The client-visible detail names the trace file so a human can go
+    # straight from terminal output to the full story.
+    assert trace_logger.path in exc.detail
+    assert "invalid params (2013)" in exc.detail
+
+    error_events = [e for e in trace_logger.events if e["type"] == "error"]
+    assert len(error_events) == 1
+    assert error_events[0]["status_code"] == 502
+    assert error_events[0]["stage"] == "upstream_error_status"
+    assert error_events[0]["model"] == "minimax/minimax-m2.7:free"
+    # The trace gets the FULL raw body, not a truncated client-facing snippet.
+    assert error_events[0]["raw_body"] == raw_body
+
+
+def test_record_and_raise_upstream_failure_without_trace_logger():
+    # Must not crash when no trace logger is active (e.g. streaming path).
+    exc = _record_and_raise_upstream_failure(
+        None,
+        status_code=502,
+        stage="no_choices",
+        detail="Upstream chat completion response contained no choices",
+    )
+    assert exc.status_code == 502
+    assert "trace log" not in exc.detail
+
+
+def test_degraded_marker_comment_is_html_comment_with_reason_and_trace():
+    comment = _degraded_marker_comment("empty_response", "logs/20260101T000000Z_x.json")
+    assert comment.startswith("<!--")
+    assert comment.endswith("-->")
+    assert 'reason="empty_response"' in comment
+    assert 'trace="logs/20260101T000000Z_x.json"' in comment
+
+
+def test_finalize_degraded_response_marks_content_and_records_event():
+    """A synthesized fallback answer (HTTP 200) must be distinguishable from a
+    genuine model answer: an invisible marker in the content (for pipelines
+    like test.sh to grep) and a trace event (for deep debugging)."""
+    trace_logger = DummyTraceLogger()
+    response = _fake_response_with_content("Note: the workflow stopped early.")
+
+    result = _finalize_degraded_response(response, trace_logger=trace_logger, reason="max_tool_turns")
+
+    assert result.choices[0].message.content.startswith("<!-- mcp-bridge:degraded")
+    assert "Note: the workflow stopped early." in result.choices[0].message.content
+
+    degraded_events = [e for e in trace_logger.events if e["type"] == "degraded_response"]
+    assert len(degraded_events) == 1
+    assert degraded_events[0]["reason"] == "max_tool_turns"
+
+
+def test_finalize_recovered_response_does_not_touch_content():
+    """When the tool loop stopped early but the model still produced a real
+    answer via synthesis, the content must be left exactly as the model wrote
+    it -- only a trace event records that the run took an unusual path."""
+    trace_logger = DummyTraceLogger()
+    response = _fake_response_with_content("A complete, genuine answer from the model.")
+
+    result = _finalize_recovered_response(response, trace_logger=trace_logger, reason="repeated_tool_calls")
+
+    assert result.choices[0].message.content == "A complete, genuine answer from the model."
+
+    recovered_events = [e for e in trace_logger.events if e["type"] == "early_stop_recovered"]
+    assert len(recovered_events) == 1
+    assert recovered_events[0]["reason"] == "repeated_tool_calls"

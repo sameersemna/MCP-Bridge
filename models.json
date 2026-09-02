@@ -1,6 +1,6 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-02T10:01:19.755152+00:00",
+  "fetched_at": "2026-09-02T14:21:11.981272+00:00",
   "model_count": 421,
   "models": {
     "anthropic/claude-fable-5.1": {
@@ -218,9 +218,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000044",
-      "completion_price": "0.00000132",
-      "input_cache_read_price": "0.000000014",
+      "prompt_price": "0.00000022",
+      "completion_price": "0.00000066",
+      "input_cache_read_price": "0.000000007",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -261,7 +261,7 @@
     "~z-ai/glm-latest": {
       "name": "Z.ai: GLM Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 943718,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -269,9 +269,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000117",
-      "completion_price": "0.00000396",
-      "input_cache_read_price": "0.000000234",
+      "prompt_price": "0.00000115",
+      "completion_price": "0.0000035",
+      "input_cache_read_price": "0.0000001",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2561,9 +2561,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000104226",
-      "completion_price": "0.00000208452",
-      "input_cache_read_price": "0.000000086855",
+      "prompt_price": "0.000001035996",
+      "completion_price": "0.000002071992",
+      "input_cache_read_price": "0.000000086333",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2578,9 +2578,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000088606",
-      "completion_price": "0.000000177212",
-      "input_cache_read_price": "0.0000000177212",
+      "prompt_price": "0.00000008554",
+      "completion_price": "0.00000017108",
+      "input_cache_read_price": "0.000000017108",
       "knowledge_cutoff": null,
       "reasoning": true
     },
