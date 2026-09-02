@@ -178,12 +178,6 @@ img {
   opacity: 0.9; 
 }
 
-@media (prefers-color-scheme: dark) {
-  img {
-    opacity: 0.85;
-  }
-}
-
 /* Ensure links remain visible */
 a {
     color: #4da6ff;

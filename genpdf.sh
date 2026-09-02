@@ -72,8 +72,20 @@ pandoc "$TRANSFORMED_INPUT" \
   -t html5 \
   -o "$OUTPUT_HTML"
 
-if command -v weasyprint >/dev/null 2>&1; then
-  weasyprint \
+# Prefer the project venv's weasyprint (modern fontTools fixes the
+# recalcUnicodeRanges crash: "expected 0 <= int <= 122, found: 123").
+# Fall back to any weasyprint on PATH, then to the system one.
+WEASYPRINT_BIN=""
+if [[ -x "$SCRIPT_DIR/.venv/bin/weasyprint" ]]; then
+  WEASYPRINT_BIN="$SCRIPT_DIR/.venv/bin/weasyprint"
+elif command -v weasyprint >/dev/null 2>&1; then
+  WEASYPRINT_BIN="$(command -v weasyprint)"
+elif [[ -x /usr/bin/weasyprint ]]; then
+  WEASYPRINT_BIN="/usr/bin/weasyprint"
+fi
+
+if [[ -n "$WEASYPRINT_BIN" ]]; then
+  "$WEASYPRINT_BIN" \
     --stylesheet "$CSS_FILE" \
     "$OUTPUT_HTML" "$OUTPUT_PDF"
 else
