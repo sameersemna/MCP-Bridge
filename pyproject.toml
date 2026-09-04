@@ -19,6 +19,7 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.54b1",
     "opentelemetry-sdk>=1.33.1",
     "pydantic>=2.10.4",
+    "pypdf>=5.0.0",
     "pydantic-settings>=2.7.0",
     "redis>=5.0.0",
     "sse-starlette>=2.2.0",
@@ -34,6 +35,7 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.8.4",
     "uv>=0.5.20",
+    "weasyprint>=69.0",
 ]
 [build-system]
 requires = [ "hatchling",]
@@ -44,6 +46,7 @@ path = "mcp_bridge/__init__.py"
 
 [project.scripts]
 mcp-bridge = "mcp_bridge.main:run"
+mcp-bridge-pdf-tool = "mcp_bridge.pdf_tool_server:run"
 
 [tool.ruff]
 target-version = "py311"

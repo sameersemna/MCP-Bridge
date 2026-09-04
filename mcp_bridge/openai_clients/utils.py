@@ -897,6 +897,22 @@ def _extract_query_argument(payload: str) -> str:
     return ""
 
 
+def _extract_url_argument(payload: str) -> str:
+    """Extract the ``url`` argument from a tool-call JSON payload, if present."""
+    if not payload:
+        return ""
+    try:
+        args = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(args, dict):
+        return ""
+    url = args.get("url")
+    if isinstance(url, str):
+        return url.strip()
+    return ""
+
+
 def _queries_are_near_duplicates(a: str, b: str, *, min_shared: int = 4, overlap_ratio: float = 0.8) -> bool:
     """Return True if two search queries are near-duplicates.
 

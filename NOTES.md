@@ -7,6 +7,8 @@ docker run -d \
   -v neo4j_data:/data \
   neo4j:latest
 
+python -m venv .venv
+
 
 docker update --restart unless-stopped local_neo4j
 
@@ -25,3 +27,13 @@ MCP_BRIDGE_URL=http://host:port ./test_mcp_tools
 sudo ls /var/lib/docker/volumes/mcp-bridge_tool_cache/_data/
 
 rg --hidden -g '.env*' 'tax-'
+
+
+python -m venv .open-webui
+source .open-webui/bin/activate
+pip install open-webui
+
+# set the HF_HUB_OFFLINE environment variable to 1 to prevent attempts to download models
+export HF_HUB_OFFLINE=1
+
+open-webui serve --host 0.0.0.0 --port 11409

@@ -10,6 +10,8 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 
+import httpx
+from fastapi import HTTPException
 from lmos_openai_types import CreateChatCompletionRequest
 
 from mcp_bridge.mcp_clients.AbstractClient import CallToolResult, TextContent
@@ -32,7 +34,10 @@ class FakeClient:
 
     async def post(self, url: str, **kwargs):
         self.posts.append((url, kwargs))
-        return self._responses.pop(0)
+        item = self._responses.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
 
 
 def _tool_calls_response(tool_name: str, arguments: str) -> str:
@@ -186,6 +191,76 @@ def test_chat_completions_retries_transient_upstream_error(monkeypatch):
     # The transient error was retried once, then the successful response was used.
     assert len(fake_client.posts) == 2
     assert response.choices[0].message.content == "Recovered answer."
+
+
+def test_chat_completions_retries_transport_error_then_succeeds(monkeypatch):
+    """Reproduces a real production trace: `client.post()` raised
+    httpx.ReadError (the upstream connection dropped before any response
+    arrived) instead of returning a response object at all. Before the fix
+    this propagated straight out of the tool loop as an unhandled exception
+    (an ugly "Exception in ASGI application" stack trace, and a 500 with no
+    useful detail for the caller). It should instead be retried exactly like
+    a transient 5xx status, using the same retry budget and backoff."""
+    fake_client = FakeClient(
+        [
+            httpx.ReadError("connection reset"),
+            FakeResponse(200, _stop_response("Recovered after transport error.")),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(chat_completion_module, "DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS", 0.0)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    response = asyncio.run(chat_completion_module.chat_completions(request, None))
+
+    assert len(fake_client.posts) == 2
+    assert response.choices[0].message.content == "Recovered after transport error."
+
+
+def test_chat_completions_fails_gracefully_after_repeated_transport_errors(monkeypatch):
+    """When every attempt hits a transport error (connection never recovers),
+    the request must still fail with a clean HTTPException carrying real
+    diagnostic detail -- not an unhandled exception."""
+    fake_client = FakeClient(
+        [
+            httpx.ReadError("connection reset"),
+            httpx.ReadError("connection reset"),
+            httpx.ReadError("connection reset"),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(chat_completion_module, "DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS", 0.0)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    try:
+        asyncio.run(chat_completion_module.chat_completions(request, None))
+        assert False, "expected an HTTPException"
+    except HTTPException as exc:
+        assert exc.status_code == 502
 
 
 def test_chat_completions_retries_429_and_honors_retry_after(monkeypatch):

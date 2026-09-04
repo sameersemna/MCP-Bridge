@@ -1,9 +1,11 @@
 import asyncio
+import io
 import os
 import re
 import time
 from typing import Any
 
+import httpx
 from fastapi import HTTPException, Request
 from lmos_openai_types import (
     CreateChatCompletionRequest,
@@ -12,12 +14,112 @@ from lmos_openai_types import (
     FinishReason1,
 )
 
-from .utils import ToolResultCache, call_tools, chat_completion_add_tools, get_tool_cache, sanitize_tool_result_content
+from .utils import (
+    ToolResultCache,
+    _extract_url_argument,
+    call_tools,
+    chat_completion_add_tools,
+    get_tool_cache,
+    sanitize_tool_result_content,
+)
 from .genericHttpxClient import get_client
 from mcp_bridge.config import config
 from mcp_bridge.logging import RequestTraceLogger
 from loguru import logger
 import json
+
+# Many MCP fetch tools (mcp-server-fetch, duckduckgo-mcp-server's fetch_content,
+# etc.) decode whatever bytes they downloaded as text via `httpx.Response.text`,
+# which guesses an encoding. For binary content like a PDF this is a lossy,
+# one-way decode -- by the time we see the mangled string, the original bytes
+# are already gone and cannot be reconstructed from it. So instead of trying to
+# repair the corrupted text, we detect the corruption (PDF magic bytes survive
+# any decode, since they're plain ASCII at byte 0) and, if the original tool
+# call's arguments included a `url`, re-fetch that URL ourselves as raw bytes
+# and extract text from a clean copy. If anything about that fails, the
+# original (unusable) content is left untouched -- this only ever improves a
+# result, never breaks one that already worked.
+_PDF_MAGIC = b"%PDF-"
+DEFAULT_MAX_PDF_RECOVERY_CHARS = 20000
+PDF_RECOVERY_FETCH_TIMEOUT_SECONDS = 30.0
+PDF_RECOVERY_MAX_DOWNLOAD_BYTES = 25_000_000
+
+
+def _looks_like_mangled_pdf_text(text: str) -> bool:
+    # "%PDF-" is plain ASCII, so it survives any reasonable text decode of the
+    # file's first bytes unchanged -- this check doesn't depend on knowing
+    # which (if any) encoding the upstream tool guessed for the rest of it.
+    return text.lstrip().startswith("%PDF-")
+
+
+async def _recover_pdf_text_from_url(url: str, *, max_length: int = DEFAULT_MAX_PDF_RECOVERY_CHARS) -> str | None:
+    """Re-fetch ``url`` as raw bytes and extract text from it as a PDF.
+
+    Returns extracted text on success, or ``None`` if the URL isn't reachable,
+    isn't actually a PDF, or its text can't be extracted for any reason. Never
+    raises -- callers fall back to the original (mangled) tool content.
+    """
+    if not url or not url.lower().startswith(("http://", "https://")):
+        return None
+
+    try:
+        raw = bytearray()
+        async with httpx.AsyncClient(follow_redirects=True, timeout=PDF_RECOVERY_FETCH_TIMEOUT_SECONDS) as client:
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    raw.extend(chunk)
+                    if len(raw) > PDF_RECOVERY_MAX_DOWNLOAD_BYTES:
+                        logger.debug(f"PDF recovery: {url} exceeded {PDF_RECOVERY_MAX_DOWNLOAD_BYTES} bytes; aborting")
+                        return None
+    except Exception as e:
+        logger.debug(f"PDF recovery: re-fetching {url} failed: {e}")
+        return None
+
+    if not bytes(raw).startswith(_PDF_MAGIC):
+        return None
+
+    try:
+        import pypdf
+
+        reader = pypdf.PdfReader(io.BytesIO(bytes(raw)))
+        pages_text = [page.extract_text() or "" for page in reader.pages]
+        text = "\n".join(pages_text).strip()
+    except Exception as e:
+        logger.debug(f"PDF recovery: extracting text from {url} failed: {e}")
+        return None
+
+    if not text:
+        return None
+
+    if len(text) > max_length:
+        text = text[:max_length].rstrip() + "…"
+
+    return text
+
+
+async def _recover_mangled_pdf_tool_content(
+    tool_name: str, arguments: str, tools_content: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    """Replace any mangled-PDF text parts in-place with cleanly re-extracted text."""
+    url = _extract_url_argument(arguments)
+    if not url:
+        return tools_content
+
+    for part in tools_content:
+        text = part.get("text", "")
+        if not text or not _looks_like_mangled_pdf_text(text):
+            continue
+
+        recovered = await _recover_pdf_text_from_url(url)
+        if recovered is None:
+            continue
+
+        logger.info(f"recovered PDF text for tool '{tool_name}' from {url} ({len(recovered)} chars)")
+        part["text"] = recovered
+
+    return tools_content
+
 
 DEFAULT_MAX_TOOL_TURNS = 12
 MIN_MAX_TOOL_TURNS = 12
@@ -1847,6 +1949,50 @@ def _record_and_raise_upstream_failure(
     return HTTPException(status_code=status_code, detail=full_detail)
 
 
+def _synthetic_transport_error_response(exc: Exception) -> httpx.Response:
+    """Represent an httpx transport-level failure as a synthetic 503 response.
+
+    A dropped connection, read timeout, or reset (``httpx.TransportError`` and
+    its subclasses -- ``ReadError``, ``ConnectError``, ``RemoteProtocolError``,
+    etc.) means ``client.post()`` never got a response to inspect at all.
+    Without this, that exception propagates straight out of the tool loop as
+    an unhandled "Exception in ASGI application" stack trace, even though it's
+    the exact same kind of transient upstream flakiness the retry logic below
+    already handles for a real 5xx/429 status.
+
+    Synthesizing a 503 here lets `_is_retryable_upstream_status` and
+    `_get_retry_after_seconds` treat it exactly like a retryable upstream
+    error with zero changes to that logic -- there's no real HTTP response to
+    build this from, so the body is clearly tagged as bridge-synthesized
+    rather than a genuine upstream 503, so it's never mistaken for one in
+    logs or traces.
+    """
+    message = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+    body = json.dumps(
+        {
+            "error": {
+                "message": f"mcp-bridge: upstream connection failed before a response was received ({message})",
+                "code": 503,
+            }
+        }
+    )
+    return httpx.Response(status_code=503, text=body)
+
+
+async def _post_chat_completion(client: Any, request: CreateChatCompletionRequest) -> httpx.Response:
+    """POST to the upstream inference server, translating a transport-level
+    failure into a synthetic retryable response instead of letting it
+    propagate uncaught (see `_synthetic_transport_error_response`)."""
+    try:
+        return await client.post(
+            "/chat/completions",
+            json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+        )
+    except httpx.TransportError as e:
+        logger.warning(f"upstream request failed at the transport level; treating as a retryable error: {type(e).__name__}: {e}")
+        return _synthetic_transport_error_response(e)
+
+
 async def chat_completions(
     request: CreateChatCompletionRequest,
     http_request: Request,
@@ -1883,13 +2029,7 @@ async def chat_completions(
         while True:
             start_time = time.perf_counter()
             # logger.debug(request.model_dump_json())
-            upstream_response = await client.post(
-                "/chat/completions",
-                #content=request.model_dump_json(
-                #    exclude_defaults=True, exclude_none=True, exclude_unset=True
-                #),
-                json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
-            )
+            upstream_response = await _post_chat_completion(client, request)
             text = upstream_response.text
             logger.debug(f"upstream chat completion response received: status={upstream_response.status_code}")
             _record_timing(trace_logger, "upstream_llm_request", time.perf_counter() - start_time)
@@ -1911,10 +2051,7 @@ async def chat_completions(
                         f"in {delay:.1f}s"
                     )
                     await asyncio.sleep(delay)
-                    upstream_response = await client.post(
-                        "/chat/completions",
-                        json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
-                    )
+                    upstream_response = await _post_chat_completion(client, request)
                     text = upstream_response.text
                     if not _is_retryable_upstream_status(upstream_response.status_code, text):
                         retried = True
@@ -2393,9 +2530,10 @@ async def chat_completions(
 
                 tool_errors: list[str] = []
                 tool_call_messages = _extract_tool_calls(response.choices[0].message)
-                for tool_call, tool_call_result in zip(
+                for tool_call, tool_call_result, (_, tool_call_arguments) in zip(
                     tool_call_messages,
                     tool_call_results,
+                    tool_call_items,
                 ):
                     function = getattr(tool_call, "function", None)
                     if isinstance(function, dict):
@@ -2446,6 +2584,9 @@ async def chat_completions(
                     tools_content = sanitize_tool_result_content(
                         tool_name,
                         tool_call_result,
+                    )
+                    tools_content = await _recover_mangled_pdf_tool_content(
+                        tool_name, tool_call_arguments, tools_content
                     )
                     request.messages.append(
                         ChatCompletionRequestMessage.model_validate(
