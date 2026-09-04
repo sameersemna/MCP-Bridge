@@ -818,6 +818,71 @@ def test_session_maintainer_keeps_retrying_after_startup_failure() -> None:
     assert attempts >= 2
 
 
+def test_is_transport_error_classifies_end_of_stream_and_wrapping_exception_group() -> None:
+    # Reproduces a real production trace: a remote SSE-based MCP server (e.g.
+    # brightdata) drops the connection mid-session ("peer closed connection
+    # without sending complete message body"). anyio surfaces this as an
+    # `EndOfStream`, wrapped in an `ExceptionGroup` by the client's task
+    # group. Before this fix, `_is_transport_error` didn't recognize
+    # `EndOfStream`, so `_session_maintainer` logged it via the generic
+    # `logger.error(f"... {type(e)} {e.args}")` branch (producing an alarming
+    # "<class 'ExceptionGroup'> ('unhandled errors in a TaskGroup', ...)"
+    # line) instead of the calm "transport error ... will keep retrying"
+    # warning used for every other flaky-network case. The retry loop itself
+    # was never affected -- both branches fall through to the same retry --
+    # only the log's tone/clarity was wrong.
+    import anyio
+
+    assert GenericMcpClient._is_transport_error(anyio.EndOfStream()) is True
+    assert (
+        GenericMcpClient._is_transport_error(
+            ExceptionGroup("unhandled errors in a TaskGroup", [anyio.EndOfStream()])
+        )
+        is True
+    )
+
+
+def test_session_maintainer_logs_end_of_stream_as_a_retryable_transport_error() -> None:
+    import anyio
+    from loguru import logger
+
+    class _CapturingSink:
+        def __init__(self) -> None:
+            self.records: list[tuple[str, str]] = []
+
+        def write(self, message) -> None:
+            self.records.append((message.record["level"].name, message.record["message"]))
+
+    class DroppedConnectionClient(GenericMcpClient):
+        def __init__(self) -> None:
+            super().__init__("brightdata")
+
+        async def _maintain_session(self) -> None:
+            raise ExceptionGroup("unhandled errors in a TaskGroup", [anyio.EndOfStream()])
+
+    async def run() -> list[tuple[str, str]]:
+        sink = _CapturingSink()
+        handler_id = logger.add(sink.write, level="WARNING")
+        try:
+            client = DroppedConnectionClient()
+            task = asyncio.create_task(client._session_maintainer())
+            await asyncio.sleep(0.1)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        finally:
+            logger.remove(handler_id)
+        return sink.records
+
+    records = asyncio.run(run())
+
+    assert any(
+        level == "WARNING" and "transport error for brightdata" in message and "will keep retrying" in message
+        for level, message in records
+    )
+    assert not any(level == "ERROR" and "<class" in message for level, message in records)
+
+
 def test_call_tool_uses_a_longer_default_timeout() -> None:
     class SlowSession:
         async def call_tool(self, name: str, arguments: dict | None):

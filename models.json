@@ -1,8 +1,84 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-04T19:00:54.073179+00:00",
-  "model_count": 427,
+  "fetched_at": "2026-09-04T21:59:07.021430+00:00",
+  "model_count": 431,
   "models": {
+    "openai/gpt-6-astra": {
+      "name": "OpenAI: GPT-6 Astra",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00001",
+      "completion_price": "0.00005",
+      "input_cache_read_price": "0.000001",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "openai/gpt-6-astra:batch": {
+      "name": "OpenAI: GPT-6 Astra (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000005",
+      "completion_price": "0.000025",
+      "input_cache_read_price": "0.0000005",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "openai/gpt-6-astra-pro": {
+      "name": "OpenAI: GPT-6 Astra Pro",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00001",
+      "completion_price": "0.00005",
+      "input_cache_read_price": "0.000001",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "openai/gpt-6-astra-pro:batch": {
+      "name": "OpenAI: GPT-6 Astra Pro (batch)",
+      "context_length": 1050000,
+      "max_completion_tokens": 128000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "file",
+        "image",
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000005",
+      "completion_price": "0.000025",
+      "input_cache_read_price": "0.0000005",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
     "inclusionai/ling-3.0-flash-sante:free": {
       "name": "inclusionAI: Ling 3.0 Flash Sante (free)",
       "context_length": 262144,
@@ -2682,9 +2758,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000001001892",
-      "completion_price": "0.000002003784",
-      "input_cache_read_price": "0.000000083491",
+      "prompt_price": "0.000000981708",
+      "completion_price": "0.000001963416",
+      "input_cache_read_price": "0.000000081809",
       "knowledge_cutoff": null,
       "reasoning": true
     },
