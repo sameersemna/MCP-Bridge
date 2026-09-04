@@ -124,6 +124,79 @@ def _diagnostic_snippet(text: str, limit: int = 500) -> str:
     if len(joined) <= limit:
         return joined
     return joined[: limit - 1].rstrip() + "…"
+
+
+_STANDARD_FINISH_REASONS = frozenset({"stop", "length", "tool_calls", "content_filter", "function_call"})
+
+
+def _try_recover_response_with_unknown_finish_reason(
+    text: str, validation_error: Exception
+) -> CreateChatCompletionResponse | None:
+    """Best-effort recovery when the ONLY reason a response failed to
+    validate is a non-standard ``finish_reason`` value.
+
+    Providers occasionally emit a ``finish_reason`` outside the OpenAI spec's
+    five values (``stop``/``length``/``tool_calls``/``content_filter``/
+    ``function_call``) to signal something provider-specific went wrong
+    mid-generation -- observed with Cohere (via OpenRouter), which returns
+    ``finish_reason: "error"`` (and ``native_finish_reason: "error"``) when
+    its own generation fails, while the rest of the payload (usage, a partial
+    message, often a `reasoning` field showing what the model was doing when
+    it errored) is perfectly well-formed JSON. Hard-failing the whole request
+    over one unrecognized enum value throws away that signal -- and, if this
+    happens mid-research, discards every tool result already gathered.
+
+    This re-parses the raw JSON and coerces any choice's non-standard
+    ``finish_reason`` to ``"stop"``, but ONLY when pydantic's validation
+    error is exclusively about ``finish_reason`` fields -- any other error
+    (a genuinely malformed payload) is left alone to surface as a hard
+    failure. A coerced response then flows through the SAME downstream logic
+    as any other completion: empty content triggers the existing degraded-
+    response fallback (rather than this being a special case), while a
+    message with real content or tool_calls is used as-is.
+
+    Returns ``None`` if recovery isn't applicable or doesn't succeed.
+    """
+    errors = getattr(validation_error, "errors", None)
+    if not callable(errors):
+        return None
+    try:
+        error_list = errors()
+    except Exception:
+        return None
+
+    if not error_list:
+        return None
+    if not all(
+        error.get("type") == "enum" and error.get("loc", (None,))[-1] == "finish_reason"
+        for error in error_list
+    ):
+        return None
+
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    choices = payload.get("choices")
+    if not isinstance(choices, list):
+        return None
+
+    coerced_any = False
+    for choice in choices:
+        if isinstance(choice, dict) and choice.get("finish_reason") not in _STANDARD_FINISH_REASONS | {None}:
+            choice["finish_reason"] = "stop"
+            coerced_any = True
+
+    if not coerced_any:
+        return None
+
+    try:
+        return CreateChatCompletionResponse.model_validate(payload)
+    except Exception:
+        return None
+
+
 # Upper bound on how long we will wait for a provider's `Retry-After` hint.
 # Free-tier providers often ask for 60s; we honor it but cap it so a single
 # request cannot stall the worker for an unreasonable time.
@@ -1949,23 +2022,37 @@ async def chat_completions(
             except HTTPException:
                 raise
             except Exception as e:
-                # Log the raw upstream body so a parse failure is diagnosable.
-                # Providers sometimes return a small error/empty body (e.g. a
-                # 62-byte `{"error": ...}` or a truncated response) that is not
-                # a valid chat completion; without the raw text we cannot tell
-                # whether it was a transient blip, a rate limit, or a provider
-                # bug.
-                logger.error("error parsing upstream chat completion response")
-                logger.error(f"upstream status={upstream_response.status_code}; raw body: {text[:2000]}")
-                logger.error(e)
-                raise _record_and_raise_upstream_failure(
-                    trace_logger,
-                    status_code=502,
-                    stage="response_parse_failure",
-                    detail="Failed to parse upstream chat completion response",
-                    model=getattr(request, "model", None),
-                    raw_body=text,
-                ) from e
+                recovered = _try_recover_response_with_unknown_finish_reason(text, e)
+                if recovered is not None:
+                    logger.warning(
+                        "upstream returned a non-standard finish_reason (e.g. Cohere's "
+                        f"'error'); coerced to 'stop' and recovered the response: {e}"
+                    )
+                    response = recovered
+                    if trace_logger is not None:
+                        trace_logger.record(
+                            "llm_response",
+                            response=response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+                            recovered_from="unknown_finish_reason",
+                        )
+                else:
+                    # Log the raw upstream body so a parse failure is diagnosable.
+                    # Providers sometimes return a small error/empty body (e.g. a
+                    # 62-byte `{"error": ...}` or a truncated response) that is not
+                    # a valid chat completion; without the raw text we cannot tell
+                    # whether it was a transient blip, a rate limit, or a provider
+                    # bug.
+                    logger.error("error parsing upstream chat completion response")
+                    logger.error(f"upstream status={upstream_response.status_code}; raw body: {text[:2000]}")
+                    logger.error(e)
+                    raise _record_and_raise_upstream_failure(
+                        trace_logger,
+                        status_code=502,
+                        stage="response_parse_failure",
+                        detail="Failed to parse upstream chat completion response",
+                        model=getattr(request, "model", None),
+                        raw_body=text,
+                    ) from e
 
             if not response.choices:
                 logger.error("upstream chat completion response contained no choices")

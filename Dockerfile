@@ -21,7 +21,7 @@ COPY mcp_bridge ./mcp_bridge
 
 RUN addgroup --system appgroup \
     && adduser --system --ingroup appgroup appuser \
-    && mkdir -p /home/appuser/.cache/uv /app/logs /app/tool_cache \
+    && mkdir -p /home/appuser/.cache/uv /home/appuser/.npm /app/logs /app/tool_cache \
     && chown -R appuser:appgroup /app /home/appuser
 ENV HOME=/home/appuser \
     UV_CACHE_DIR=/home/appuser/.cache/uv

@@ -432,3 +432,58 @@ def test_chat_completions_synthesizes_fallback_when_upstream_fails_after_evidenc
     # A fallback response was synthesized from the tool evidence.
     assert response.choices[0].message.content
     assert "result for search" in response.choices[0].message.content
+
+
+def test_chat_completions_recovers_cohere_style_error_finish_reason_end_to_end(monkeypatch):
+    """Regression test for a real production failure: Cohere (via
+    OpenRouter) returns HTTP 200 with `finish_reason: "error"` -- not one of
+    the OpenAI spec's five standard values -- when its own generation fails
+    mid-stream. Previously `chat_completions` raised a 502 ("Failed to parse
+    upstream chat completion response"), discarding the real signal in the
+    payload (usage, a `reasoning` field). This drives the full public
+    `chat_completions` entry point end to end and checks it now degrades
+    gracefully instead of raising.
+    """
+    cohere_error_body = json.dumps(
+        {
+            "id": "gen-1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "cohere/north-mini-code:free",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "error",
+                    "native_finish_reason": "error",
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning": "Let me start by searching for information about this topic.",
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 41250, "completion_tokens": 341, "total_tokens": 41591},
+        }
+    )
+    fake_client = FakeClient([FakeResponse(200, cohere_error_body)])
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "cohere/north-mini-code:free",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    # Must NOT raise -- the old behavior was a 502 HTTPException here.
+    response = asyncio.run(chat_completion_module.chat_completions(request, None))
+
+    # Degraded gracefully (empty-content fallback), not a hard failure.
+    assert response.choices[0].message.content
+    assert response.choices[0].finish_reason.value == "stop"

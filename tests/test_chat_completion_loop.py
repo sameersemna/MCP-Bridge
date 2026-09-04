@@ -30,6 +30,7 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _should_stop_tool_loop_on_tool_errors,
     _should_use_empty_content_fallback,
     _strip_pseudo_tool_call_markers,
+    _try_recover_response_with_unknown_finish_reason,
     get_max_context_tokens,
     get_max_tool_turns,
     should_continue_tool_loop,
@@ -1262,3 +1263,69 @@ def test_finalize_recovered_response_does_not_touch_content():
     recovered_events = [e for e in trace_logger.events if e["type"] == "early_stop_recovered"]
     assert len(recovered_events) == 1
     assert recovered_events[0]["reason"] == "repeated_tool_calls"
+
+
+def _validation_error_for(raw_json: str):
+    import json as _json
+
+    from pydantic import ValidationError
+
+    try:
+        CreateChatCompletionResponse.model_validate(_json.loads(raw_json))
+    except ValidationError as exc:
+        return exc
+    raise AssertionError("expected a ValidationError but parsing succeeded")
+
+
+def test_recovers_cohere_style_error_finish_reason():
+    """Regression test for a real production failure: Cohere (via
+    OpenRouter) returns `finish_reason: "error"` when its own generation
+    fails mid-stream -- not one of the OpenAI spec's five standard values.
+    Everything else in the payload (usage, a partial message with a
+    `reasoning` field) is well-formed. Previously this hard-failed the whole
+    request with a generic "Failed to parse upstream chat completion
+    response", discarding the signal (and, mid-research, any tool evidence
+    already gathered). Recovery coerces the non-standard value to "stop" so
+    the response flows through the SAME downstream logic as any other
+    completion."""
+    raw = (
+        '{"id":"gen-1","object":"chat.completion","created":0,'
+        '"model":"cohere/north-mini-code:free","choices":[{"index":0,'
+        '"finish_reason":"error","native_finish_reason":"error",'
+        '"message":{"role":"assistant","content":null,'
+        '"reasoning":"Let me start by searching..."}}],'
+        '"usage":{"prompt_tokens":41250,"completion_tokens":341,"total_tokens":41591}}'
+    )
+    exc = _validation_error_for(raw)
+
+    recovered = _try_recover_response_with_unknown_finish_reason(raw, exc)
+
+    assert recovered is not None
+    assert recovered.choices[0].finish_reason == FinishReason1.stop
+    assert recovered.choices[0].message.content is None
+    assert recovered.usage.prompt_tokens == 41250
+
+
+def test_does_not_recover_genuinely_malformed_payload():
+    # A validation error unrelated to finish_reason (missing required field)
+    # must NOT be "recovered" -- it's a genuinely broken payload, and hiding
+    # that would be worse than a clear hard failure.
+    raw = '{"id":"gen-1","object":"chat.completion","created":0,"model":"test","choices":"not-a-list"}'
+    exc = _validation_error_for(raw)
+
+    assert _try_recover_response_with_unknown_finish_reason(raw, exc) is None
+
+
+def test_does_not_recover_when_finish_reason_is_already_valid():
+    # If finish_reason is one of the five standard values, there is nothing
+    # to coerce -- recovery must be a no-op (None), not silently rewrite a
+    # response that didn't actually fail for this reason.
+    class _FakeEnumError(Exception):
+        def errors(self):
+            return [{"type": "enum", "loc": ("choices", 0, "finish_reason"), "input": "stop"}]
+
+    raw = (
+        '{"id":"gen-1","object":"chat.completion","created":0,"model":"test",'
+        '"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}]}'
+    )
+    assert _try_recover_response_with_unknown_finish_reason(raw, _FakeEnumError()) is None

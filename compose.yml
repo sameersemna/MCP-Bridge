@@ -40,6 +40,21 @@ services:
       # the persistent cache is writable. A bind mount (`./tool_cache:...`) is
       # owned by the host user's UID and would be read-only to `appuser`.
       - tool_cache:/app/tool_cache
+      # Without this, every rebuild starts with an empty npm cache, so each of
+      # the `npx -y <pkg>` MCP servers (sequential-thinking, memory, context7,
+      # brave-search, exa) redownloads its package from the registry from
+      # scratch on every startup -- observed taking 90-110+ seconds each,
+      # during which those tools are unavailable ("session not ready" in
+      # /health). Like `tool_cache` above, this is a NAMED volume, and for the
+      # same reason: the Dockerfile must `mkdir` and `chown` this exact path
+      # to `appuser` at build time so Docker initializes the volume with
+      # writable ownership. Skipping that step (as a first pass at this fix
+      # did) makes Docker create the volume owned by root, silently blocking
+      # every `npx` write with a permission error -- worse than the original
+      # problem, since a slow download eventually succeeds but a permission
+      # error hangs forever. Persisting npm's cache directory lets `npx` reuse
+      # already-downloaded packages across rebuilds.
+      - npm_cache:/home/appuser/.npm
     restart: unless-stopped
 
   jaeger:
@@ -54,3 +69,4 @@ services:
 
 volumes:
   tool_cache:
+  npm_cache:
