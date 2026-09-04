@@ -21,6 +21,7 @@ from .utils import (
     chat_completion_add_tools,
     get_tool_cache,
     sanitize_tool_result_content,
+    tool_names,
 )
 from .genericHttpxClient import get_client
 from mcp_bridge.config import config
@@ -1794,7 +1795,12 @@ async def _handle_stub_or_stop(
     synthesized final answer (a stub that has exhausted its retries).
     """
     if not _looks_like_unfulfilled_action_stub(assistant_text):
-        logger.debug("no tool calls found")
+        finish_reason = response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None
+        tool_count = len(getattr(request, "tools", None) or [])
+        logger.debug(
+            "no tool calls found "
+            f"(finish_reason={finish_reason}; {tool_count} tool(s) were available to the model)"
+        )
         return response
 
     if stub_retry_count < max_stub_retries:
@@ -2002,6 +2008,8 @@ async def chat_completions(
 
     if not getattr(request, "tools", None):
         request = await chat_completion_add_tools(request)
+    discovered_tool_names = tool_names(request.tools)
+    logger.info(f"tools discovered: {len(discovered_tool_names)} available: {', '.join(discovered_tool_names)}")
     if trace_logger is not None:
         trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
 

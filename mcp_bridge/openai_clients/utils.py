@@ -247,6 +247,26 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
     return request
 
 
+def tool_names(tools: Any) -> list[str]:
+    """Return the ``function.name`` of each tool in an OpenAI tools list.
+
+    Used to log a concise, greppable summary of which tools were actually
+    offered to the model for a given request -- without this, diagnosing "why
+    didn't the model call tool X" requires opening the per-request trace JSON
+    file instead of just reading the CLI log stream.
+    """
+    names: list[str] = []
+    for tool in tools or []:
+        function = getattr(tool, "function", None)
+        if isinstance(function, dict):
+            name = function.get("name")
+        else:
+            name = getattr(function, "name", None)
+        if name:
+            names.append(str(name))
+    return names
+
+
 DEFAULT_MAX_SEARCH_RESULTS = 5
 
 tracer = trace.get_tracer("mcp_bridge.openai_clients.utils")

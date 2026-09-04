@@ -49,7 +49,7 @@ except ImportError:  # pragma: no cover - fallback for minimal environments
     class CreateChatCompletionStreamResponse(BaseModel):
         choices: list[StreamChoice] = Field(default_factory=list)
 
-from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content
+from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content, tool_names
 from .chatCompletion import (
     _contains_pseudo_tool_call_markers,
     _parse_pseudo_tool_calls,
@@ -140,6 +140,8 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
     request.stream = True
 
     request = await chat_completion_add_tools(request)
+    discovered_tool_names = tool_names(request.tools)
+    logger.info(f"tools discovered: {len(discovered_tool_names)} available: {', '.join(discovered_tool_names)}")
     if trace_logger is not None:
         trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
 
@@ -352,11 +354,19 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                             tool_calls=[{"name": name, "arguments": arguments} for name, arguments in parsed_calls],
                         )
                 else:
-                    logger.debug("no tool calls found")
+                    logger.debug(
+                        "no tool calls found "
+                        f"(finish_reason={last.choices[0].finish_reason.value}; "
+                        f"{len(discovered_tool_names)} tool(s) were available to the model)"
+                    )
                     fully_done = True
                     continue
             else:
-                logger.debug("no tool calls found")
+                logger.debug(
+                    "no tool calls found "
+                    f"(finish_reason={last.choices[0].finish_reason.value}; "
+                    f"{len(discovered_tool_names)} tool(s) were available to the model)"
+                )
                 fully_done = True
                 continue
 
