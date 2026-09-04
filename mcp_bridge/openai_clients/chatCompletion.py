@@ -71,10 +71,10 @@ async def _recover_pdf_text_from_url(url: str, *, max_length: int = DEFAULT_MAX_
                 async for chunk in response.aiter_bytes():
                     raw.extend(chunk)
                     if len(raw) > PDF_RECOVERY_MAX_DOWNLOAD_BYTES:
-                        logger.debug(f"PDF recovery: {url} exceeded {PDF_RECOVERY_MAX_DOWNLOAD_BYTES} bytes; aborting")
+                        logger.log("DEBUGIMP", f"PDF recovery: {url} exceeded {PDF_RECOVERY_MAX_DOWNLOAD_BYTES} bytes; aborting")
                         return None
     except Exception as e:
-        logger.debug(f"PDF recovery: re-fetching {url} failed: {e}")
+        logger.log("DEBUGIMP", f"PDF recovery: re-fetching {url} failed: {e}")
         return None
 
     if not bytes(raw).startswith(_PDF_MAGIC):
@@ -87,7 +87,7 @@ async def _recover_pdf_text_from_url(url: str, *, max_length: int = DEFAULT_MAX_
         pages_text = [page.extract_text() or "" for page in reader.pages]
         text = "\n".join(pages_text).strip()
     except Exception as e:
-        logger.debug(f"PDF recovery: extracting text from {url} failed: {e}")
+        logger.log("DEBUGIMP", f"PDF recovery: extracting text from {url} failed: {e}")
         return None
 
     if not text:
@@ -1797,7 +1797,8 @@ async def _handle_stub_or_stop(
     if not _looks_like_unfulfilled_action_stub(assistant_text):
         finish_reason = response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None
         tool_count = len(getattr(request, "tools", None) or [])
-        logger.debug(
+        logger.log(
+            "DEBUGIMP",
             "no tool calls found "
             f"(finish_reason={finish_reason}; {tool_count} tool(s) were available to the model)"
         )
@@ -2039,7 +2040,7 @@ async def chat_completions(
             # logger.debug(request.model_dump_json())
             upstream_response = await _post_chat_completion(client, request)
             text = upstream_response.text
-            logger.debug(f"upstream chat completion response received: status={upstream_response.status_code}")
+            logger.log("DEBUGIMP", f"upstream chat completion response received: status={upstream_response.status_code}")
             _record_timing(trace_logger, "upstream_llm_request", time.perf_counter() - start_time)
 
             # Retry transient provider errors (5xx, 429 rate-limit, or HTTP 200
@@ -2155,15 +2156,16 @@ async def chat_completions(
                     response_preview = response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True)
                     compact_preview = json.dumps(response_preview, ensure_ascii=False)[:4000]
                     logger.debug(f"upstream response preview: {compact_preview}")
-                    if response.choices:
-                        message = response.choices[0].message
-                        logger.debug(
-                            "upstream message summary: "
-                            f"role={getattr(getattr(message, 'root', message), 'role', None)}; "
-                            f"content_len={len(_extract_message_text(message))}; "
-                            f"tool_call_count={len(_extract_tool_calls(message))}; "
-                            f"finish_reason={getattr(response.choices[0].finish_reason, 'value', None)}"
-                        )
+                if response.choices:
+                    message = response.choices[0].message
+                    logger.log(
+                        "DEBUGIMP",
+                        "upstream message summary: "
+                        f"role={getattr(getattr(message, 'root', message), 'role', None)}; "
+                        f"content_len={len(_extract_message_text(message))}; "
+                        f"tool_call_count={len(_extract_tool_calls(message))}; "
+                        f"finish_reason={getattr(response.choices[0].finish_reason, 'value', None)}"
+                    )
             except HTTPException:
                 raise
             except Exception as e:
@@ -2231,7 +2233,8 @@ async def chat_completions(
             request.messages.append(msg)
 
             finish_reason_label = response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None
-            logger.debug(
+            logger.log(
+                "DEBUGIMP",
                 "chat completion finish reason: "
                 f"{finish_reason_label}; tool_calls={bool(getattr(response.choices[0].message, 'tool_calls', None))}"
             )
@@ -2310,7 +2313,7 @@ async def chat_completions(
                         continue
                     return stub_result
 
-            logger.debug("tool calls found")
+            logger.log("DEBUGIMP", "tool calls found")
             if trace_logger is not None:
                 trace_logger.record("tool_call_decision", finish_reason=finish_reason_value)
             tool_call_items = []
@@ -2555,7 +2558,8 @@ async def chat_completions(
                         )
                         continue
 
-                    logger.debug(
+                    logger.log(
+                        "DEBUGIMP",
                         "tool call completed: "
                         f"name={tool_name}; "
                         f"parts={len(getattr(tool_call_result, 'content', []) or [])}; "
@@ -2613,7 +2617,7 @@ async def chat_completions(
                             tool_result=tool_call_result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
                         )
 
-                    logger.debug("sending next iteration of chat completion request")
+                    logger.log("DEBUGIMP", "sending next iteration of chat completion request")
 
                 if tool_errors:
                     should_stop = _should_stop_tool_loop_on_tool_errors(tool_errors, request.messages)

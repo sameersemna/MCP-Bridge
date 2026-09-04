@@ -223,7 +223,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
 
                             # handle if the SSE stream is done
                             if data == "[DONE]":
-                                logger.debug("inference serverstream done")
+                                logger.log("DEBUGIMP", "inference serverstream done")
                                 break
 
                             # `data` is the raw JSON string from the SSE event, not yet
@@ -251,7 +251,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                                 else:
                                     parsed_data = CreateChatCompletionStreamResponse.model_validate_json(data)
                             except Exception as e:
-                                logger.debug("failed to parse streamed chunk; falling back to error")
+                                logger.log("DEBUGIMP", "failed to parse streamed chunk; falling back to error")
                                 raise e
 
                             # add the delta to the response content
@@ -354,7 +354,8 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                             tool_calls=[{"name": name, "arguments": arguments} for name, arguments in parsed_calls],
                         )
                 else:
-                    logger.debug(
+                    logger.log(
+                        "DEBUGIMP",
                         "no tool calls found "
                         f"(finish_reason={last.choices[0].finish_reason.value}; "
                         f"{len(discovered_tool_names)} tool(s) were available to the model)"
@@ -362,7 +363,8 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                     fully_done = True
                     continue
             else:
-                logger.debug(
+                logger.log(
+                    "DEBUGIMP",
                     "no tool calls found "
                     f"(finish_reason={last.choices[0].finish_reason.value}; "
                     f"{len(discovered_tool_names)} tool(s) were available to the model)"
@@ -394,7 +396,8 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                         tool_calls=[{"name": name, "arguments": arguments} for name, arguments in parsed_calls],
                     )
 
-        logger.debug(
+        logger.log(
+            "DEBUGIMP",
             "tool calls found in stream; "
             f"count={len(collected_tool_calls)}"
         )
@@ -464,7 +467,8 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                     result=tool_call_result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) if tool_call_result is not None else None,
                 )
 
-            logger.debug(
+            logger.log(
+                "DEBUGIMP",
                 f"tool call result for {tool_call.get('name', '')}: {len(getattr(tool_call_result, 'content', []) or [])} content part(s), isError={getattr(tool_call_result, 'isError', False)}"
             )
 
@@ -495,8 +499,8 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                     tool_result=tool_call_result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
                 )
 
-        logger.debug("sending next iteration of chat completion request")
+        logger.log("DEBUGIMP", "sending next iteration of chat completion request")
 
     # when done, send the final event
-    logger.debug("sending final event")
+    logger.log("DEBUGIMP", "sending final event")
     yield ServerSentEvent(event="message", data="[DONE]", id=None, retry=None)

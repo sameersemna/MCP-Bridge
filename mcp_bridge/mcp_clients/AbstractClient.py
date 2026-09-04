@@ -4,6 +4,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any
 
+import anyio
 import httpx
 from fastapi import HTTPException
 from loguru import logger
@@ -129,10 +130,10 @@ class GenericMcpClient(ABC):
         if isinstance(exc, (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout, httpx.WriteError)):
             return True
 
-        if isinstance(exc, TimeoutError):
+        if isinstance(exc, (TimeoutError, anyio.EndOfStream)):
             return True
 
-        return exc.__class__.__name__ in {"HTTPStatusError", "ConnectError", "ReadTimeout", "WriteError"}
+        return exc.__class__.__name__ in {"HTTPStatusError", "ConnectError", "ReadTimeout", "WriteError", "EndOfStream"}
 
     async def _session_maintainer(self):
         # Always keep retrying (with capped exponential backoff) rather than

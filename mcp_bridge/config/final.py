@@ -76,7 +76,15 @@ class InferenceServer(BaseModel):
 
 
 class Logging(BaseModel):
-    log_level: Literal["INFO", "DEBUG"] = Field("INFO", description="default log level")
+    log_level: Literal["INFO", "DEBUGIMP", "DEBUG"] = Field(
+        "INFO",
+        description=(
+            "default log level. DEBUGIMP sits between INFO and DEBUG: it shows "
+            "low-frequency debug summaries (tool calls, finish reasons, turn "
+            "boundaries) without the full per-chunk streaming firehose that "
+            "DEBUG produces"
+        ),
+    )
     log_server_pings: bool = Field(False, description="log server pings")
 
 

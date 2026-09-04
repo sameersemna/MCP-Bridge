@@ -362,6 +362,11 @@ an example config.json file with most of the options explicitly set:
 | logging          | The logging configuration          |
 | api_key          | API key for server authentication  |
 
+`logging.log_level` accepts `"INFO"`, `"DEBUGIMP"`, or `"DEBUG"`. `DEBUGIMP` sits
+between the two: it shows low-frequency debug summaries (tool calls made,
+finish reasons, turn boundaries) without the full per-chunk streaming firehose
+(one log line per SSE event) that `"DEBUG"` produces.
+
 ## Support
 
 If you encounter any issues please open an issue or join the [discord](https://discord.gg/4NVQHqNxSZ).

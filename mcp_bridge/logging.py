@@ -9,6 +9,20 @@ from typing import Any
 
 from loguru import logger
 
+# A level between INFO (20) and DEBUG (10) for debug-grade messages that are
+# worth keeping visible without the full DEBUG firehose. Plain per-chunk
+# streaming diagnostics (one line per SSE event, easily hundreds per request)
+# stay at DEBUG; low-frequency "what happened" summaries (tool calls made,
+# finish reasons, turn boundaries) are logged at this level instead, so
+# `log_level: "DEBUGIMP"` in config.json shows those without the noise.
+# Wrapped in try/except because loguru raises if a level of this name is
+# already registered -- harmless in production (registered once at import),
+# but the module can be reloaded more than once in tests.
+try:
+    logger.level("DEBUGIMP", no=15, color="<cyan>", icon="🔹")
+except ValueError:
+    pass
+
 SENSITIVE_KEYWORDS = ("key", "token", "secret", "password", "authorization")
 
 # Field names that legitimately contain a sensitive keyword as a substring but
