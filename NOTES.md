@@ -25,7 +25,3 @@ MCP_BRIDGE_URL=http://host:port ./test_mcp_tools
 sudo ls /var/lib/docker/volumes/mcp-bridge_tool_cache/_data/
 
 rg --hidden -g '.env*' 'tax-'
-
-BrightData
-42850aad-4e89-42f0-9da7-4183b86fd55c
-https://mcp.brightdata.com/mcp?token=42850aad-4e89-42f0-9da7-4183b86fd55c

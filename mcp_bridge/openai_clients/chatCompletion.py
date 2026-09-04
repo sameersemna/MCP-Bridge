@@ -749,9 +749,21 @@ def _should_stop_tool_loop_on_tool_errors(
     if not tool_errors:
         return False
 
-    # Fatal errors (no client / unknown tool) cannot be fixed by the model, so
-    # stop immediately regardless of evidence.
-    if any(not _is_recoverable_tool_error(error) for error in tool_errors):
+    # Stop immediately only if EVERY error in this round is fatal -- i.e.
+    # there is truly no path forward. A single round commonly dispatches
+    # several tool calls at once (e.g. a model calling 3 tools in one turn),
+    # and a mix of outcomes is common: some calls get a corrective "Did you
+    # mean one of: X, Y, Z?" hint (explicitly designed for the model to
+    # self-correct on the next turn -- see `call_tools` in utils.py) while
+    # one gets a bare "No MCP client found" with no close match. Using `any`
+    # here previously meant that ONE fatal-looking error discarded every
+    # OTHER call's actionable corrective hint in the same round, stopping the
+    # loop before the model ever got a chance to act on them -- defeating the
+    # corrective-suggestion system's entire purpose. `all` lets the loop
+    # continue whenever at least one error is actually fixable; the
+    # `len(tool_errors) > 3` cap below still bounds how long a model that
+    # truly can't recover is allowed to keep trying.
+    if all(not _is_recoverable_tool_error(error) for error in tool_errors):
         return True
 
     # Timeout errors with partial evidence are recoverable — the model can

@@ -146,3 +146,36 @@ def test_too_many_recoverable_errors_stop_loop():
         ["sequential-thinking: Input validation error"] * 4,
         [],
     ) is True
+
+
+def test_mixed_batch_with_one_bare_fatal_error_and_recoverable_ones_does_not_stop():
+    # Regression test for a real production failure: a model called three
+    # tools in one turn -- 'memory', 'RedisMCPServer', 'neo4j-memory' (MCP
+    # *server* names, not tool names). Two got a corrective "Did you mean
+    # one of: ...?" suggestion; the third ('neo4j-memory') got a bare "No
+    # MCP client found" because no close match was found. Previously, `any`
+    # meant that single bare-fatal error discarded the other two calls'
+    # perfectly actionable corrective hints and stopped the loop immediately
+    # -- the model never got a chance to read "Did you mean search_nodes,
+    # read_graph?" and try again. The loop must continue whenever at least
+    # one error in the batch is actually recoverable.
+    assert _should_stop_tool_loop_on_tool_errors(
+        [
+            "memory: 'memory' is not a registered tool. Did you mean one of: search_nodes, read_graph? Call one of these exact names instead.",
+            "RedisMCPServer: 'RedisMCPServer' is not a registered tool. Did you mean one of: hset, hget, hdel? Call one of these exact names instead.",
+            "neo4j-memory: No MCP client found for tool 'neo4j-memory'. Only call tools by their exact registered names.",
+        ],
+        [],
+    ) is False
+
+
+def test_batch_where_every_error_is_bare_fatal_still_stops():
+    # If NONE of the errors in the round have any actionable correction, there
+    # really is no path forward, so the loop must still stop.
+    assert _should_stop_tool_loop_on_tool_errors(
+        [
+            "foo: No MCP client found for tool 'foo'. Only call tools by their exact registered names.",
+            "bar: No MCP client found for tool 'bar'. Only call tools by their exact registered names.",
+        ],
+        [],
+    ) is True

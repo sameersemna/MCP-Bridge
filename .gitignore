@@ -174,3 +174,4 @@ tmp/
 reports/
 prompts/
 tool_cache/
+*.prs
