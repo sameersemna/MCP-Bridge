@@ -1,6 +1,6 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-04T21:59:07.021430+00:00",
+  "fetched_at": "2026-09-04T22:38:12.261254+00:00",
   "model_count": 431,
   "models": {
     "openai/gpt-6-astra": {
@@ -2758,9 +2758,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000981708",
-      "completion_price": "0.000001963416",
-      "input_cache_read_price": "0.000000081809",
+      "prompt_price": "0.000000971442",
+      "completion_price": "0.000001942884",
+      "input_cache_read_price": "0.0000000809535",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2775,9 +2775,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000008778",
-      "completion_price": "0.00000017556",
-      "input_cache_read_price": "0.000000017556",
+      "prompt_price": "0.0000000875",
+      "completion_price": "0.000000175",
+      "input_cache_read_price": "0.0000000175",
       "knowledge_cutoff": null,
       "reasoning": true
     },

@@ -122,18 +122,44 @@ class GenericMcpClient(ABC):
     async def _maintain_session(self):
         pass
 
+    # anyio has no shared base class across its stream-error exceptions, so
+    # each one needs an explicit isinstance check (unlike httpx.TransportError
+    # below, which already covers all its subclasses -- ConnectError,
+    # ConnectTimeout, ReadError, ReadTimeout, WriteError, WriteTimeout,
+    # PoolTimeout, CloseError, ProtocolError, etc. -- in one check). Listing
+    # httpx subclasses individually here previously meant each newly-seen
+    # variant (ConnectTimeout, then ClosedResourceError) had to be
+    # rediscovered from a production log one at a time; checking the broad
+    # base classes instead future-proofs against the rest of each family.
+    _ANYIO_STREAM_ERRORS = (anyio.EndOfStream, anyio.ClosedResourceError, anyio.BrokenResourceError)
+
     @staticmethod
     def _is_transport_error(exc: Exception) -> bool:
         if isinstance(exc, ExceptionGroup):
             return any(GenericMcpClient._is_transport_error(item) for item in exc.exceptions)
 
-        if isinstance(exc, (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout, httpx.WriteError)):
+        if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError)):
             return True
 
-        if isinstance(exc, (TimeoutError, anyio.EndOfStream)):
+        if isinstance(exc, (TimeoutError, *GenericMcpClient._ANYIO_STREAM_ERRORS)):
             return True
 
-        return exc.__class__.__name__ in {"HTTPStatusError", "ConnectError", "ReadTimeout", "WriteError", "EndOfStream"}
+        return exc.__class__.__name__ in {
+            "HTTPStatusError",
+            "TransportError",
+            "ConnectError",
+            "ConnectTimeout",
+            "ReadError",
+            "ReadTimeout",
+            "WriteError",
+            "WriteTimeout",
+            "PoolTimeout",
+            "CloseError",
+            "ProtocolError",
+            "EndOfStream",
+            "ClosedResourceError",
+            "BrokenResourceError",
+        }
 
     async def _session_maintainer(self):
         # Always keep retrying (with capped exponential backoff) rather than

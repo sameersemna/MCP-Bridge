@@ -832,11 +832,38 @@ def test_is_transport_error_classifies_end_of_stream_and_wrapping_exception_grou
     # was never affected -- both branches fall through to the same retry --
     # only the log's tone/clarity was wrong.
     import anyio
+    import httpx
 
     assert GenericMcpClient._is_transport_error(anyio.EndOfStream()) is True
     assert (
         GenericMcpClient._is_transport_error(
             ExceptionGroup("unhandled errors in a TaskGroup", [anyio.EndOfStream()])
+        )
+        is True
+    )
+
+    # The first fix (isinstance-listing individual httpx/anyio subclasses)
+    # only covered the one exception seen in that one log line. The very same
+    # brightdata connection kept dropping in different ways minutes later --
+    # `ClosedResourceError` then `httpx.ConnectTimeout` -- and both were still
+    # misclassified because they weren't in the hand-picked list. Checking the
+    # broad `httpx.TransportError` base class (rather than enumerating
+    # ConnectError/ReadTimeout/WriteError one at a time) covers every httpx
+    # transport-level subclass at once; anyio's stream errors have no shared
+    # base, so those three are still listed explicitly.
+    assert GenericMcpClient._is_transport_error(anyio.ClosedResourceError()) is True
+    assert GenericMcpClient._is_transport_error(anyio.BrokenResourceError()) is True
+    assert GenericMcpClient._is_transport_error(httpx.ConnectTimeout("")) is True
+    assert GenericMcpClient._is_transport_error(httpx.PoolTimeout("")) is True
+    assert (
+        GenericMcpClient._is_transport_error(
+            ExceptionGroup("unhandled errors in a TaskGroup", [anyio.ClosedResourceError()])
+        )
+        is True
+    )
+    assert (
+        GenericMcpClient._is_transport_error(
+            ExceptionGroup("unhandled errors in a TaskGroup", [httpx.ConnectTimeout("")])
         )
         is True
     )
