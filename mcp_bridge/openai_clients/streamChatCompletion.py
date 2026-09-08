@@ -501,6 +501,16 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
 
         logger.log("DEBUGIMP", "sending next iteration of chat completion request")
 
+        # Batch summary: one line per tool-call batch so the parallel execution
+        # is visible at a glance. All results in this batch were collected
+        # before the single next LLM round-trip.
+        logger.log(
+            "DEBUGIMP",
+            "tool batch complete: "
+            f"calls={len(collected_tool_calls)}; "
+            f"llm_round_trips=1"
+        )
+
     # when done, send the final event
     logger.log("DEBUGIMP", "sending final event")
     yield ServerSentEvent(event="message", data="[DONE]", id=None, retry=None)

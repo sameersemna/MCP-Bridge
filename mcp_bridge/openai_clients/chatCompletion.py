@@ -2556,6 +2556,7 @@ async def chat_completions(
                         logger.warning(
                             f"tool call '{tool_name}' returned no result"
                         )
+                        tool_errors.append(f"{tool_name}: no result (dispatch failed)")
                         continue
 
                     logger.log(
@@ -2618,6 +2619,17 @@ async def chat_completions(
                         )
 
                     logger.log("DEBUGIMP", "sending next iteration of chat completion request")
+
+                # Batch summary: one line per tool-call batch so the parallel
+                # execution is visible at a glance. All results in this batch
+                # were collected before the single next LLM round-trip.
+                logger.log(
+                    "DEBUGIMP",
+                    "tool batch complete: "
+                    f"calls={len(tool_call_items)}; "
+                    f"errors={len(tool_errors)}; "
+                    f"llm_round_trips=1"
+                )
 
                 if tool_errors:
                     should_stop = _should_stop_tool_loop_on_tool_errors(tool_errors, request.messages)

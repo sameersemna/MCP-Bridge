@@ -1,7 +1,7 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-08T12:37:18.684321+00:00",
-  "model_count": 428,
+  "fetched_at": "2026-09-08T15:03:12.987665+00:00",
+  "model_count": 426,
   "models": {
     "openai/gpt-6-astra": {
       "name": "OpenAI: GPT-6 Astra",
@@ -474,7 +474,7 @@
     "~z-ai/glm-latest": {
       "name": "Z.ai: GLM Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 943718,
+      "max_completion_tokens": 128000,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -482,9 +482,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000112",
-      "completion_price": "0.00000352",
-      "input_cache_read_price": "0.000000208",
+      "prompt_price": "0.000001113",
+      "completion_price": "0.000003498",
+      "input_cache_read_price": "0.0000002067",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -684,9 +684,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000010494",
-      "completion_price": "0.0000031482",
-      "input_cache_read_price": "0.00000003498",
+      "prompt_price": "0.00000066",
+      "completion_price": "0.00000198",
+      "input_cache_read_price": "0.000000022",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1750,24 +1750,6 @@
       "knowledge_cutoff": "2025-01-01",
       "reasoning": true
     },
-    "nex-agi/nex-n2-mini": {
-      "name": "Nex AGI: Nex-N2-Mini",
-      "context_length": 262144,
-      "max_completion_tokens": 235929,
-      "modality": "text+image->text",
-      "input_modalities": [
-        "text",
-        "image"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.000000025",
-      "completion_price": "0.0000001",
-      "input_cache_read_price": "0.0000000025",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
     "sakana/fugu-ultra": {
       "name": "Sakana: Fugu Ultra",
       "context_length": 1000000,
@@ -1947,24 +1929,6 @@
       "prompt_price": "0.000005",
       "completion_price": "0.000025",
       "input_cache_read_price": "0.0000005",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
-    "nex-agi/nex-n2-pro": {
-      "name": "Nex AGI: Nex-N2-Pro",
-      "context_length": 262144,
-      "max_completion_tokens": 235929,
-      "modality": "text+image->text",
-      "input_modalities": [
-        "text",
-        "image"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00000025",
-      "completion_price": "0.000001",
-      "input_cache_read_price": "0.000000025",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2739,9 +2703,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000088606",
-      "completion_price": "0.000000177212",
-      "input_cache_read_price": "0.0000000177212",
+      "prompt_price": "0.00000008708",
+      "completion_price": "0.00000017416",
+      "input_cache_read_price": "0.000000017416",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -5931,7 +5895,7 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000004",
+      "prompt_price": "0.00000055",
       "completion_price": "0.0000022",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2024-06-30",

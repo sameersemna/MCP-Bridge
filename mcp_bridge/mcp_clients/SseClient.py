@@ -73,7 +73,16 @@ class HttpMcpSession:
 
         response = await self._post_jsonrpc(payload)
         if not isinstance(response, dict) or "result" not in response:
-            raise McpError("Invalid response payload")
+            # The SDK's McpError expects an ErrorData object (it reads
+            # `error.message`), not a plain string. Passing a string here
+            # previously raised `'str' object has no attribute 'message'`,
+            # masking the real "invalid response payload" error.
+            raise McpError(
+                types.ErrorData(
+                    code=-32603,
+                    message="Invalid response payload",
+                )
+            )
 
         return result_type.model_validate(response["result"])
 
@@ -130,7 +139,12 @@ class HttpMcpSession:
         if event_name == "message" and data_lines:
             return json.loads("\n".join(data_lines))
 
-        raise McpError("No SSE message payload received")
+        raise McpError(
+            types.ErrorData(
+                code=-32603,
+                message="No SSE message payload received",
+            )
+        )
 
 
 class SseMcpSession:
@@ -231,7 +245,12 @@ class SseMcpSession:
             self._pending_responses.pop(request_id, None)
 
         if not hasattr(response, "result"):
-            raise McpError("Invalid response payload")
+            raise McpError(
+                types.ErrorData(
+                    code=-32603,
+                    message="Invalid response payload",
+                )
+            )
         return result_type.model_validate(response.result)
 
     async def _send_notification(self, method: str, params: Any) -> None:
