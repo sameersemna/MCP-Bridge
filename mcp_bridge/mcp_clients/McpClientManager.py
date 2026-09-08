@@ -187,22 +187,38 @@ class MCPClientManager:
             if client_class is StdioClient:
                 client = client_class(name, server_config)
                 await client.start()
+                self._apply_concurrency_limit(name, client)
                 return client
 
             if client_class in {SseClient, HttpClient}:
                 client = client_class(name, server_config)  # type: ignore[arg-type]
                 await client.start()
+                self._apply_concurrency_limit(name, client)
                 return client
 
             if client_class is DockerClient:
                 client = client_class(name, server_config)
                 await client.start()
+                self._apply_concurrency_limit(name, client)
                 return client
         except Exception as exc:
             logger.warning(f"MCP client '{name}' could not be initialized: {exc}")
             raise RuntimeError(f"Unsupported or failed MCP transport for '{name}': {exc}") from exc
 
         raise NotImplementedError("Client Type not supported")
+
+    def _apply_concurrency_limit(self, name: str, client: client_types) -> None:
+        """Apply the per-server ``max_concurrent_calls`` limit to a client.
+
+        Reads the limit from ``config.mcp_server_concurrency`` (populated from
+        each server's ``"max_concurrent_calls"`` config key). A missing entry
+        leaves the client at its default of 1 (serialized), preserving the
+        historical behavior.
+        """
+        limit = getattr(config, "mcp_server_concurrency", {}).get(name, 1)
+        setter = getattr(client, "set_max_concurrent_calls", None)
+        if callable(setter):
+            setter(limit)
 
     def get_client(self, server_name: str):
         return self.clients[server_name]

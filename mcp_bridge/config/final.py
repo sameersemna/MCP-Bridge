@@ -253,6 +253,17 @@ class Settings(BaseSettings):
             "config. Defaults to empty (no caching) for all servers."
         ),
     )
+    mcp_server_concurrency: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Per-server maximum number of concurrent tool calls on the same MCP "
+            "server. Opt-in per server via `\"max_concurrent_calls\": N` in the "
+            "server's config. Defaults to 1 (serialized) for all servers, which "
+            "preserves the historical behavior. A value > 1 lets multiple tool "
+            "calls to the same server (e.g. two `exa` searches in one turn) run "
+            "in parallel, bounded by N."
+        ),
+    )
 
     sampling: Sampling = Field(default_factory=Sampling, description="sampling config")
 
@@ -319,5 +330,49 @@ class Settings(BaseSettings):
                         else server_config
                         for name, server_config in raw_servers.items()
                     }
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def collect_mcp_server_concurrency(cls, data: Any) -> Any:
+        """Collect per-server ``max_concurrent_calls`` from the raw config dict.
+
+        Mirrors ``collect_cached_mcp_servers``: the ``max_concurrent_calls``
+        key is read from the *raw* config dict (because the SDK transport
+        models use ``extra="forbid"``/``extra="ignore"`` and would reject or
+        drop an unknown field), captured into a dedicated
+        ``mcp_server_concurrency`` map, and then **removed** from each server's
+        config dict so the transport models accept it.
+
+        A missing key means the server keeps the default of 1 (serialized),
+        which is exactly the historical behavior -- so this is fully opt-in
+        and backward compatible.
+        """
+        if isinstance(data, dict):
+            raw_servers = data.get("mcp_servers")
+            if isinstance(raw_servers, dict):
+                concurrency: dict[str, int] = {}
+                stripped: dict[str, Any] = {}
+                for name, server_config in raw_servers.items():
+                    if isinstance(server_config, dict):
+                        raw_limit = server_config.get("max_concurrent_calls")
+                        if raw_limit is not None:
+                            try:
+                                limit = int(raw_limit)
+                            except (TypeError, ValueError):
+                                limit = 0
+                            if limit > 0:
+                                concurrency[name] = limit
+                        stripped[name] = {
+                            key: value
+                            for key, value in server_config.items()
+                            if key != "max_concurrent_calls"
+                        }
+                    else:
+                        stripped[name] = server_config
+                if concurrency:
+                    data = dict(data)
+                    data.setdefault("mcp_server_concurrency", concurrency)
+                    data["mcp_servers"] = stripped
         return data
 

@@ -1,7 +1,7 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-07T15:41:27.349428+00:00",
-  "model_count": 430,
+  "fetched_at": "2026-09-08T12:37:18.684321+00:00",
+  "model_count": 428,
   "models": {
     "openai/gpt-6-astra": {
       "name": "OpenAI: GPT-6 Astra",
@@ -684,9 +684,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000066",
-      "completion_price": "0.00000198",
-      "input_cache_read_price": "0.000000022",
+      "prompt_price": "0.0000010494",
+      "completion_price": "0.0000031482",
+      "input_cache_read_price": "0.00000003498",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -890,7 +890,7 @@
     "deepseek/deepseek-v4-flash-0731": {
       "name": "DeepSeek: DeepSeek V4 Flash 0731",
       "context_length": 1310720,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 943718,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -898,9 +898,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000014",
-      "completion_price": "0.00000028",
-      "input_cache_read_price": "0.000000028",
+      "prompt_price": "0.000000065",
+      "completion_price": "0.00000018",
+      "input_cache_read_price": "0.000000016",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1887,9 +1887,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000066",
-      "completion_price": "0.0000034",
-      "input_cache_read_price": "0.00000018",
+      "prompt_price": "0.00000071",
+      "completion_price": "0.0000035",
+      "input_cache_read_price": "0.00000015",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2091,25 +2091,6 @@
       "prompt_price": "0.0000003",
       "completion_price": "0.0000012",
       "input_cache_read_price": "0.00000006",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
-    "minimax/minimax-m3:free": {
-      "name": "MiniMax: MiniMax M3 (free)",
-      "context_length": 1048576,
-      "max_completion_tokens": 943718,
-      "modality": "text+image+video->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "video"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0",
-      "completion_price": "0",
-      "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2496,9 +2477,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000255",
-      "completion_price": "0.00001275",
-      "input_cache_read_price": "0.00000025599999",
+      "prompt_price": "0.0000025",
+      "completion_price": "0.000014",
+      "input_cache_read_price": "0.00000029",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -3226,23 +3207,6 @@
       "knowledge_cutoff": null,
       "reasoning": true
     },
-    "minimax/minimax-m2.7:free": {
-      "name": "MiniMax: MiniMax M2.7 (free)",
-      "context_length": 196608,
-      "max_completion_tokens": 176947,
-      "modality": "text->text",
-      "input_modalities": [
-        "text"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0",
-      "completion_price": "0",
-      "input_cache_read_price": null,
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
     "openai/gpt-5.4-nano": {
       "name": "OpenAI: GPT-5.4 Nano",
       "context_length": 400000,
@@ -3832,7 +3796,7 @@
     "qwen/qwen3.5-397b-a17b": {
       "name": "Qwen: Qwen3.5 397B A17B",
       "context_length": 262144,
-      "max_completion_tokens": 65536,
+      "max_completion_tokens": 235929,
       "modality": "text+image+video->text",
       "input_modalities": [
         "text",
@@ -3842,9 +3806,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000039",
-      "completion_price": "0.00000234",
-      "input_cache_read_price": null,
+      "prompt_price": "0.00000055",
+      "completion_price": "0.0000035",
+      "input_cache_read_price": "0.000000225",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -4099,7 +4063,7 @@
     "z-ai/glm-4.7-flash": {
       "name": "Z.ai: GLM 4.7 Flash",
       "context_length": 202752,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 117964,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -4107,9 +4071,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000006",
+      "prompt_price": "0.0000000605",
       "completion_price": "0.0000004",
-      "input_cache_read_price": "0.00000001",
+      "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -4690,7 +4654,7 @@
     "moonshotai/kimi-k2-thinking": {
       "name": "MoonshotAI: Kimi K2 Thinking",
       "context_length": 262144,
-      "max_completion_tokens": 100352,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -4700,7 +4664,7 @@
       ],
       "prompt_price": "0.0000006",
       "completion_price": "0.0000025",
-      "input_cache_read_price": "0.00000015",
+      "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -5038,7 +5002,7 @@
     "z-ai/glm-4.6": {
       "name": "Z.ai: GLM 4.6",
       "context_length": 204800,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 131072,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -5046,9 +5010,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000043",
-      "completion_price": "0.00000175",
-      "input_cache_read_price": "0.00000008",
+      "prompt_price": "0.00000055",
+      "completion_price": "0.0000022",
+      "input_cache_read_price": "0.00000011",
       "knowledge_cutoff": "2025-03-31",
       "reasoning": true
     },
@@ -5367,7 +5331,7 @@
     "deepseek/deepseek-chat-v3.1": {
       "name": "DeepSeek: DeepSeek V3.1",
       "context_length": 163840,
-      "max_completion_tokens": 144900,
+      "max_completion_tokens": 32768,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -5375,9 +5339,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000055",
-      "completion_price": "0.00000165",
-      "input_cache_read_price": "0.00000055",
+      "prompt_price": "0.00000025",
+      "completion_price": "0.00000095",
+      "input_cache_read_price": "0.00000013",
       "knowledge_cutoff": "2025-03-31",
       "reasoning": true
     },
@@ -5967,7 +5931,7 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000055",
+      "prompt_price": "0.0000004",
       "completion_price": "0.0000022",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2024-06-30",
@@ -6246,7 +6210,7 @@
     "qwen/qwen3-14b": {
       "name": "Qwen: Qwen3 14B",
       "context_length": 131072,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 8192,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -6254,8 +6218,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000012",
-      "completion_price": "0.00000024",
+      "prompt_price": "0.0000002275",
+      "completion_price": "0.00000091",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2025-03-31",
       "reasoning": true
@@ -6550,9 +6514,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000025",
-      "completion_price": "0.000001",
-      "input_cache_read_price": null,
+      "prompt_price": "0.00000029",
+      "completion_price": "0.00000114",
+      "input_cache_read_price": "0.00000011",
       "knowledge_cutoff": "2024-07-31",
       "reasoning": false
     },

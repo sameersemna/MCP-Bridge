@@ -103,6 +103,7 @@ class GenericMcpClient(ABC):
     session: McpClientSession | None = None
     _start_lock: asyncio.Lock
     _session_lock: asyncio.Lock
+    _call_semaphore: asyncio.Semaphore
     _started: bool
     _maintainer_task: asyncio.Task[None] | None
 
@@ -112,11 +113,30 @@ class GenericMcpClient(ABC):
         self.name = name
         self._start_lock = asyncio.Lock()
         self._session_lock = asyncio.Lock()
+        # Bounded concurrency for tool calls on this client's session. Defaults
+        # to 1 (serialized), which preserves the historical behavior. Operators
+        # can raise it per server via `"max_concurrent_calls": N` in config to
+        # let multiple tool calls to the same server run in parallel.
+        self._call_semaphore = asyncio.Semaphore(1)
         self._started = False
         self._maintainer_task = None
         self._offline = False
 
         logger.debug(f"initializing client class for {name}")
+
+    def set_max_concurrent_calls(self, limit: int) -> None:
+        """Set the maximum number of concurrent tool calls on this client.
+
+        ``limit`` must be >= 1. A value of 1 (the default) serializes tool
+        calls on this server, matching the historical behavior. Values > 1
+        allow parallel tool calls to the same server, bounded by ``limit``.
+        """
+        if limit < 1:
+            logger.warning(
+                f"max_concurrent_calls for {self.name} must be >= 1; using 1"
+            )
+            limit = 1
+        self._call_semaphore = asyncio.Semaphore(limit)
 
     @abstractmethod
     async def _maintain_session(self):
@@ -241,7 +261,7 @@ class GenericMcpClient(ABC):
         for attempt in range(retry_count + 1):
             try:
                 async with asyncio.timeout(timeout):
-                    async with self._session_lock:
+                    async with self._call_semaphore:
                         session = self.session
                         if session is None:
                             await self._wait_for_session(timeout=timeout, http_error=False)

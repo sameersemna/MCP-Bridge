@@ -1487,6 +1487,14 @@ async def call_tools(
         except Exception:
             return False
 
+    # In-flight dedup: when two concurrent tool calls in the same batch are the
+    # exact same (tool, query) and the tool is cacheable, collapse them into a
+    # single upstream fetch. The first caller dispatches; the rest await the
+    # same future and reuse its result. This only applies to cacheable tools
+    # with a query argument, so it adds zero overhead for non-cached tools and
+    # never dedups stateful tools (memory, sequential-thinking, etc.).
+    in_flight: dict[tuple[str, str], asyncio.Future[Any]] = {}
+
     async def _run(call: tuple[str, str]) -> Any:
         name, payload = call
         query = _extract_query_argument(payload)
@@ -1506,18 +1514,45 @@ async def call_tools(
                 logger.debug(f"tool call served from persistent cache: name={name}; query={query[:80]}")
                 return cached
 
-        call_kwargs = {"timeout": timeout}
-        if trace_logger is not None:
-            call_kwargs["trace_logger"] = trace_logger
+        # 3. In-flight dedup: if an identical (tool, query) is already being
+        #    fetched concurrently in this batch, await that fetch instead of
+        #    issuing a duplicate upstream call.
+        if cacheable and query:
+            key = (name, query)
+            existing = in_flight.get(key)
+            if existing is not None:
+                logger.debug(f"tool call deduplicated in-flight: name={name}; query={query[:80]}")
+                return await asyncio.shield(existing)
+            future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+            in_flight[key] = future
 
-        signature = inspect.signature(call_tool)
-        if "trace_logger" in signature.parameters:
-            call_kwargs["client_cache"] = client_cache
-            result = await call_tool(name, payload, **call_kwargs)
-        else:
-            result = await call_tool(name, payload, timeout)
+        try:
+            call_kwargs = {"timeout": timeout}
+            if trace_logger is not None:
+                call_kwargs["trace_logger"] = trace_logger
+
+            signature = inspect.signature(call_tool)
+            if "trace_logger" in signature.parameters:
+                call_kwargs["client_cache"] = client_cache
+                result = await call_tool(name, payload, **call_kwargs)
+            else:
+                result = await call_tool(name, payload, timeout)
+        except BaseException as exc:
+            # Resolve the future so any waiters don't hang, then re-raise.
+            if cacheable and query:
+                key = (name, query)
+                if key in in_flight:
+                    in_flight.pop(key, None)
+                    if not future.done():
+                        future.set_exception(exc)
+            raise
 
         if cacheable and query:
+            key = (name, query)
+            if key in in_flight:
+                in_flight.pop(key, None)
+                if not future.done():
+                    future.set_result(result)
             if result_cache is not None:
                 result_cache.put(name, query, result)
             if persistent_cache is not None:

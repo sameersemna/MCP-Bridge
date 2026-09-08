@@ -143,6 +143,41 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_TOOL_RETRY_COUNT` | `0` | Number of retries for a timed-out tool call. |
 | `MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS` | `0.25` | Delay between tool-call retries. |
 
+### Parallel tool calls
+
+Tool calls are dispatched **concurrently** with `asyncio.gather`, so when the
+model emits multiple `tool_calls` in one turn, they run in parallel. This
+applies both **across** different MCP servers (e.g. `exa` + `fetch` +
+`pdf-reader` all at once) and **across** same-type servers (e.g. `exa` +
+`duckduckgo-search` + `google-search` for online search).
+
+By default, multiple calls to the **same** server are serialized (one at a
+time) to protect the session lifecycle. To let a single server handle several
+calls in parallel, set `"max_concurrent_calls": N` on that server's entry in
+`config.json`:
+
+```json
+{
+  "mcp_servers": {
+    "exa": {
+      "command": "npx",
+      "args": ["exa-mcp-server"],
+      "cached": true,
+      "max_concurrent_calls": 4
+    }
+  }
+}
+```
+
+A value of `1` (the default) preserves the historical serialized behavior, so
+this is fully opt-in and backward compatible. Stateful tools (e.g. `memory`,
+`sequential-thinking`) are best left at the default of `1`.
+
+**In-flight dedup:** when two concurrent tool calls in the same batch are the
+exact same `(tool, query)` and the tool is cacheable, the bridge collapses them
+into a single upstream fetch and shares the result — so parallel search calls
+don't duplicate identical web requests.
+
 **Upstream retry behavior:** when the inference provider returns a transient
 error (5xx, HTTP 429 rate-limit, or HTTP 200 with an "overloaded"/"rate limit"
 body), the bridge retries up to 2 times. If the provider supplies a
