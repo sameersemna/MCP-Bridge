@@ -54,6 +54,17 @@ class InferenceServer(BaseModel):
     api_key: str = Field(
         default="unauthenticated", description="API key for the inference server"
     )
+    fallback_model: str | None = Field(
+        default=None,
+        description=(
+            "Optional model ID used to synthesize a final answer when the primary "
+            "model fails on the final turn (e.g. a flaky free-tier provider that "
+            "rate-limits or overloads mid-run). If unset, the bridge auto-picks a "
+            "reliable non-free model from the local models.json catalog. This lets "
+            "a long research run still produce a real report instead of a degraded "
+            "evidence dump when the primary model dies at the end."
+        ),
+    )
     model_context_windows: dict[str, int] = Field(
         default_factory=dict,
         description=(

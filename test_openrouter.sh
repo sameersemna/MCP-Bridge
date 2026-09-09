@@ -109,5 +109,6 @@ done
 
 # "inference_server": {
 # "base_url": "https://openrouter.ai/api/v1",
-# "api_key": "sk-or-v1-REDACTED"
+# "api_key": "sk-or-v1-REDACTED",
+# "fallback_model": "openrouter/free"
 # },

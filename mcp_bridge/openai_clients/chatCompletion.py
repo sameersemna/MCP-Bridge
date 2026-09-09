@@ -288,7 +288,17 @@ def _try_recover_response_with_unknown_finish_reason(
     coerced_any = False
     for choice in choices:
         if isinstance(choice, dict) and choice.get("finish_reason") not in _STANDARD_FINISH_REASONS | {None}:
-            choice["finish_reason"] = "stop"
+            # If the message carries tool_calls, the model DID emit a tool call
+            # (e.g. Cohere returns finish_reason "error" as its own generation
+            # signal but still includes a valid tool_calls array). Coerce to
+            # "tool_calls" so the tool loop executes them, rather than "stop"
+            # which would drop the tool call and return a broken response with
+            # tool_calls but no results.
+            message = choice.get("message") or {}
+            if message.get("tool_calls"):
+                choice["finish_reason"] = "tool_calls"
+            else:
+                choice["finish_reason"] = "stop"
             coerced_any = True
 
     if not coerced_any:
@@ -1046,6 +1056,57 @@ def _build_synthesis_request(
     return synthesis_request
 
 
+def _resolve_fallback_model(request: CreateChatCompletionRequest) -> str | None:
+    """Resolve the model to use for final-answer synthesis when the primary
+    model fails on the final turn.
+
+    Resolution order:
+      1. ``inference_server.fallback_model`` from config.json (explicit opt-in).
+      2. Auto-pick a reliable non-free model from the local ``models.json``
+         catalog (skipping ``:free`` variants, which are the flaky ones that
+         rate-limit / overload mid-run).
+      3. ``None`` — no fallback available; the caller falls back to the
+         deterministic evidence dump.
+
+    Returns the fallback model ID, or ``None`` if none can be determined.
+    """
+    # 1. Explicit config.
+    try:
+        configured = getattr(getattr(config, "inference_server", None), "fallback_model", None)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
+    except Exception:
+        pass
+
+    # 2. Auto-pick from models.json catalog.
+    try:
+        catalog_path = os.getenv("MCP_BRIDGE_MODELS_CATALOG", "")
+        if not catalog_path:
+            catalog_path = os.path.join(os.path.dirname(__file__), "..", "..", "models.json")
+        catalog_path = os.path.abspath(catalog_path)
+        with open(catalog_path, encoding="utf-8") as fh:
+            document = json.load(fh)
+        models = document.get("models", {})
+        # Prefer a non-free model with a large context window (so the gathered
+        # evidence fits) and no `:free` suffix (the flaky tier). Sort by
+        # context length descending so the most capable candidate wins.
+        candidates = [
+            (mid, info.get("context_length") or 0)
+            for mid, info in models.items()
+            if isinstance(info, dict)
+            and ":free" not in mid
+            and ":batch" not in mid
+            and (info.get("context_length") or 0) >= 128000
+        ]
+        if candidates:
+            candidates.sort(key=lambda item: item[1], reverse=True)
+            return candidates[0][0]
+    except Exception:
+        pass
+
+    return None
+
+
 async def _try_synthesize_tool_loop_result(
     client: Any,
     request: CreateChatCompletionRequest,
@@ -1096,6 +1157,58 @@ async def _try_synthesize_tool_loop_result(
             logger.warning(f"tool loop synthesis request failed: {exc}")
             if attempt == 0:
                 continue
+
+    # The primary model failed to synthesize (it's the one that just died on the
+    # final turn — e.g. a flaky free-tier provider that rate-limited or
+    # overloaded). Try once more with a fallback model so a long research run
+    # still produces a real report instead of a degraded evidence dump.
+    fallback_model = _resolve_fallback_model(request)
+    if fallback_model is None:
+        return None
+
+    primary_model = getattr(request, "model", None) or "unknown"
+    logger.warning(
+        f"primary model synthesis failed; retrying with fallback model '{fallback_model}'"
+    )
+    for force_answer in (True,):
+        synthesis_request = _build_synthesis_request(
+            request,
+            stop_reason=stop_reason,
+            request_messages=request_messages,
+            force_answer=force_answer,
+        )
+        synthesis_request.model = fallback_model
+        try:
+            text = (
+                await client.post(
+                    "/chat/completions",
+                    json=synthesis_request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
+                )
+            ).text
+            response = CreateChatCompletionResponse.model_validate_json(text)
+            content = getattr(response.choices[0].message, "content", None) if response.choices else None
+            if content is None:
+                return None
+            content_text = str(content)
+            if _contains_pseudo_tool_call_markers(content_text):
+                content_text = _strip_pseudo_tool_call_markers(content_text)
+            if content_text.strip():
+                # Append a footnote so the report is transparent that it was
+                # synthesized by a fallback model (not the requested primary
+                # model), naming the fallback model and the reason.
+                footnote = (
+                    f"\n\n---\n"
+                    f"*Note: This report was synthesized by the fallback model "
+                    f"`{fallback_model}` because the primary model `{primary_model}` "
+                    f"failed on the final turn ({stop_reason}).*"
+                )
+                response.choices[0].message.content = content_text + footnote
+                response.choices[0].message.tool_calls = None
+                response.choices[0].finish_reason = _normalize_finish_reason("stop") or FinishReason1.stop
+                return response
+        except Exception as exc:
+            logger.warning(f"fallback model synthesis request failed: {exc}")
+            return None
 
     return None
 
@@ -2215,6 +2328,21 @@ async def chat_completions(
             msg = response.choices[0].message
             if _should_use_empty_content_fallback(msg, finish_reason_value := response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None):
                 logger.warning("upstream model returned empty assistant content without tool calls; synthesizing a fallback response from tool evidence")
+                # The primary model returned empty content (e.g. it maxed out its
+                # output token budget on reasoning and produced nothing). Try the
+                # fallback synthesis model first so a long research run still
+                # produces a real report; only degrade to the deterministic
+                # evidence dump if the fallback also fails.
+                synthesized = await _try_synthesize_tool_loop_result(
+                    client,
+                    request,
+                    stop_reason="empty_response",
+                    request_messages=request.messages,
+                )
+                if synthesized is not None:
+                    return _finalize_recovered_response(
+                        synthesized, trace_logger=trace_logger, reason="empty_response"
+                    )
                 return _finalize_degraded_response(
                     _build_empty_content_response(
                         response,

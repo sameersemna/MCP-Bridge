@@ -1,7 +1,8 @@
-from httpx import AsyncClient, AsyncHTTPTransport
+from httpx import AsyncClient, AsyncHTTPTransport, Timeout
 from mcp_bridge.config import config
 from fastapi import Request
 from contextlib import asynccontextmanager
+import os
 
 # A single process-lifetime connection pool shared by every per-request client.
 # This enables HTTP keep-alive / connection reuse against the inference server
@@ -11,6 +12,35 @@ from contextlib import asynccontextmanager
 # shares the underlying transport, so closing a client does not tear down the
 # pool.
 _shared_transport: AsyncHTTPTransport | None = None
+
+# Upstream LLM request timeouts (seconds). httpx timeout values are in SECONDS,
+# not milliseconds. The previous hardcoded `timeout=10000` was interpreted as
+# 10000 seconds (~2.8 hours), which caused a long research run to hang for
+# ~35 minutes on a dead final-turn request before the retry logic kicked in.
+# These are now configurable via env vars with sane defaults.
+DEFAULT_UPSTREAM_CONNECT_TIMEOUT_SECONDS = 10.0
+DEFAULT_UPSTREAM_READ_TIMEOUT_SECONDS = 300.0
+DEFAULT_UPSTREAM_WRITE_TIMEOUT_SECONDS = 10.0
+DEFAULT_UPSTREAM_POOL_TIMEOUT_SECONDS = 10.0
+
+
+def _get_upstream_timeout() -> Timeout:
+    def _env_float(name: str, default: float) -> float:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        try:
+            value = float(raw)
+            return value if value > 0 else default
+        except ValueError:
+            return default
+
+    return Timeout(
+        connect=_env_float("MCP_BRIDGE_UPSTREAM_CONNECT_TIMEOUT_SECONDS", DEFAULT_UPSTREAM_CONNECT_TIMEOUT_SECONDS),
+        read=_env_float("MCP_BRIDGE_UPSTREAM_READ_TIMEOUT_SECONDS", DEFAULT_UPSTREAM_READ_TIMEOUT_SECONDS),
+        write=_env_float("MCP_BRIDGE_UPSTREAM_WRITE_TIMEOUT_SECONDS", DEFAULT_UPSTREAM_WRITE_TIMEOUT_SECONDS),
+        pool=_env_float("MCP_BRIDGE_UPSTREAM_POOL_TIMEOUT_SECONDS", DEFAULT_UPSTREAM_POOL_TIMEOUT_SECONDS),
+    )
 
 
 def _get_shared_transport() -> AsyncHTTPTransport:
@@ -33,7 +63,7 @@ async def create_client(request: Request | None = None):
             "Authorization": f"Bearer {config.inference_server.api_key}",
             "Content-Type": "application/json"
         },
-        timeout=10000,
+        timeout=_get_upstream_timeout(),
         transport=_get_shared_transport(),
     )
 

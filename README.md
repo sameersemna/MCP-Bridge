@@ -142,6 +142,45 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_TOOL_TIMEOUT_SECONDS` | `60` | Per-tool-call timeout in seconds. |
 | `MCP_BRIDGE_TOOL_RETRY_COUNT` | `0` | Number of retries for a timed-out tool call. |
 | `MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS` | `0.25` | Delay between tool-call retries. |
+| `MCP_BRIDGE_UPSTREAM_READ_TIMEOUT_SECONDS` | `300` | Read timeout for upstream LLM requests (seconds). Prevents a dead final-turn request from hanging for tens of minutes. |
+| `MCP_BRIDGE_UPSTREAM_CONNECT_TIMEOUT_SECONDS` | `10` | Connect timeout for upstream LLM requests (seconds). |
+| `MCP_BRIDGE_UPSTREAM_WRITE_TIMEOUT_SECONDS` | `10` | Write timeout for upstream LLM requests (seconds). |
+| `MCP_BRIDGE_UPSTREAM_POOL_TIMEOUT_SECONDS` | `10` | Connection-pool timeout for upstream LLM requests (seconds). |
+
+### Fallback synthesis model
+
+When the primary model fails on the final turn (e.g. a flaky free-tier provider
+that rate-limits or overloads mid-run), the bridge tries to synthesize a final
+answer from the tool evidence already gathered. If the primary model itself is
+the one that died, the bridge retries the synthesis with a **fallback model** so
+a long research run still produces a real report instead of a degraded evidence
+dump.
+
+The fallback model is resolved in this order:
+
+1. `inference_server.fallback_model` in `config.json` (explicit opt-in):
+   ```json
+   {
+     "inference_server": {
+       "base_url": "https://openrouter.ai/api/v1",
+       "api_key": "sk-...",
+       "fallback_model": "openrouter/auto-beta"
+     }
+   }
+   ```
+2. If unset, the bridge auto-picks a reliable **non-free** model (skipping
+   `:free` variants, which are the flaky tier) with a large context window from
+   the local `models.json` catalog.
+3. If neither is available, the bridge falls back to the deterministic evidence
+   dump (marked degraded).
+
+When the fallback model is used, the generated report includes a **footnote**
+naming the fallback model and the reason it was used, so the report is
+transparent about its provenance:
+
+> *Note: This report was synthesized by the fallback model `openrouter/auto-beta`
+> because the primary model `nvidia/nemotron-3-super-120b-a12b:free` failed on
+> the final turn (upstream_failure_after_evidence).*
 
 ### Parallel tool calls
 
