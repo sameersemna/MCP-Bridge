@@ -1315,3 +1315,156 @@ def test_manager_exposes_latest_mcp_inventory_summary() -> None:
         "failed": [],
         "active": ["google-search"],
     }
+
+
+# --- Google redirect URL un-redirection (defense in depth) --------------------
+
+
+def test_is_google_redirect_url_detects_both_formats() -> None:
+    assert openai_utils._is_google_redirect_url("https://www.google.com/goto?url=CAESYgHrOzAV")
+    assert openai_utils._is_google_redirect_url("https://www.google.com/url?q=https%3A%2F%2Fexample.com&sa=U")
+    assert openai_utils._is_google_redirect_url("https://google.com/goto?url=ABC")
+    assert not openai_utils._is_google_redirect_url("https://shamela.ws/book/1075/292")
+    assert not openai_utils._is_google_redirect_url("https://www.google.com/search?q=hello")
+
+
+def test_decode_legacy_google_redirect() -> None:
+    url = "https://www.google.com/url?q=https%3A%2F%2Fshamela.ws%2Fbook%2F1075%2F292&sa=U&ved=2ahUKEwj"
+    decoded = openai_utils._decode_legacy_google_redirect(url)
+    assert decoded == "https://shamela.ws/book/1075/292"
+
+
+def test_decode_legacy_google_redirect_non_redirect_returns_none() -> None:
+    assert openai_utils._decode_legacy_google_redirect("https://shamela.ws/book/1075/292") is None
+    assert openai_utils._decode_legacy_google_redirect("https://www.google.com/goto?url=CAESYgHrOzAV") is None
+
+
+def test_unredirect_url_legacy_no_network() -> None:
+    url = "https://www.google.com/url?q=https%3A%2F%2Fbinbaz.org.sa%2Ffatwas%2F20890&sa=U"
+    result = asyncio.run(openai_utils._unredirect_url(url))
+    assert result == "https://binbaz.org.sa/fatwas/20890"
+
+
+def test_unredirect_url_non_google_passthrough() -> None:
+    url = "https://shamela.ws/book/1075/292"
+    result = asyncio.run(openai_utils._unredirect_url(url))
+    assert result == url
+
+
+def test_unredirect_url_goto_follows_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The modern goto format is resolved by following the HTTP redirect."""
+
+    class FakeResponse:
+        status_code = 200
+        url = "https://shamela.ws/book/1075/292"
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(openai_utils.httpx, "AsyncClient", FakeClient)
+
+    url = "https://www.google.com/goto?url=CAESYgHrOzAV"
+    result = asyncio.run(openai_utils._unredirect_url(url))
+    assert result == "https://shamela.ws/book/1075/292"
+
+
+def test_unredirect_url_goto_failure_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If goto resolution fails, the original URL is preserved (never dropped)."""
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, **kwargs):
+            raise Exception("Connection refused")
+
+    monkeypatch.setattr(openai_utils.httpx, "AsyncClient", FakeClient)
+
+    url = "https://www.google.com/goto?url=CAESYgHrOzAV"
+    result = asyncio.run(openai_utils._unredirect_url(url))
+    assert result == url
+
+
+def test_unredirect_text_urls_replaces_all() -> None:
+    text = (
+        "See https://www.google.com/goto?url=CAESYgHrOzAV and "
+        "https://www.google.com/url?q=https%3A%2F%2Fexample.com&sa=U"
+    )
+    result = asyncio.run(openai_utils._unredirect_text_urls(text))
+    # The legacy one is decoded; the goto one is left (no network in this test).
+    assert "https://example.com" in result
+    assert "google.com/url?q=" not in result
+
+
+def test_unredirect_tool_result_preserves_is_error_and_other_parts() -> None:
+    from mcp.types import CallToolResult, TextContent
+
+    result = CallToolResult(
+        content=[
+            TextContent(type="text", text="URL: https://www.google.com/url?q=https%3A%2F%2Fexample.com&sa=U"),
+            TextContent(type="text", text="plain text"),
+        ],
+        isError=False,
+    )
+    new_result = asyncio.run(openai_utils._unredirect_tool_result(result))
+    assert new_result.isError is False
+    assert "https://example.com" in new_result.content[0].text
+    assert new_result.content[1].text == "plain text"
+
+
+def test_unredirect_tool_result_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp.types import CallToolResult, TextContent
+
+    monkeypatch.setenv("MCP_BRIDGE_UNREDIRECT_URLS", "false")
+    result = CallToolResult(
+        content=[TextContent(type="text", text="URL: https://www.google.com/goto?url=CAESYgHrOzAV")],
+        isError=False,
+    )
+    new_result = asyncio.run(openai_utils._unredirect_tool_result(result))
+    # Disabled: result returned unchanged (same object).
+    assert new_result is result
+
+
+def test_call_tools_caches_unredirected_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The unredirected result (not the raw one) is what gets cached."""
+    calls: list[str] = []
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        calls.append(payload)
+        return {
+            "isError": False,
+            "content": [{"type": "text", "text": "URL: https://www.google.com/url?q=https%3A%2F%2Fexample.com&sa=U"}],
+        }
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    cache = openai_utils.ToolResultCache()
+    query = "Hajr al-Asas foundation stone ceremony in Makkah"
+
+    asyncio.run(openai_utils.call_tools(
+        [("google_search", json.dumps({"query": query}))],
+        result_cache=cache,
+    ))
+
+    # The cached result should have the unredirected URL.
+    cached = cache.get("google_search", query)
+    assert cached is not None
+    text = cached["content"][0]["text"]
+    assert "https://example.com" in text
+    assert "google.com/url?q=" not in text

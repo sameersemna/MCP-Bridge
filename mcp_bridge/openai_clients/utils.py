@@ -834,6 +834,219 @@ def _extract_fetch_url(arguments: Any) -> str | None:
     return None
 
 
+# --- Google redirect URL un-redirection (defense in depth) -------------------
+#
+# Some search MCP servers (e.g. a Google SERP scraper) return Google's search
+# result *redirect* URLs verbatim instead of the final destination:
+#   - legacy:  https://www.google.com/url?q=<urlencoded-destination>&sa=...&usg=...
+#   - modern:  https://www.google.com/goto?url=<base64url-protobuf-token>
+# When an LLM cites these in a report, the citations are broken (they point at
+# Google's redirect endpoint, not the real source). The server should resolve
+# these itself, but as defense in depth the bridge also un-redirects any that
+# slip through, so bad URLs never reach the LLM or the tool-result cache.
+
+# Matches a Google search-result redirect wrapper.
+_GOOGLE_REDIRECT_RE = re.compile(
+    r"https?://(?:www\.)?google\.(?:com|co\.[a-z]{2}|[a-z]{2})/(?:url\?q=|goto\?url=)([^&\s\"'<>]+)"
+)
+
+# Matches a bare google.com/goto or google.com/url?q= URL anywhere in text.
+_GOOGLE_REDIRECT_URL_RE = re.compile(
+    r"https?://(?:www\.)?google\.(?:com|co\.[a-z]{2}|[a-z]{2})/(?:url\?q=|goto\?url=)[^\s\"'<>]+"
+)
+
+# Browser-like User-Agent so Google's redirect endpoint doesn't reject us.
+_GOOGLE_REDIRECT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+DEFAULT_UNREDIRECT_TIMEOUT_SECONDS = 8.0
+
+
+def get_unredirect_urls_enabled() -> bool:
+    """Whether the bridge should un-redirect Google search-result URLs in tool
+    results (defense in depth). Default on."""
+    raw = os.getenv("MCP_BRIDGE_UNREDIRECT_URLS")
+    if raw is None:
+        return True
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_unredirect_timeout_seconds() -> float:
+    raw = os.getenv("MCP_BRIDGE_UNREDIRECT_TIMEOUT_SECONDS")
+    if raw is None:
+        return DEFAULT_UNREDIRECT_TIMEOUT_SECONDS
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return DEFAULT_UNREDIRECT_TIMEOUT_SECONDS
+
+
+def _is_google_redirect_url(url: str) -> bool:
+    """Return True if ``url`` is a Google search-result redirect wrapper."""
+    return bool(_GOOGLE_REDIRECT_URL_RE.fullmatch(url.strip()))
+
+
+def _decode_legacy_google_redirect(url: str) -> str | None:
+    """Decode a legacy ``https://www.google.com/url?q=<encoded>`` redirect.
+
+    Returns the decoded destination URL, or None if the URL is not a legacy
+    redirect or has no usable ``q`` parameter.
+    """
+    match = _GOOGLE_REDIRECT_RE.match(url.strip())
+    if not match:
+        return None
+    token = match.group(1)
+    # The legacy format puts the destination in the ``q`` param (URL-encoded).
+    if "url?q=" not in url:
+        return None
+    try:
+        from urllib.parse import unquote, urlparse, parse_qs
+
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        q = qs.get("q")
+        if not q or not q[0]:
+            return None
+        decoded = unquote(q[0])
+        if decoded.startswith(("http://", "https://")):
+            return decoded
+    except Exception:
+        return None
+    return None
+
+
+async def _resolve_goto_redirect(url: str, timeout: float | None = None) -> str | None:
+    """Resolve a modern ``https://www.google.com/goto?url=<token>`` redirect.
+
+    Google's ``/goto`` endpoint returns HTTP 200 on HEAD *without* redirecting,
+    so we must use GET (which follows the redirect) to capture the final URL.
+    Returns the final destination URL, or None if resolution fails.
+    """
+    effective_timeout = timeout if timeout is not None else get_unredirect_timeout_seconds()
+    try:
+        async with httpx.AsyncClient(
+            timeout=effective_timeout,
+            follow_redirects=True,
+            headers={"User-Agent": _GOOGLE_REDIRECT_USER_AGENT},
+        ) as client:
+            response = await client.get(url)
+            if response.status_code >= 400:
+                logger.debug(f"goto redirect resolution returned {response.status_code} for {url[:80]}")
+                return None
+            final_url = str(response.url)
+            if final_url and final_url != url and not _is_google_redirect_url(final_url):
+                return final_url
+            return None
+    except Exception as exc:
+        logger.debug(f"goto redirect resolution failed for {url[:80]}: {exc}")
+        return None
+
+
+async def _unredirect_url(url: str, timeout: float | None = None) -> str:
+    """Resolve a single Google search-result redirect URL to its destination.
+
+    Falls back to the original URL on any failure (never drops the result).
+    """
+    stripped = url.strip()
+    if not _is_google_redirect_url(stripped):
+        return url
+
+    # Legacy format: decode the ``q`` param (no network needed).
+    decoded = _decode_legacy_google_redirect(stripped)
+    if decoded:
+        return decoded
+
+    # Modern format: follow the redirect over HTTP.
+    resolved = await _resolve_goto_redirect(stripped, timeout=timeout)
+    if resolved:
+        return resolved
+
+    return url
+
+
+async def _unredirect_text_urls(text: str, timeout: float | None = None) -> str:
+    """Replace every Google search-result redirect URL in ``text`` with its
+    resolved destination. Unresolvable URLs are left unchanged."""
+    if not text or not _GOOGLE_REDIRECT_URL_RE.search(text):
+        return text
+
+    urls = list(dict.fromkeys(_GOOGLE_REDIRECT_URL_RE.findall(text)))
+    resolved: dict[str, str] = {}
+    for url in urls:
+        resolved[url] = await _unredirect_url(url, timeout=timeout)
+
+    def _replace(match: re.Match[str]) -> str:
+        return resolved.get(match.group(0), match.group(0))
+
+    return _GOOGLE_REDIRECT_URL_RE.sub(_replace, text)
+
+
+async def _unredirect_tool_result(result: Any, timeout: float | None = None) -> Any:
+    """Return a copy of ``result`` with Google search-result redirect URLs in
+    its text content resolved to their destinations.
+
+    Only text content parts are touched; image/embedded-resource parts and the
+    ``isError`` flag are preserved. If nothing changed, the original result is
+    returned unchanged. Handles both ``CallToolResult`` objects and plain
+    dicts (``{"content": [...], "isError": ...}``).
+    """
+    if not get_unredirect_urls_enabled():
+        return result
+
+    is_dict = isinstance(result, dict)
+    content = result.get("content") if is_dict else getattr(result, "content", None)
+    if not content:
+        return result
+
+    changed = False
+    new_content: list[Any] = []
+    for part in content:
+        if isinstance(part, dict):
+            if part.get("type") == "text":
+                original_text = part.get("text", "") or ""
+                new_text = await _unredirect_text_urls(original_text, timeout=timeout)
+                if new_text != original_text:
+                    changed = True
+                    new_part = dict(part)
+                    new_part["text"] = new_text
+                    new_content.append(new_part)
+                else:
+                    new_content.append(part)
+            else:
+                new_content.append(part)
+        elif getattr(part, "type", None) == "text":
+            original_text = getattr(part, "text", "") or ""
+            new_text = await _unredirect_text_urls(original_text, timeout=timeout)
+            if new_text != original_text:
+                changed = True
+                try:
+                    new_part = TextContent(type="text", text=new_text)
+                except Exception:
+                    # Fall back to a plain object if TextContent can't be built.
+                    new_part = type(part)(type="text", text=new_text)
+                new_content.append(new_part)
+            else:
+                new_content.append(part)
+        else:
+            new_content.append(part)
+
+    if not changed:
+        return result
+
+    if is_dict:
+        new_result = dict(result)
+        new_result["content"] = new_content
+        return new_result
+
+    try:
+        return CallToolResult(content=new_content, isError=bool(getattr(result, "isError", False)))
+    except Exception:
+        # If we can't reconstruct the result, return the original unchanged.
+        return result
+
+
 async def _fetch_via_wayback(url: str, timeout: float | None = None) -> CallToolResult | None:
     """Attempt to fetch ``url`` via the Internet Archive Wayback Machine.
 
@@ -1546,6 +1759,13 @@ async def call_tools(
                     if not future.done():
                         future.set_exception(exc)
             raise
+
+        # Defense in depth: resolve any Google search-result redirect URLs that
+        # slipped through the MCP server (e.g. google.com/goto?url=...). This
+        # runs BEFORE the cache puts so bad URLs never enter the cache, and
+        # before the result is returned so the LLM never sees them.
+        if result is not None:
+            result = await _unredirect_tool_result(result)
 
         if cacheable and query:
             key = (name, query)

@@ -298,6 +298,30 @@ These can be set in a `.env` file (gitignored) at the repo root, or as real
 environment variables (which take precedence). The app loads `.env` into the
 process environment at startup via `python-dotenv`.
 
+### Google redirect URL un-redirection (defense in depth)
+
+Some search MCP servers (e.g. a Google SERP scraper) return Google's search
+result **redirect** URLs verbatim instead of the final destination:
+
+- legacy: `https://www.google.com/url?q=<urlencoded-destination>&sa=...`
+- modern: `https://www.google.com/goto?url=<base64url-protobuf-token>`
+
+When an LLM cites these in a report, the citations are broken (they point at
+Google's redirect endpoint, not the real source). The MCP server should resolve
+these itself, but as **defense in depth** the bridge also un-redirects any that
+slip through — so bad URLs never reach the LLM or the tool-result cache.
+
+The un-redirection runs inside `call_tools`, **before** the result is cached or
+returned, so a leaked redirect URL is resolved to its destination (legacy
+`url?q=` is decoded locally with no network; modern `goto?url=` is followed
+over HTTP with a browser-like `User-Agent`). If resolution genuinely fails, the
+original URL is preserved (the result is never dropped).
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MCP_BRIDGE_UNREDIRECT_URLS` | `true` | Master switch. Set to `false` to disable Google redirect un-redirection. |
+| `MCP_BRIDGE_UNREDIRECT_TIMEOUT_SECONDS` | `8` | Per-URL timeout (seconds) when following a `goto?url=` redirect. |
+
 ### Redis-backed tool cache (optional)
 
 Instead of (or in addition to) the on-disk cache, you can back the persistent

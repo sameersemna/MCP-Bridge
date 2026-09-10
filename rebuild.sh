@@ -3,6 +3,9 @@ set -euo pipefail
 
 clear
 
+echo "Clearing old logs..."
+rm -rf logs/*
+
 echo "Fetch the latest models from the providers and update the local model list..."
 python scripts/fetch_models.py   # re-run periodically; providers change models often
 
