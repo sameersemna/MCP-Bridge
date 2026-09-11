@@ -136,7 +136,7 @@ The tool-calling loop can be tuned with the following environment variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `MCP_BRIDGE_MAX_TOOL_TURNS` | `12` | Maximum number of tool-calling iterations per request. |
+| `MCP_BRIDGE_MAX_TOOL_TURNS` | *(model-derived)* | Hard override for the maximum number of tool-calling iterations per request. If unset, the budget is derived per-model from the model's strength (context window + free-tier penalty): stronger models get more turns, weaker models fewer. See below. |
 | `MCP_BRIDGE_MAX_CONTEXT_TOKENS` | *(model-derived)* | Hard override for the tool-loop context budget (tokens). If unset, the budget is derived per-model from the model's context window × `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION`. When exceeded, the tool loop stops and a final answer is synthesized. Prevents runaway loops where the model keeps issuing tool calls and the context grows unboundedly. |
 | `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION` | `0.75` | Fraction of the model's context window used as the tool-loop budget. The remaining fraction is headroom for the final synthesized answer. |
 | `MCP_BRIDGE_TOOL_TIMEOUT_SECONDS` | `60` | Per-tool-call timeout in seconds. |
@@ -146,6 +146,27 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_UPSTREAM_CONNECT_TIMEOUT_SECONDS` | `10` | Connect timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_WRITE_TIMEOUT_SECONDS` | `10` | Write timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_POOL_TIMEOUT_SECONDS` | `10` | Connection-pool timeout for upstream LLM requests (seconds). |
+
+### Model-aware tool-turn budget
+
+The maximum number of tool-calling turns is **model-specific** rather than
+one-size-fits-all. The bridge derives it from the model's strength — primarily
+its context window (resolved the same way as the context budget), with a small
+penalty for `:free` tier models (which are more prone to looping without
+converging). Stronger models get more turns to sustain long, productive
+research; weaker models are stopped sooner so they don't burn time looping.
+
+| Model context window | Turns (paid) | Turns (`:free`) |
+| --- | --- | --- |
+| ≥ 1M | 30 | 28 |
+| ≥ 256k | 24 | 22 |
+| ≥ 128k | 18 | 16 |
+| ≥ 64k | 14 | 12 |
+| < 64k | 12 | 12 |
+
+The budget is clamped to a safe minimum of 12 (never below) and a maximum of
+30. Setting `MCP_BRIDGE_MAX_TOOL_TURNS` explicitly always overrides the derived
+budget.
 
 ### Fallback synthesis model
 

@@ -124,6 +124,12 @@ async def _recover_mangled_pdf_tool_content(
 
 DEFAULT_MAX_TOOL_TURNS = 12
 MIN_MAX_TOOL_TURNS = 12
+# Model-aware tool-turn budget: stronger models (larger context window) get more
+# tool-calling turns, weaker models fewer. This mirrors the model-aware context
+# budget (``get_max_context_tokens``) so a strong model doing legitimate
+# multi-angle research isn't cut off early, while a weak model that loops
+# without converging is stopped sooner. An explicit ``MCP_BRIDGE_MAX_TOOL_TURNS``
+# always overrides the derived budget.
 DEFAULT_TOOL_TIMEOUT_SECONDS = 60
 # Number of retries for transient upstream provider errors (HTTP 200 with an
 # error body, 429 rate-limit, or 5xx "overloaded"/"unavailable" responses).
@@ -522,24 +528,63 @@ def get_max_stub_retries() -> int:
     return configured_value
 
 
-def get_max_tool_turns() -> int:
+def _infer_model_strength_turns(model_id: str | None) -> int:
+    """Derive a tool-turn budget from a model's strength.
+
+    Uses the model's context window (resolved by ``_infer_model_context_window``)
+    as the primary strength signal — a larger context window generally means a
+    stronger model that can sustain longer, more productive research loops.
+    A ``:free`` tier penalty is applied since free-tier models are more prone
+    to looping without converging. The result is clamped to ``[MIN_MAX_TOOL_TURNS,
+    DEFAULT_MAX_TOOL_TURNS * 3]`` so weak models never get fewer than the safe
+    minimum and strong models never get an unbounded budget.
+    """
+    context_window = _infer_model_context_window(model_id)
+
+    if context_window >= 1_000_000:
+        turns = 30
+    elif context_window >= 256_000:
+        turns = 24
+    elif context_window >= 128_000:
+        turns = 18
+    elif context_window >= 64_000:
+        turns = 14
+    else:
+        turns = DEFAULT_MAX_TOOL_TURNS
+
+    # Free-tier models are more likely to loop without converging; give them a
+    # slightly smaller budget (but never below the safe minimum).
+    if model_id and ":free" in model_id.lower():
+        turns = max(MIN_MAX_TOOL_TURNS, turns - 2)
+
+    return max(MIN_MAX_TOOL_TURNS, min(turns, DEFAULT_MAX_TOOL_TURNS * 3))
+
+
+def get_max_tool_turns(model_id: str | None = None) -> int:
+    """Return the maximum number of tool-calling turns for the given model.
+
+    An explicit ``MCP_BRIDGE_MAX_TOOL_TURNS`` environment variable always wins
+    (it is a hard override, backward compatible). Otherwise the budget is
+    derived from the model's strength (context window + free-tier penalty), so
+    stronger models get more turns and weaker models fewer.
+    """
     raw_value = os.getenv("MCP_BRIDGE_MAX_TOOL_TURNS")
-    if raw_value is None:
-        return DEFAULT_MAX_TOOL_TURNS
+    if raw_value is not None:
+        try:
+            configured_value = int(raw_value)
+        except ValueError:
+            logger.warning(f"invalid MCP_BRIDGE_MAX_TOOL_TURNS value: {raw_value}; using default {DEFAULT_MAX_TOOL_TURNS}")
+            return DEFAULT_MAX_TOOL_TURNS
 
-    try:
-        configured_value = int(raw_value)
-    except ValueError:
-        logger.warning(f"invalid MCP_BRIDGE_MAX_TOOL_TURNS value: {raw_value}; using default {DEFAULT_MAX_TOOL_TURNS}")
-        return DEFAULT_MAX_TOOL_TURNS
+        if configured_value < MIN_MAX_TOOL_TURNS:
+            logger.warning(
+                f"configured MCP_BRIDGE_MAX_TOOL_TURNS={configured_value} is below the safe minimum {MIN_MAX_TOOL_TURNS}; using {MIN_MAX_TOOL_TURNS}"
+            )
+            return MIN_MAX_TOOL_TURNS
 
-    if configured_value < MIN_MAX_TOOL_TURNS:
-        logger.warning(
-            f"configured MCP_BRIDGE_MAX_TOOL_TURNS={configured_value} is below the safe minimum {MIN_MAX_TOOL_TURNS}; using {MIN_MAX_TOOL_TURNS}"
-        )
-        return MIN_MAX_TOOL_TURNS
+        return configured_value
 
-    return configured_value
+    return _infer_model_strength_turns(model_id)
 
 
 def should_continue_tool_loop(
@@ -2127,7 +2172,7 @@ async def chat_completions(
     if trace_logger is not None:
         trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
 
-    max_tool_turns = get_max_tool_turns()
+    max_tool_turns = get_max_tool_turns(getattr(request, "model", None))
     max_stub_retries = get_max_stub_retries()
     tool_timeout_seconds = get_tool_timeout_seconds()
     tool_turns_completed = 0

@@ -121,6 +121,61 @@ def test_get_max_tool_turns_clamps_too_low_environment_values(monkeypatch):
     assert get_max_tool_turns() == DEFAULT_MAX_TOOL_TURNS
 
 
+def test_get_max_tool_turns_uses_default_when_unset(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_TOOL_TURNS", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # No model id -> default context window (128k) -> 18 turns.
+    assert get_max_tool_turns() == 18
+
+
+def test_get_max_tool_turns_reads_environment_override(monkeypatch):
+    monkeypatch.setenv("MCP_BRIDGE_MAX_TOOL_TURNS", "40")
+
+    # Explicit env always wins, regardless of model.
+    assert get_max_tool_turns("minimax/minimax-m3:free") == 40
+
+
+def test_get_max_tool_turns_strong_model_gets_more_turns(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_TOOL_TURNS", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # minimax-m3 has a 1M context window -> 30 turns.
+    assert get_max_tool_turns("minimax/minimax-m3") == 30
+
+
+def test_get_max_tool_turns_mid_model_gets_moderate_turns(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_TOOL_TURNS", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # 256k context -> 24 turns.
+    assert get_max_tool_turns("some-vendor/model-256k") == 24
+
+
+def test_get_max_tool_turns_free_tier_gets_penalty(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_TOOL_TURNS", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # 256k context but :free -> 24 - 2 = 22.
+    assert get_max_tool_turns("some-vendor/model-256k:free") == 22
+
+
+def test_get_max_tool_turns_weak_free_model_gets_fewer_turns(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_TOOL_TURNS", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # 64k context + :free penalty -> 14 - 2 = 12 (clamped to min).
+    assert get_max_tool_turns("some-vendor/model-64k:free") == 12
+
+
+def test_get_max_tool_turns_never_below_minimum(monkeypatch):
+    monkeypatch.delenv("MCP_BRIDGE_MAX_TOOL_TURNS", raising=False)
+    monkeypatch.setenv("MCP_BRIDGE_MODELS_CATALOG", "/nonexistent/models.json")
+
+    # A tiny context window still gets the safe minimum.
+    assert get_max_tool_turns("some-vendor/model-8k:free") == DEFAULT_MAX_TOOL_TURNS
+
+
 def test_get_max_context_tokens_uses_default_when_unset(monkeypatch):
     monkeypatch.delenv("MCP_BRIDGE_MAX_CONTEXT_TOKENS", raising=False)
     monkeypatch.delenv("MCP_BRIDGE_CONTEXT_BUDGET_FRACTION", raising=False)

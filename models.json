@@ -1,6 +1,6 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-11T15:44:00.272910+00:00",
+  "fetched_at": "2026-09-11T17:50:18.467551+00:00",
   "model_count": 443,
   "models": {
     "~openai/gpt-astra-latest": {
@@ -698,7 +698,7 @@
     "~z-ai/glm-latest": {
       "name": "Z.ai: GLM Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 128000,
+      "max_completion_tokens": 943718,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -706,9 +706,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000007",
-      "completion_price": "0.0000022",
-      "input_cache_read_price": "0.00000013",
+      "prompt_price": "0.0000008727",
+      "completion_price": "0.00000336",
+      "input_cache_read_price": "0.0000001639",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1894,9 +1894,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000132",
-      "completion_price": "0.000000528",
-      "input_cache_read_price": "0.000000033",
+      "prompt_price": "0.0000000825",
+      "completion_price": "0.00000033",
+      "input_cache_read_price": "0.000000020625",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2067,7 +2067,7 @@
     "z-ai/glm-5.2": {
       "name": "Z.ai: GLM 5.2",
       "context_length": 1048576,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 182476,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -2075,9 +2075,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000966",
-      "completion_price": "0.000003036",
-      "input_cache_read_price": "0.0000001932",
+      "prompt_price": "0.0000006",
+      "completion_price": "0.000002",
+      "input_cache_read_price": "0.00000015",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2942,9 +2942,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000008652",
-      "completion_price": "0.00000017304",
-      "input_cache_read_price": "0.000000017304",
+      "prompt_price": "0.00000008568",
+      "completion_price": "0.00000017136",
+      "input_cache_read_price": "0.000000017136",
       "knowledge_cutoff": null,
       "reasoning": true
     },
