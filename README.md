@@ -317,6 +317,14 @@ returned, so a leaked redirect URL is resolved to its destination (legacy
 over HTTP with a browser-like `User-Agent`). If resolution genuinely fails, the
 original URL is preserved (the result is never dropped).
 
+**Cache protection:** a result that *still* carries an unresolved Google
+redirect wrapper after the un-redirect attempt (e.g. the `goto` token is
+session-bound and Google returns HTTP 400) is **not cached**. This prevents bad
+URLs from ever entering the tool-result cache, so the cache never needs a
+routine purge when the search server changes — an unresolvable result is simply
+re-fetched next time (when the server may resolve it better). The result is
+still returned to the LLM (with the original URL preserved), just not persisted.
+
 | Variable | Default | Description |
 | --- | --- | --- |
 | `MCP_BRIDGE_UNREDIRECT_URLS` | `true` | Master switch. Set to `false` to disable Google redirect un-redirection. |

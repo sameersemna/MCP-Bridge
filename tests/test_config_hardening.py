@@ -1468,3 +1468,63 @@ def test_call_tools_caches_unredirected_result(monkeypatch: pytest.MonkeyPatch) 
     text = cached["content"][0]["text"]
     assert "https://example.com" in text
     assert "google.com/url?q=" not in text
+
+
+def test_result_has_unresolved_google_redirect_detects() -> None:
+    from mcp.types import CallToolResult, TextContent
+
+    # A result with an unresolved goto URL.
+    bad = CallToolResult(
+        content=[TextContent(type="text", text="URL: https://www.google.com/goto?url=CAESYgHrOzAV")],
+        isError=False,
+    )
+    assert openai_utils._result_has_unresolved_google_redirect(bad) is True
+
+    # A result with an unresolved legacy url?q= URL.
+    bad_legacy = CallToolResult(
+        content=[TextContent(type="text", text="URL: https://www.google.com/url?q=https%3A%2F%2Fexample.com&sa=U")],
+        isError=False,
+    )
+    assert openai_utils._result_has_unresolved_google_redirect(bad_legacy) is True
+
+    # A clean result.
+    clean = CallToolResult(
+        content=[TextContent(type="text", text="URL: https://shamela.ws/book/1075/292")],
+        isError=False,
+    )
+    assert openai_utils._result_has_unresolved_google_redirect(clean) is False
+
+    # A dict result.
+    bad_dict = {"isError": False, "content": [{"type": "text", "text": "URL: https://www.google.com/goto?url=CAESYgHrOzAV"}]}
+    assert openai_utils._result_has_unresolved_google_redirect(bad_dict) is True
+
+
+def test_call_tools_does_not_cache_unresolved_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A result that still carries an unresolved google.com/goto URL after the
+    un-redirect attempt must NOT be cached (so bad URLs never enter the cache)."""
+    calls: list[str] = []
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        calls.append(payload)
+        # Simulate a goto URL that the un-redirect cannot resolve (e.g. Google
+        # returns HTTP 400 for a session-bound token). The un-redirect keeps the
+        # original URL, so it still contains google.com/goto.
+        return {
+            "isError": False,
+            "content": [{"type": "text", "text": "URL: https://www.google.com/goto?url=CAESYgHrOzAV"}],
+        }
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    cache = openai_utils.ToolResultCache()
+    query = "Hajr al-Asas foundation stone ceremony in Makkah"
+
+    asyncio.run(openai_utils.call_tools(
+        [("google_search", json.dumps({"query": query}))],
+        result_cache=cache,
+    ))
+
+    # The result is returned to the LLM (with the original URL preserved)...
+    # but it must NOT be cached.
+    assert len(cache) == 0
+    assert cache.get("google_search", query) is None

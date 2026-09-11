@@ -1047,6 +1047,38 @@ async def _unredirect_tool_result(result: Any, timeout: float | None = None) -> 
         return result
 
 
+def _result_has_unresolved_google_redirect(result: Any) -> bool:
+    """Return True if ``result`` still contains an unresolved Google search-result
+    redirect URL (``google.com/goto?url=`` or ``google.com/url?q=``) in any of
+    its text content.
+
+    Used to gate caching: a result that still carries a redirect wrapper after
+    the un-redirect attempt is NOT cached, so bad URLs never enter the cache.
+    This avoids the need to routinely purge the cache when the search server
+    changes — unresolvable results are simply re-fetched next time (when the
+    server may resolve them better).
+    """
+    if not get_unredirect_urls_enabled():
+        return False
+
+    is_dict = isinstance(result, dict)
+    content = result.get("content") if is_dict else getattr(result, "content", None)
+    if not content:
+        return False
+
+    for part in content:
+        if isinstance(part, dict):
+            if part.get("type") == "text":
+                text = part.get("text", "") or ""
+                if _GOOGLE_REDIRECT_URL_RE.search(text):
+                    return True
+        elif getattr(part, "type", None) == "text":
+            text = getattr(part, "text", "") or ""
+            if _GOOGLE_REDIRECT_URL_RE.search(text):
+                return True
+    return False
+
+
 async def _fetch_via_wayback(url: str, timeout: float | None = None) -> CallToolResult | None:
     """Attempt to fetch ``url`` via the Internet Archive Wayback Machine.
 
@@ -1767,16 +1799,31 @@ async def call_tools(
         if result is not None:
             result = await _unredirect_tool_result(result)
 
+        # A result that STILL carries an unresolved Google redirect wrapper
+        # (e.g. the goto token is session-bound and Google returns HTTP 400) is
+        # NOT cached. This prevents bad URLs from ever entering the cache, so
+        # the cache never needs a routine purge when the search server changes
+        # — an unresolvable result is simply re-fetched next time (when the
+        # server may resolve it better). The result is still returned to the
+        # LLM (with the original URL preserved), just not persisted.
+        cacheable_result = not _result_has_unresolved_google_redirect(result)
+
         if cacheable and query:
             key = (name, query)
             if key in in_flight:
                 in_flight.pop(key, None)
                 if not future.done():
                     future.set_result(result)
-            if result_cache is not None:
-                result_cache.put(name, query, result)
-            if persistent_cache is not None:
-                persistent_cache.put(name, query, result)
+            if cacheable_result:
+                if result_cache is not None:
+                    result_cache.put(name, query, result)
+                if persistent_cache is not None:
+                    persistent_cache.put(name, query, result)
+            else:
+                logger.debug(
+                    f"not caching tool result with unresolved google redirect: "
+                    f"name={name}; query={query[:80]}"
+                )
         return result
 
     return await asyncio.gather(*(_run(call) for call in tool_calls))
