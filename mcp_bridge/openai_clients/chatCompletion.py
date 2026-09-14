@@ -1152,6 +1152,50 @@ def _resolve_fallback_model(request: CreateChatCompletionRequest) -> str | None:
     return None
 
 
+async def _post_synthesis_with_retry(
+    client: Any,
+    synthesis_request: CreateChatCompletionRequest,
+) -> str | None:
+    """POST a synthesis request to the upstream provider, retrying transient
+    errors (5xx, 429, or HTTP 200 with an error body) just like the main tool
+    loop does.
+
+    The synthesis path previously posted directly and parsed the body as a
+    valid ``CreateChatCompletionResponse``. When a flaky free-tier provider
+    returned HTTP 200 with an error body (e.g. ``{"error": {"message": "A
+    Timeout Occurred", "code": 504}}`` or ``provider_unavailable``), the parse
+    failed with validation errors and the whole synthesis was lost — even
+    though the main loop would have retried the same transient blip.
+
+    Returns the response body text on success, or ``None`` if every attempt
+    returned a retryable error.
+    """
+    payload = synthesis_request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True)
+    response = await client.post("/chat/completions", json=payload)
+    text = response.text
+
+    if not _is_retryable_upstream_status(response.status_code, text):
+        return text
+
+    for attempt in range(DEFAULT_UPSTREAM_RETRY_COUNT):
+        retry_after = _get_retry_after_seconds(response)
+        delay = retry_after if retry_after > 0 else DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS
+        logger.warning(
+            f"synthesis upstream transient error (status={response.status_code}); "
+            f"retrying ({attempt + 1}/{DEFAULT_UPSTREAM_RETRY_COUNT}) in {delay:.1f}s"
+        )
+        await asyncio.sleep(delay)
+        response = await client.post("/chat/completions", json=payload)
+        text = response.text
+        if not _is_retryable_upstream_status(response.status_code, text):
+            return text
+
+    logger.error(
+        f"synthesis upstream inference server returned status {response.status_code}: {text[:2000]}"
+    )
+    return None
+
+
 async def _try_synthesize_tool_loop_result(
     client: Any,
     request: CreateChatCompletionRequest,
@@ -1171,12 +1215,11 @@ async def _try_synthesize_tool_loop_result(
             force_answer=force_answer,
         )
         try:
-            text = (
-                await client.post(
-                    "/chat/completions",
-                    json=synthesis_request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
-                )
-            ).text
+            text = await _post_synthesis_with_retry(client, synthesis_request)
+            if text is None:
+                if attempt == 0:
+                    continue
+                return None
             response = CreateChatCompletionResponse.model_validate_json(text)
             content = getattr(response.choices[0].message, "content", None) if response.choices else None
             if content is None:
@@ -1224,12 +1267,9 @@ async def _try_synthesize_tool_loop_result(
         )
         synthesis_request.model = fallback_model
         try:
-            text = (
-                await client.post(
-                    "/chat/completions",
-                    json=synthesis_request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
-                )
-            ).text
+            text = await _post_synthesis_with_retry(client, synthesis_request)
+            if text is None:
+                return None
             response = CreateChatCompletionResponse.model_validate_json(text)
             content = getattr(response.choices[0].message, "content", None) if response.choices else None
             if content is None:
@@ -2018,6 +2058,14 @@ def _is_transient_upstream_error(text: str) -> bool:
         "internal server error",
         "bad gateway",
         "service unavailable",
+        # OpenRouter/OpenAI-style timeout errors (HTTP 200 with an error body
+        # like `{"error": {"message": "A Timeout Occurred", "code": 504}}`).
+        "timeout occurred",
+        "timed out",
+        "timeout",
+        "provider_unavailable",
+        "provider unavailable",
+        "upstream timeout",
     )
     return any(marker in lowered for marker in transient_markers)
 

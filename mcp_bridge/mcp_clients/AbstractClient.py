@@ -251,6 +251,19 @@ class GenericMcpClient(ABC):
         if timeout is None:
             timeout = int(DEFAULT_MCP_TIMEOUT_SECONDS)
 
+        # Honor the server's `requestTimeout` (ms) when it is larger than the
+        # caller-supplied timeout. A slow remote server (e.g. an SSE search
+        # server that can take >60s per call) would otherwise always be cut off
+        # by the global tool-call timeout (`MCP_BRIDGE_TOOL_TIMEOUT_SECONDS`),
+        # making the per-server `requestTimeout` config meaningless. Only
+        # servers that opt into a larger timeout get more time; servers without
+        # `requestTimeout` (or with a smaller one) keep the caller's timeout.
+        configured_timeout = None
+        if hasattr(self, "config") and getattr(self.config, "requestTimeout", None):
+            configured_timeout = float(self.config.requestTimeout) / 1000.0
+        if configured_timeout is not None:
+            timeout = int(max(timeout, configured_timeout))
+
         normalized_arguments = arguments or {}
         if not isinstance(normalized_arguments, dict):
             raise HTTPException(status_code=400, detail="Tool arguments must be a JSON object")

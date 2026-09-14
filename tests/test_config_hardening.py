@@ -932,6 +932,72 @@ def test_call_tool_uses_a_longer_default_timeout() -> None:
     assert result.content[0].text == "ok"
 
 
+def test_call_tool_honors_server_request_timeout() -> None:
+    """A server's `requestTimeout` (ms) extends the tool-call timeout when it
+    is larger than the caller-supplied timeout, so a slow server (e.g. an SSE
+    search server) is not cut off by the global tool timeout."""
+    import time
+
+    class SlowSession:
+        async def call_tool(self, name: str, arguments: dict | None):
+            # Longer than the caller's 1s timeout, but within the server's
+            # 5s requestTimeout.
+            await asyncio.sleep(2.0)
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text="ok")], isError=False)
+
+    class StubClient(GenericMcpClient):
+        def __init__(self) -> None:
+            super().__init__("slow")
+            self.config = SimpleNamespace(requestTimeout=5000)  # 5s
+            self.session = SimpleNamespace(call_tool=SlowSession().call_tool)
+
+        async def _maintain_session(self) -> None:
+            return None
+
+    client = StubClient()
+    start = time.monotonic()
+    result = asyncio.run(client.call_tool("search", {"query": "x"}, timeout=1))
+    elapsed = time.monotonic() - start
+
+    # The call succeeded because the server's 5s requestTimeout overrode the
+    # caller's 1s timeout.
+    assert result is not None
+    assert result.isError is False
+    assert result.content[0].text == "ok"
+    assert elapsed >= 2.0
+
+
+def test_call_tool_keeps_caller_timeout_when_request_timeout_smaller() -> None:
+    """A server's `requestTimeout` smaller than the caller's timeout does not
+    shrink it — the caller's (larger) timeout wins."""
+    import time
+
+    class SlowSession:
+        async def call_tool(self, name: str, arguments: dict | None):
+            await asyncio.sleep(0.5)
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text="ok")], isError=False)
+
+    class StubClient(GenericMcpClient):
+        def __init__(self) -> None:
+            super().__init__("fast")
+            self.config = SimpleNamespace(requestTimeout=100)  # 0.1s
+            self.session = SimpleNamespace(call_tool=SlowSession().call_tool)
+
+        async def _maintain_session(self) -> None:
+            return None
+
+    client = StubClient()
+    start = time.monotonic()
+    result = asyncio.run(client.call_tool("search", {"query": "x"}, timeout=5))
+    elapsed = time.monotonic() - start
+
+    # The 0.5s call succeeded under the caller's 5s timeout (not cut to 0.1s).
+    assert result is not None
+    assert result.isError is False
+    assert result.content[0].text == "ok"
+    assert elapsed >= 0.5
+
+
 def test_call_tools_runs_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
         await asyncio.sleep(0.05)

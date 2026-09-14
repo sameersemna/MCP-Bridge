@@ -1,8 +1,43 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-13T20:04:05.730410+00:00",
-  "model_count": 445,
+  "fetched_at": "2026-09-14T18:22:05.663580+00:00",
+  "model_count": 447,
   "models": {
+    "~deepseek/deepseek-pro-latest": {
+      "name": "DeepSeek: DeepSeek Pro Latest",
+      "context_length": 1048576,
+      "max_completion_tokens": 393216,
+      "modality": "text->text",
+      "input_modalities": [
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000057948",
+      "completion_price": "0.00000173844",
+      "input_cache_read_price": "0.000000018438",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "~deepseek/deepseek-flash-latest": {
+      "name": "DeepSeek: DeepSeek Flash Latest",
+      "context_length": 1048576,
+      "max_completion_tokens": 943718,
+      "modality": "text+image->text",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000015",
+      "completion_price": "0.0000006",
+      "input_cache_read_price": "0.000000003",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
     "inference-net/schematron-v2-turbo": {
       "name": "Inference.net: Schematron V2 Turbo",
       "context_length": 128000,
@@ -732,7 +767,7 @@
     "~z-ai/glm-latest": {
       "name": "Z.ai: GLM Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 235929,
+      "max_completion_tokens": 131072,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -740,9 +775,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000936",
-      "completion_price": "0.000003168",
-      "input_cache_read_price": "0.0000001872",
+      "prompt_price": "0.00000091",
+      "completion_price": "0.00000286",
+      "input_cache_read_price": "0.000000169",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -766,7 +801,7 @@
     "z-ai/glm-5.3": {
       "name": "Z.ai: GLM 5.3",
       "context_length": 1310720,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 943717,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -774,9 +809,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000001092",
-      "completion_price": "0.000003432",
-      "input_cache_read_price": "0.0000002028",
+      "prompt_price": "0.0000014",
+      "completion_price": "0.0000044",
+      "input_cache_read_price": "0.00000026",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -951,7 +986,7 @@
     "deepseek/deepseek-v4-pro-0813": {
       "name": "DeepSeek: DeepSeek V4 Pro 0813",
       "context_length": 1048576,
-      "max_completion_tokens": 384000,
+      "max_completion_tokens": 393216,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -961,7 +996,7 @@
       ],
       "prompt_price": "0.00000057948",
       "completion_price": "0.00000173844",
-      "input_cache_read_price": "0.000000019316",
+      "input_cache_read_price": "0.000000018438",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1148,7 +1183,7 @@
     "~deepseek/deepseek-v4-flash-latest": {
       "name": "DeepSeek: DeepSeek V4 Flash Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 393216,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -1156,9 +1191,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000000352",
-      "completion_price": "0.0000001056",
-      "input_cache_read_price": "0.00000000112",
+      "prompt_price": "0.00000004",
+      "completion_price": "0.0000001",
+      "input_cache_read_price": "0.00000001",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1173,9 +1208,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000004",
-      "completion_price": "0.00000008",
-      "input_cache_read_price": "0.000000008",
+      "prompt_price": "0.00000006",
+      "completion_price": "0.00000012",
+      "input_cache_read_price": "0.000000012",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2101,7 +2136,7 @@
     "z-ai/glm-5.2": {
       "name": "Z.ai: GLM 5.2",
       "context_length": 1048576,
-      "max_completion_tokens": 182476,
+      "max_completion_tokens": 131072,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -2109,9 +2144,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000006",
-      "completion_price": "0.000002",
-      "input_cache_read_price": "0.00000015",
+      "prompt_price": "0.0000006832",
+      "completion_price": "0.0000021472",
+      "input_cache_read_price": "0.00000012688",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2263,7 +2298,7 @@
     "nvidia/nemotron-3-ultra-550b-a55b": {
       "name": "NVIDIA: Nemotron 3 Ultra",
       "context_length": 262144,
-      "max_completion_tokens": 32768,
+      "max_completion_tokens": 182520,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -2271,9 +2306,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000625",
-      "completion_price": "0.000003125",
-      "input_cache_read_price": "0.0000001875",
+      "prompt_price": "0.0000006",
+      "completion_price": "0.0000024",
+      "input_cache_read_price": "0.00000012",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2976,9 +3011,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000004732",
-      "completion_price": "0.00000009464",
-      "input_cache_read_price": "0.000000009464",
+      "prompt_price": "0.00000008246",
+      "completion_price": "0.00000016492",
+      "input_cache_read_price": "0.000000016492",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -3576,7 +3611,7 @@
     "nvidia/nemotron-3-super-120b-a12b": {
       "name": "NVIDIA: Nemotron 3 Super",
       "context_length": 262144,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -3584,8 +3619,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000085",
-      "completion_price": "0.0000004",
+      "prompt_price": "0.00000008",
+      "completion_price": "0.00000045",
       "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
@@ -6522,7 +6557,7 @@
     "qwen/qwen3-14b": {
       "name": "Qwen: Qwen3 14B",
       "context_length": 131072,
-      "max_completion_tokens": 8192,
+      "max_completion_tokens": 16384,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -6530,8 +6565,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000002275",
-      "completion_price": "0.00000091",
+      "prompt_price": "0.00000012",
+      "completion_price": "0.00000024",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2025-03-31",
       "reasoning": true
@@ -6782,7 +6817,7 @@
     "meta-llama/llama-4-maverick": {
       "name": "Meta: Llama 4 Maverick",
       "context_length": 1048576,
-      "max_completion_tokens": 115200,
+      "max_completion_tokens": 16384,
       "modality": "text+image->text",
       "input_modalities": [
         "text",
@@ -6791,8 +6826,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000002",
-      "completion_price": "0.000000696",
+      "prompt_price": "0.0000001875",
+      "completion_price": "0.0000006525",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2024-08-31",
       "reasoning": false

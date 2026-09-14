@@ -562,3 +562,111 @@ def test_chat_completions_recovers_cohere_style_error_finish_reason_end_to_end(m
     # Degraded gracefully (empty-content fallback), not a hard failure.
     assert response.choices[0].message.content
     assert response.choices[0].finish_reason.value == "stop"
+
+
+def test_chat_completions_synthesis_retries_transient_error_body(monkeypatch):
+    """Regression test: when the synthesis request hits a transient HTTP 200
+    with an error body (e.g. `{"error": {"message": "A Timeout Occurred",
+    "code": 504}}` or `provider_unavailable`), the bridge must retry it like
+    the main loop does -- not fail with `4 validation errors for
+    CreateChatCompletionResponse` and lose the whole synthesis."""
+    fake_client = FakeClient(
+        [
+            # Turn 1: model issues a tool call.
+            FakeResponse(200, _tool_calls_response("search", '{"query": "hello"}')),
+            # Turn 2: model produces a final answer (tool loop completes).
+            FakeResponse(200, _stop_response("The final answer.")),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    async def fake_call_tools(tool_calls, **kwargs):
+        return [
+            CallToolResult(
+                content=[TextContent(type="text", text="result for search")],
+                isError=False,
+            )
+            for name, _ in tool_calls
+        ]
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(chat_completion_module, "call_tools", fake_call_tools)
+    monkeypatch.setattr(chat_completion_module, "DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS", 0.0)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "do a search"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    # Directly exercise the synthesis retry helper: a transient error body is
+    # retried, then a valid response is returned.
+    class FakeSynthClient:
+        def __init__(self):
+            self.posts = []
+
+        async def post(self, url, **kwargs):
+            self.posts.append(url)
+            if len(self.posts) == 1:
+                return FakeResponse(200, '{"error": {"message": "A Timeout Occurred", "code": 504}}')
+            return FakeResponse(200, _stop_response("Synthesized after retry."))
+
+    synth_client = FakeSynthClient()
+    synth_request = chat_completion_module._build_synthesis_request(
+        request,
+        stop_reason="repeated_tool_calls",
+        request_messages=request.messages,
+        force_answer=True,
+    )
+    text = asyncio.run(chat_completion_module._post_synthesis_with_retry(synth_client, synth_request))
+
+    # The transient error was retried once, then the valid response was used.
+    assert len(synth_client.posts) == 2
+    assert text is not None
+    response = chat_completion_module.CreateChatCompletionResponse.model_validate_json(text)
+    assert response.choices[0].message.content == "Synthesized after retry."
+
+
+def test_chat_completions_synthesis_returns_none_after_all_retries_fail(monkeypatch):
+    """When every synthesis attempt returns a transient error body, the helper
+    returns None (so the caller falls back to the deterministic evidence dump)
+    instead of raising a validation error."""
+    fake_client = FakeClient(
+        [
+            FakeResponse(200, '{"error": {"message": "A Timeout Occurred", "code": 504}}'),
+            FakeResponse(200, '{"error": {"message": "A Timeout Occurred", "code": 504}}'),
+            FakeResponse(200, '{"error": {"message": "A Timeout Occurred", "code": 504}}'),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(chat_completion_module, "DEFAULT_UPSTREAM_RETRY_DELAY_SECONDS", 0.0)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    synth_request = chat_completion_module._build_synthesis_request(
+        request,
+        stop_reason="repeated_tool_calls",
+        request_messages=request.messages,
+        force_answer=True,
+    )
+    text = asyncio.run(chat_completion_module._post_synthesis_with_retry(fake_client, synth_request))
+
+    # 1 initial + 2 retries = 3 posts, all transient -> None.
+    assert len(fake_client.posts) == 3
+    assert text is None

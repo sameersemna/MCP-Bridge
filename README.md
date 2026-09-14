@@ -139,13 +139,39 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_MAX_TOOL_TURNS` | *(model-derived)* | Hard override for the maximum number of tool-calling iterations per request. If unset, the budget is derived per-model from the model's strength (context window + free-tier penalty): stronger models get more turns, weaker models fewer. See below. |
 | `MCP_BRIDGE_MAX_CONTEXT_TOKENS` | *(model-derived)* | Hard override for the tool-loop context budget (tokens). If unset, the budget is derived per-model from the model's context window × `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION`. When exceeded, the tool loop stops and a final answer is synthesized. Prevents runaway loops where the model keeps issuing tool calls and the context grows unboundedly. |
 | `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION` | `0.75` | Fraction of the model's context window used as the tool-loop budget. The remaining fraction is headroom for the final synthesized answer. |
-| `MCP_BRIDGE_TOOL_TIMEOUT_SECONDS` | `60` | Per-tool-call timeout in seconds. |
+| `MCP_BRIDGE_TOOL_TIMEOUT_SECONDS` | `60` | Per-tool-call timeout in seconds. A server's `requestTimeout` (ms) in `config.json` overrides this when it is larger — see below. |
 | `MCP_BRIDGE_TOOL_RETRY_COUNT` | `0` | Number of retries for a timed-out tool call. |
 | `MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS` | `0.25` | Delay between tool-call retries. |
 | `MCP_BRIDGE_UPSTREAM_READ_TIMEOUT_SECONDS` | `300` | Read timeout for upstream LLM requests (seconds). Prevents a dead final-turn request from hanging for tens of minutes. |
 | `MCP_BRIDGE_UPSTREAM_CONNECT_TIMEOUT_SECONDS` | `10` | Connect timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_WRITE_TIMEOUT_SECONDS` | `10` | Write timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_POOL_TIMEOUT_SECONDS` | `10` | Connection-pool timeout for upstream LLM requests (seconds). |
+
+### Per-server tool-call timeout (`requestTimeout`)
+
+A slow remote MCP server (e.g. an SSE search server that can take >60s per call)
+would otherwise always be cut off by the global tool-call timeout
+(`MCP_BRIDGE_TOOL_TIMEOUT_SECONDS`, default 60s). To give a specific server
+more time, set its `requestTimeout` (in **milliseconds**) in `config.json`:
+
+```json
+{
+  "mcp_servers": {
+    "google-search": {
+      "type": "sse",
+      "url": "http://latitude:11403/sse",
+      "requestTimeout": 120000
+    }
+  }
+}
+```
+
+When a server's `requestTimeout` is **larger** than the caller-supplied tool
+timeout, the bridge uses the server's value for that call (and its retries).
+Servers without `requestTimeout`, or with a smaller one, keep the global
+timeout — so this is fully opt-in and backward compatible. This prevents the
+bridge from resetting the session and giving up on a server that is merely
+slow rather than dead.
 
 ### Model-aware tool-turn budget
 
