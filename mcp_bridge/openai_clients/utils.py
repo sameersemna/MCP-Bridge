@@ -1079,6 +1079,221 @@ def _result_has_unresolved_google_redirect(result: Any) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# `ref://<id>` token resolution (defense in depth)
+#
+# Some search MCP servers (e.g. You.com) replace very long result URLs with
+# short `ref://<id>` tokens to save space in the tool result. The same server
+# exposes an `expand_link` tool that resolves a token back to the full URL.
+# When an LLM cites these in a report, the citations are broken (they point at
+# the opaque `ref://` token, not the real source). The MCP server should expand
+# these itself, but as defense in depth the bridge also resolves any that slip
+# through — so bad `ref://` links never reach the LLM or the tool-result cache.
+#
+# Resolution requires calling `expand_link` on the SAME server that produced
+# the token, so we route through the tool->server map attached during tool
+# discovery.
+# ---------------------------------------------------------------------------
+
+# Matches a `ref://<id>` token (the id is typically 8 hex chars, but we accept
+# any non-whitespace token so we don't miss longer ids).
+_REF_TOKEN_RE = re.compile(r"ref://([^\s\"'<>]+)")
+
+DEFAULT_RESOLVE_REF_TOKENS_ENABLED = True
+
+
+def get_resolve_ref_tokens_enabled() -> bool:
+    """Whether the bridge should resolve `ref://<id>` tokens in tool results
+    to their real URLs (defense in depth). Default on."""
+    raw = os.getenv("MCP_BRIDGE_RESOLVE_REF_TOKENS")
+    if raw is None:
+        return DEFAULT_RESOLVE_REF_TOKENS_ENABLED
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _extract_ref_token_id(token: str) -> str:
+    """Return the bare id from a ``ref://<id>`` token (or the token itself if
+    it is already a bare id)."""
+    stripped = token.strip()
+    if stripped.startswith("ref://"):
+        return stripped[len("ref://"):]
+    return stripped
+
+
+async def _resolve_ref_token(
+    token: str,
+    server_name: str | None,
+    timeout: float | None = None,
+) -> str | None:
+    """Resolve a single ``ref://<id>`` token to its full URL by calling
+    ``expand_link`` on the owning MCP server.
+
+    Returns the resolved URL, or None if resolution fails (the token is left
+    unchanged so the result is never dropped).
+    """
+    if not server_name:
+        return None
+    try:
+        client = ClientManager.get_client(server_name)
+    except Exception:
+        logger.debug(f"no client for server '{server_name}' while resolving ref token")
+        return None
+
+    token_id = _extract_ref_token_id(token)
+    try:
+        call_kwargs: dict[str, Any] = {}
+        if timeout is not None:
+            call_kwargs["timeout"] = timeout
+        signature = inspect.signature(client.call_tool)
+        if "timeout" not in signature.parameters:
+            call_kwargs.pop("timeout", None)
+        result = await client.call_tool("expand_link", {"token": token_id}, **call_kwargs)
+    except Exception as exc:
+        logger.debug(f"expand_link failed for {token[:40]} on '{server_name}': {exc}")
+        return None
+
+    if getattr(result, "isError", False):
+        logger.debug(f"expand_link returned error for {token[:40]} on '{server_name}'")
+        return None
+
+    content = result.get("content") if isinstance(result, dict) else getattr(result, "content", None)
+    for part in content or []:
+        if isinstance(part, dict):
+            if part.get("type") == "text":
+                text = part.get("text", "") or ""
+                match = re.search(r"https?://[^\s\"'<>]+", text)
+                if match:
+                    return match.group(0)
+        elif getattr(part, "type", None) == "text":
+            text = getattr(part, "text", "") or ""
+            match = re.search(r"https?://[^\s\"'<>]+", text)
+            if match:
+                return match.group(0)
+    return None
+
+
+async def _resolve_ref_text_urls(
+    text: str,
+    server_name: str | None,
+    timeout: float | None = None,
+) -> str:
+    """Replace every ``ref://<id>`` token in ``text`` with its resolved URL.
+    Unresolvable tokens are left unchanged."""
+    if not text or not _REF_TOKEN_RE.search(text):
+        return text
+
+    # Use the full `ref://<id>` token (match.group(0)) as the key so the
+    # replacement lookup matches what `_REF_TOKEN_RE.sub` passes in.
+    tokens = list(dict.fromkeys(match.group(0) for match in _REF_TOKEN_RE.finditer(text)))
+    resolved: dict[str, str] = {}
+    for token in tokens:
+        url = await _resolve_ref_token(token, server_name, timeout=timeout)
+        if url:
+            resolved[token] = url
+
+    if not resolved:
+        return text
+
+    def _replace(match: re.Match[str]) -> str:
+        return resolved.get(match.group(0), match.group(0))
+
+    return _REF_TOKEN_RE.sub(_replace, text)
+
+
+async def _unredirect_ref_tool_result(
+    result: Any,
+    server_name: str | None,
+    timeout: float | None = None,
+) -> Any:
+    """Return a copy of ``result`` with ``ref://<id>`` tokens in its text
+    content resolved to their real URLs.
+
+    Only text content parts are touched; image/embedded-resource parts and the
+    ``isError`` flag are preserved. If nothing changed, the original result is
+    returned unchanged. Handles both ``CallToolResult`` objects and plain
+    dicts (``{"content": [...], "isError": ...}``).
+    """
+    if not get_resolve_ref_tokens_enabled():
+        return result
+
+    is_dict = isinstance(result, dict)
+    content = result.get("content") if is_dict else getattr(result, "content", None)
+    if not content:
+        return result
+
+    changed = False
+    new_content: list[Any] = []
+    for part in content:
+        if isinstance(part, dict):
+            if part.get("type") == "text":
+                original_text = part.get("text", "") or ""
+                new_text = await _resolve_ref_text_urls(original_text, server_name, timeout=timeout)
+                if new_text != original_text:
+                    changed = True
+                    new_part = dict(part)
+                    new_part["text"] = new_text
+                    new_content.append(new_part)
+                else:
+                    new_content.append(part)
+            else:
+                new_content.append(part)
+        elif getattr(part, "type", None) == "text":
+            original_text = getattr(part, "text", "") or ""
+            new_text = await _resolve_ref_text_urls(original_text, server_name, timeout=timeout)
+            if new_text != original_text:
+                changed = True
+                try:
+                    new_part = TextContent(type="text", text=new_text)
+                except Exception:
+                    new_part = type(part)(type="text", text=new_text)
+                new_content.append(new_part)
+            else:
+                new_content.append(part)
+        else:
+            new_content.append(part)
+
+    if not changed:
+        return result
+
+    if is_dict:
+        new_result = dict(result)
+        new_result["content"] = new_content
+        return new_result
+
+    try:
+        return CallToolResult(content=new_content, isError=bool(getattr(result, "isError", False)))
+    except Exception:
+        return result
+
+
+def _result_has_unresolved_ref(result: Any) -> bool:
+    """Return True if ``result`` still contains an unresolved ``ref://<id>``
+    token in any of its text content.
+
+    Used to gate caching: a result that still carries a ``ref://`` token after
+    the resolution attempt is NOT cached, so bad links never enter the cache.
+    """
+    if not get_resolve_ref_tokens_enabled():
+        return False
+
+    is_dict = isinstance(result, dict)
+    content = result.get("content") if is_dict else getattr(result, "content", None)
+    if not content:
+        return False
+
+    for part in content:
+        if isinstance(part, dict):
+            if part.get("type") == "text":
+                text = part.get("text", "") or ""
+                if _REF_TOKEN_RE.search(text):
+                    return True
+        elif getattr(part, "type", None) == "text":
+            text = getattr(part, "text", "") or ""
+            if _REF_TOKEN_RE.search(text):
+                return True
+    return False
+
+
 async def _fetch_via_wayback(url: str, timeout: float | None = None) -> CallToolResult | None:
     """Attempt to fetch ``url`` via the Internet Archive Wayback Machine.
 
@@ -1707,6 +1922,7 @@ async def call_tools(
     result_cache: ToolResultCache | None = None,
     persistent_cache: PersistentToolCache | None = None,
     cache_enabled: Callable[[str], bool] | None = None,
+    tool_server_map: dict[str, str] | None = None,
 ) -> list[Any]:
     """Execute multiple tool calls concurrently while preserving order.
 
@@ -1719,6 +1935,10 @@ async def call_tools(
     which it returns True are read from / written to the caches. This enables
     per-server opt-in caching (a tool is cached only if its owning MCP server is
     configured with ``"cached": true``).
+
+    ``tool_server_map`` maps a tool name to its owning MCP server name. It is
+    used to resolve ``ref://<id>`` tokens in tool results by routing the
+    ``expand_link`` call to the same server that produced the token.
     """
 
     if not tool_calls:
@@ -1799,6 +2019,16 @@ async def call_tools(
         if result is not None:
             result = await _unredirect_tool_result(result)
 
+        # Defense in depth: resolve any `ref://<id>` tokens that slipped through
+        # the MCP server (e.g. You.com shortens long URLs to ref tokens). This
+        # runs BEFORE the cache puts so bad links never enter the cache, and
+        # before the result is returned so the LLM never cites them verbatim.
+        # Resolution routes `expand_link` to the same server that produced the
+        # token (via the tool->server map).
+        if result is not None:
+            server_name = (tool_server_map or {}).get(name)
+            result = await _unredirect_ref_tool_result(result, server_name)
+
         # A result that STILL carries an unresolved Google redirect wrapper
         # (e.g. the goto token is session-bound and Google returns HTTP 400) is
         # NOT cached. This prevents bad URLs from ever entering the cache, so
@@ -1807,6 +2037,9 @@ async def call_tools(
         # server may resolve it better). The result is still returned to the
         # LLM (with the original URL preserved), just not persisted.
         cacheable_result = not _result_has_unresolved_google_redirect(result)
+        # Likewise, a result that still carries an unresolved `ref://` token is
+        # NOT cached, so bad links never enter the cache.
+        cacheable_result = cacheable_result and not _result_has_unresolved_ref(result)
 
         if cacheable and query:
             key = (name, query)
@@ -1821,7 +2054,7 @@ async def call_tools(
                     persistent_cache.put(name, query, result)
             else:
                 logger.debug(
-                    f"not caching tool result with unresolved google redirect: "
+                    f"not caching tool result with unresolved google redirect or ref token: "
                     f"name={name}; query={query[:80]}"
                 )
         return result

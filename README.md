@@ -351,6 +351,38 @@ still returned to the LLM (with the original URL preserved), just not persisted.
 | `MCP_BRIDGE_UNREDIRECT_URLS` | `true` | Master switch. Set to `false` to disable Google redirect un-redirection. |
 | `MCP_BRIDGE_UNREDIRECT_TIMEOUT_SECONDS` | `8` | Per-URL timeout (seconds) when following a `goto?url=` redirect. |
 
+### `ref://` token resolution (defense in depth)
+
+Some search MCP servers (e.g. You.com) replace very long result URLs with short
+`ref://<id>` tokens to save space in the tool result:
+
+```
+URL: ref://5af47758 (long URL shortened; pass to expand_link to get the full URL)
+```
+
+The same server exposes an `expand_link` tool that resolves a token back to the
+full URL. When an LLM cites these in a report, the citations are broken (they
+point at the opaque `ref://` token, not the real source). The MCP server should
+expand these itself, but as **defense in depth** the bridge also resolves any
+that slip through — so bad `ref://` links never reach the LLM or the
+tool-result cache.
+
+The resolution runs inside `call_tools`, **before** the result is cached or
+returned. It routes the `expand_link` call to the **same server** that produced
+the token (via the tool→server map attached during tool discovery), so the
+token is resolved against the correct provider. If resolution genuinely fails,
+the original token is preserved (the result is never dropped).
+
+**Cache protection:** a result that *still* carries an unresolved `ref://` token
+after the resolution attempt is **not cached**, so bad links never enter the
+tool-result cache — an unresolvable result is simply re-fetched next time (when
+the server may resolve it better). The result is still returned to the LLM (with
+the original token preserved), just not persisted.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MCP_BRIDGE_RESOLVE_REF_TOKENS` | `true` | Master switch. Set to `false` to disable `ref://` token resolution. |
+
 ### Redis-backed tool cache (optional)
 
 Instead of (or in addition to) the on-disk cache, you can back the persistent

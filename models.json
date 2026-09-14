@@ -1,10 +1,44 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-11T17:50:18.467551+00:00",
-  "model_count": 443,
+  "fetched_at": "2026-09-13T20:04:05.730410+00:00",
+  "model_count": 445,
   "models": {
+    "inference-net/schematron-v2-turbo": {
+      "name": "Inference.net: Schematron V2 Turbo",
+      "context_length": 128000,
+      "max_completion_tokens": 8192,
+      "modality": "text->text",
+      "input_modalities": [
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000003",
+      "completion_price": "0.00000015",
+      "input_cache_read_price": "0.00000003",
+      "knowledge_cutoff": null,
+      "reasoning": false
+    },
+    "inference-net/schematron-v2-small": {
+      "name": "Inference.net: Schematron V2 Small",
+      "context_length": 128000,
+      "max_completion_tokens": 4096,
+      "modality": "text->text",
+      "input_modalities": [
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000005",
+      "completion_price": "0.00000023",
+      "input_cache_read_price": "0.00000005",
+      "knowledge_cutoff": null,
+      "reasoning": false
+    },
     "~openai/gpt-astra-latest": {
-      "name": "OpenAI GPT Astra Latest",
+      "name": "OpenAI: GPT Astra Latest",
       "context_length": 1050000,
       "max_completion_tokens": 128000,
       "modality": "text+image+file->text",
@@ -23,7 +57,7 @@
       "reasoning": true
     },
     "~openai/gpt-sol-latest": {
-      "name": "OpenAI GPT Sol Latest",
+      "name": "OpenAI: GPT Sol Latest",
       "context_length": 1050000,
       "max_completion_tokens": 128000,
       "modality": "text+image+file->text",
@@ -42,7 +76,7 @@
       "reasoning": true
     },
     "~openai/gpt-terra-latest": {
-      "name": "OpenAI GPT Terra Latest",
+      "name": "OpenAI: GPT Terra Latest",
       "context_length": 1050000,
       "max_completion_tokens": 128000,
       "modality": "text+image+file->text",
@@ -61,7 +95,7 @@
       "reasoning": true
     },
     "~openai/gpt-luna-latest": {
-      "name": "OpenAI GPT Luna Latest",
+      "name": "OpenAI: GPT Luna Latest",
       "context_length": 1050000,
       "max_completion_tokens": 128000,
       "modality": "text+image+file->text",
@@ -698,7 +732,7 @@
     "~z-ai/glm-latest": {
       "name": "Z.ai: GLM Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 943718,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -706,9 +740,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000008727",
-      "completion_price": "0.00000336",
-      "input_cache_read_price": "0.0000001639",
+      "prompt_price": "0.000000936",
+      "completion_price": "0.000003168",
+      "input_cache_read_price": "0.0000001872",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -732,7 +766,7 @@
     "z-ai/glm-5.3": {
       "name": "Z.ai: GLM 5.3",
       "context_length": 1310720,
-      "max_completion_tokens": 943718,
+      "max_completion_tokens": 131072,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -740,9 +774,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000014",
-      "completion_price": "0.0000044",
-      "input_cache_read_price": "0.00000026",
+      "prompt_price": "0.000001092",
+      "completion_price": "0.000003432",
+      "input_cache_read_price": "0.0000002028",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -776,9 +810,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000042",
-      "completion_price": "0.000003",
-      "input_cache_read_price": "0.000000085",
+      "prompt_price": "0.000000214",
+      "completion_price": "0.00000255",
+      "input_cache_read_price": "0.00000015",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1066,8 +1100,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000003",
-      "completion_price": "0.0000011",
+      "prompt_price": "0.00000035",
+      "completion_price": "0.0000015",
       "input_cache_read_price": "0.00000004",
       "knowledge_cutoff": null,
       "reasoning": true
@@ -1112,9 +1146,9 @@
       "reasoning": true
     },
     "~deepseek/deepseek-v4-flash-latest": {
-      "name": "DeepSeek V4 Flash Latest",
+      "name": "DeepSeek: DeepSeek V4 Flash Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 393216,
+      "max_completion_tokens": 131072,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -1122,9 +1156,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000005",
-      "completion_price": "0.00000016",
-      "input_cache_read_price": "0.000000013",
+      "prompt_price": "0.0000000352",
+      "completion_price": "0.0000001056",
+      "input_cache_read_price": "0.00000000112",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1139,9 +1173,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000065",
-      "completion_price": "0.00000018",
-      "input_cache_read_price": "0.000000016",
+      "prompt_price": "0.00000004",
+      "completion_price": "0.00000008",
+      "input_cache_read_price": "0.000000008",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1431,7 +1465,7 @@
     "thinkingmachines/inkling": {
       "name": "Thinking Machines: Inkling",
       "context_length": 1048576,
-      "max_completion_tokens": 32768,
+      "max_completion_tokens": 471859,
       "modality": "text+image+audio->text",
       "input_modalities": [
         "text",
@@ -1520,9 +1554,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000234",
-      "completion_price": "0.0000117",
-      "input_cache_read_price": "0.000000261",
+      "prompt_price": "0.000002648138063",
+      "completion_price": "0.00001328272425",
+      "input_cache_read_price": "0.00000030264435",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2628,7 +2662,7 @@
       "reasoning": true
     },
     "~anthropic/claude-haiku-latest": {
-      "name": "Anthropic Claude Haiku Latest",
+      "name": "Anthropic: Claude Haiku Latest",
       "context_length": 200000,
       "max_completion_tokens": 64000,
       "modality": "text+image+file->text",
@@ -2647,7 +2681,7 @@
       "reasoning": true
     },
     "~openai/gpt-mini-latest": {
-      "name": "OpenAI GPT Mini Latest",
+      "name": "OpenAI: GPT Mini Latest",
       "context_length": 400000,
       "max_completion_tokens": 128000,
       "modality": "text+image+file->text",
@@ -2666,7 +2700,7 @@
       "reasoning": true
     },
     "~google/gemini-pro-latest": {
-      "name": "Google Gemini Pro Latest",
+      "name": "Google: Gemini Pro Latest",
       "context_length": 1048576,
       "max_completion_tokens": 65536,
       "modality": "text+image+file+audio+video->text",
@@ -2687,7 +2721,7 @@
       "reasoning": true
     },
     "~moonshotai/kimi-latest": {
-      "name": "MoonshotAI Kimi Latest",
+      "name": "MoonshotAI: Kimi Latest",
       "context_length": 1048576,
       "max_completion_tokens": 943718,
       "modality": "text+image+video->text",
@@ -2699,14 +2733,14 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000234",
-      "completion_price": "0.0000117",
-      "input_cache_read_price": "0.000000261",
+      "prompt_price": "0.0000021",
+      "completion_price": "0.00001095",
+      "input_cache_read_price": "0.00000023",
       "knowledge_cutoff": null,
       "reasoning": true
     },
     "~google/gemini-flash-latest": {
-      "name": "Google Gemini Flash Latest",
+      "name": "Google: Gemini Flash Latest",
       "context_length": 1048576,
       "max_completion_tokens": 65536,
       "modality": "text+image+file+audio+video->text",
@@ -2727,7 +2761,7 @@
       "reasoning": true
     },
     "~anthropic/claude-sonnet-latest": {
-      "name": "Anthropic Claude Sonnet Latest",
+      "name": "Anthropic: Claude Sonnet Latest",
       "context_length": 1000000,
       "max_completion_tokens": 128000,
       "modality": "text+image+file->text",
@@ -2917,7 +2951,7 @@
     "deepseek/deepseek-v4-pro": {
       "name": "DeepSeek: DeepSeek V4 Pro 0423",
       "context_length": 1048576,
-      "max_completion_tokens": 384000,
+      "max_completion_tokens": 393216,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -2925,9 +2959,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000947778",
-      "completion_price": "0.000001895556",
-      "input_cache_read_price": "0.0000000789815",
+      "prompt_price": "0.0000016",
+      "completion_price": "0.0000032",
+      "input_cache_read_price": "0.000000135",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2942,9 +2976,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000008568",
-      "completion_price": "0.00000017136",
-      "input_cache_read_price": "0.000000017136",
+      "prompt_price": "0.00000004732",
+      "completion_price": "0.00000009464",
+      "input_cache_read_price": "0.000000009464",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -3134,7 +3168,7 @@
     "google/gemma-4-26b-a4b-it": {
       "name": "Google: Gemma 4 26B A4B ",
       "context_length": 262144,
-      "max_completion_tokens": 32768,
+      "max_completion_tokens": 235929,
       "modality": "text+image+video->text",
       "input_modalities": [
         "image",
@@ -3144,9 +3178,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000042",
-      "completion_price": "0.00000022",
-      "input_cache_read_price": null,
+      "prompt_price": "0.00000009",
+      "completion_price": "0.0000003",
+      "input_cache_read_price": "0.00000005",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -4912,7 +4946,7 @@
     "moonshotai/kimi-k2-thinking": {
       "name": "MoonshotAI: Kimi K2 Thinking",
       "context_length": 262144,
-      "max_completion_tokens": 100352,
+      "max_completion_tokens": 98304,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -5431,7 +5465,7 @@
       "completion_price": "0.00000325",
       "input_cache_read_price": "0.00000013",
       "knowledge_cutoff": "2025-06-30",
-      "reasoning": true
+      "reasoning": false
     },
     "deepseek/deepseek-v3.1-terminus": {
       "name": "DeepSeek: DeepSeek V3.1 Terminus",
@@ -5521,7 +5555,7 @@
     "moonshotai/kimi-k2-0905": {
       "name": "MoonshotAI: Kimi K2 0905",
       "context_length": 262144,
-      "max_completion_tokens": 100352,
+      "max_completion_tokens": 98304,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -5918,7 +5952,7 @@
     "qwen/qwen3-30b-a3b-instruct-2507": {
       "name": "Qwen: Qwen3 30B A3B Instruct 2507",
       "context_length": 262144,
-      "max_completion_tokens": 235929,
+      "max_completion_tokens": 32000,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -5926,8 +5960,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000009",
-      "completion_price": "0.0000003",
+      "prompt_price": "0.00000004815",
+      "completion_price": "0.00000019305",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2025-06-30",
       "reasoning": false
@@ -6063,7 +6097,7 @@
     "qwen/qwen3-235b-a22b-2507": {
       "name": "Qwen: Qwen3 235B A22B Instruct 2507",
       "context_length": 262144,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -6071,16 +6105,16 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000022",
-      "completion_price": "0.00000088",
-      "input_cache_read_price": null,
+      "prompt_price": "0.0000000875",
+      "completion_price": "0.00000035",
+      "input_cache_read_price": "0.0000000175",
       "knowledge_cutoff": "2025-06-30",
       "reasoning": false
     },
     "moonshotai/kimi-k2": {
       "name": "MoonshotAI: Kimi K2 0711",
       "context_length": 131072,
-      "max_completion_tokens": 100352,
+      "max_completion_tokens": 98304,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -6182,7 +6216,7 @@
     },
     "mistralai/mistral-small-3.2-24b-instruct": {
       "name": "Mistral: Mistral Small 3.2 24B",
-      "context_length": 131072,
+      "context_length": 256000,
       "max_completion_tokens": 16384,
       "modality": "text+image->text",
       "input_modalities": [

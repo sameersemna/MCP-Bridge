@@ -1528,3 +1528,178 @@ def test_call_tools_does_not_cache_unresolved_redirect(monkeypatch: pytest.Monke
     # but it must NOT be cached.
     assert len(cache) == 0
     assert cache.get("google_search", query) is None
+
+
+def test_extract_ref_token_id() -> None:
+    assert openai_utils._extract_ref_token_id("ref://5af47758") == "5af47758"
+    assert openai_utils._extract_ref_token_id("5af47758") == "5af47758"
+    assert openai_utils._extract_ref_token_id("  ref://abc123  ") == "abc123"
+
+
+def test_resolve_ref_token_calls_expand_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_resolve_ref_token` routes `expand_link` to the owning server's client
+    and extracts the real URL from the result."""
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        async def call_tool(self, name, arguments, **kwargs):
+            self.calls.append((name, arguments))
+            return {
+                "isError": False,
+                "content": [{"type": "text", "text": "https://www.facebook.com/permalink.php?id=123"}],
+            }
+
+    fake_client = FakeClient()
+    monkeypatch.setattr(openai_utils.ClientManager, "get_client", lambda server: fake_client)
+
+    url = asyncio.run(openai_utils._resolve_ref_token("ref://5af47758", "ydc-server"))
+    assert url == "https://www.facebook.com/permalink.php?id=123"
+    assert fake_client.calls == [("expand_link", {"token": "5af47758"})]
+
+
+def test_resolve_ref_token_failure_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If `expand_link` fails or returns an error, `_resolve_ref_token` returns
+    None so the token is left unchanged (never dropped)."""
+
+    class FakeClient:
+        async def call_tool(self, name, arguments, **kwargs):
+            return {"isError": True, "content": [{"type": "text", "text": "error"}]}
+
+    monkeypatch.setattr(openai_utils.ClientManager, "get_client", lambda server: FakeClient())
+
+    assert asyncio.run(openai_utils._resolve_ref_token("ref://5af47758", "ydc-server")) is None
+
+
+def test_resolve_ref_token_no_server_returns_none() -> None:
+    """Without a server name, the token cannot be resolved (returns None)."""
+    assert asyncio.run(openai_utils._resolve_ref_token("ref://5af47758", None)) is None
+
+
+def test_unredirect_ref_tool_result_resolves_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_unredirect_ref_tool_result` replaces `ref://` tokens with real URLs in
+    text parts while preserving other parts and the isError flag."""
+
+    class FakeClient:
+        async def call_tool(self, name, arguments, **kwargs):
+            return {
+                "isError": False,
+                "content": [{"type": "text", "text": "https://www.facebook.com/permalink.php?id=123"}],
+            }
+
+    monkeypatch.setattr(openai_utils.ClientManager, "get_client", lambda server: FakeClient())
+
+    result = {
+        "isError": False,
+        "content": [
+            {"type": "text", "text": "URL: ref://5af47758 (long URL shortened)"},
+            {"type": "text", "text": "plain text"},
+        ],
+    }
+    new_result = asyncio.run(openai_utils._unredirect_ref_tool_result(result, "ydc-server"))
+    assert "https://www.facebook.com/permalink.php?id=123" in new_result["content"][0]["text"]
+    assert "ref://" not in new_result["content"][0]["text"]
+    assert new_result["content"][1]["text"] == "plain text"
+    assert new_result["isError"] is False
+
+
+def test_unredirect_ref_tool_result_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCP_BRIDGE_RESOLVE_REF_TOKENS", "false")
+    result = {
+        "isError": False,
+        "content": [{"type": "text", "text": "URL: ref://5af47758"}],
+    }
+    new_result = asyncio.run(openai_utils._unredirect_ref_tool_result(result, "ydc-server"))
+    # Disabled: result returned unchanged (same object).
+    assert new_result is result
+
+
+def test_result_has_unresolved_ref_detects() -> None:
+    from mcp.types import CallToolResult, TextContent
+
+    bad = CallToolResult(
+        content=[TextContent(type="text", text="URL: ref://5af47758")],
+        isError=False,
+    )
+    assert openai_utils._result_has_unresolved_ref(bad) is True
+
+    clean = CallToolResult(
+        content=[TextContent(type="text", text="URL: https://www.facebook.com/permalink.php?id=123")],
+        isError=False,
+    )
+    assert openai_utils._result_has_unresolved_ref(clean) is False
+
+    bad_dict = {"isError": False, "content": [{"type": "text", "text": "URL: ref://5af47758"}]}
+    assert openai_utils._result_has_unresolved_ref(bad_dict) is True
+
+
+def test_call_tools_resolves_ref_tokens_and_caches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`call_tools` resolves `ref://` tokens in tool results (via the owning
+    server's `expand_link`) and caches the resolved result."""
+    calls: list[str] = []
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        calls.append(payload)
+        return {
+            "isError": False,
+            "content": [{"type": "text", "text": "URL: ref://5af47758 (long URL shortened)"}],
+        }
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    class FakeClient:
+        async def call_tool(self, name, arguments, **kwargs):
+            return {
+                "isError": False,
+                "content": [{"type": "text", "text": "https://www.facebook.com/permalink.php?id=123"}],
+            }
+
+    monkeypatch.setattr(openai_utils.ClientManager, "get_client", lambda server: FakeClient())
+
+    cache = openai_utils.ToolResultCache()
+    query = "Hajr al-Asas foundation stone ceremony in Makkah"
+
+    asyncio.run(openai_utils.call_tools(
+        [("search", json.dumps({"query": query}))],
+        result_cache=cache,
+        tool_server_map={"search": "ydc-server"},
+    ))
+
+    cached = cache.get("search", query)
+    assert cached is not None
+    text = cached["content"][0]["text"]
+    assert "https://www.facebook.com/permalink.php?id=123" in text
+    assert "ref://" not in text
+
+
+def test_call_tools_does_not_cache_unresolved_ref(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A result that still carries an unresolved `ref://` token after the
+    resolution attempt must NOT be cached (so bad links never enter the cache)."""
+
+    async def fake_call_tool(name: str, payload: str, timeout: float | None = None):
+        return {
+            "isError": False,
+            "content": [{"type": "text", "text": "URL: ref://5af47758"}],
+        }
+
+    monkeypatch.setattr(openai_utils, "call_tool", fake_call_tool)
+
+    class FakeClient:
+        async def call_tool(self, name, arguments, **kwargs):
+            # expand_link fails -> token stays unresolved.
+            return {"isError": True, "content": [{"type": "text", "text": "error"}]}
+
+    monkeypatch.setattr(openai_utils.ClientManager, "get_client", lambda server: FakeClient())
+
+    cache = openai_utils.ToolResultCache()
+    query = "Hajr al-Asas foundation stone ceremony in Makkah"
+
+    asyncio.run(openai_utils.call_tools(
+        [("search", json.dumps({"query": query}))],
+        result_cache=cache,
+        tool_server_map={"search": "ydc-server"},
+    ))
+
+    assert len(cache) == 0
+    assert cache.get("search", query) is None

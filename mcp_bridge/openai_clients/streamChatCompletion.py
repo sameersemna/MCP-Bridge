@@ -432,6 +432,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
         tool_call_results = await call_tools(
             [(tool_call.get("name", ""), tool_call.get("arguments", "")) for tool_call in collected_tool_calls],
             trace_logger=trace_logger,
+            tool_server_map=getattr(request, "_tool_server_map", {}) or {},
         )
 
         for tool_call, tool_call_result in zip(collected_tool_calls, tool_call_results):

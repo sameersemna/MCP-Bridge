@@ -1,4 +1,7 @@
 #!/bin/bash
+
+# MIN_CONTEXT_LENGTH=262145 bash test_openrouter.sh 
+
 set -euo pipefail
 clear
 echo "Start...."

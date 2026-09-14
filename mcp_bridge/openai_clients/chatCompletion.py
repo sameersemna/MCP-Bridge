@@ -2708,6 +2708,7 @@ async def chat_completions(
                     result_cache=tool_result_cache,
                     persistent_cache=persistent_tool_cache,
                     cache_enabled=_cache_enabled,
+                    tool_server_map=tool_server_map,
                 )
                 if trace_logger is not None:
                     trace_logger.record("mcp_tool_calls", tool_calls=[{"name": name, "arguments": arguments} for name, arguments in tool_call_items])
