@@ -670,3 +670,120 @@ def test_chat_completions_synthesis_returns_none_after_all_retries_fail(monkeypa
     # 1 initial + 2 retries = 3 posts, all transient -> None.
     assert len(fake_client.posts) == 3
     assert text is None
+
+
+def test_synthesis_recovers_cohere_style_error_finish_reason(monkeypatch):
+    """Regression test: when the synthesis request returns a well-formed
+    payload with `finish_reason: "error"` (Cohere via OpenRouter), the
+    synthesis path must recover it (coerce to 'stop') instead of failing with
+    a `choices.0.finish_reason` enum validation error and losing the whole
+    synthesis."""
+    cohere_error_body = json.dumps(
+        {
+            "id": "gen-1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "cohere/north-mini-code:free",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "error",
+                    "native_finish_reason": "error",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Synthesized answer despite the error finish reason.",
+                        "reasoning": "Let me start by searching for information about this topic.",
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 41250, "completion_tokens": 341, "total_tokens": 41591},
+        }
+    )
+
+    # `_parse_synthesis_response` must recover the Cohere-style error body.
+    response = chat_completion_module._parse_synthesis_response(cohere_error_body)
+    assert response is not None
+    assert response.choices[0].message.content == "Synthesized answer despite the error finish reason."
+    assert response.choices[0].finish_reason.value == "stop"
+
+    # A genuinely malformed body (not just a bad finish_reason) returns None.
+    assert chat_completion_module._parse_synthesis_response('{"not": "a completion"}') is None
+
+
+def test_chat_completions_falls_back_model_on_agentic_harness_403(monkeypatch):
+    """Regression test: OpenRouter returns HTTP 403 with "only available on
+    agentic harnesses" for some `:free` models (e.g.
+    `thinkingmachines/inkling:free`). Previously this caused a hard 502 to the
+    client. The bridge must instead fall back to a different model and retry,
+    so the request succeeds."""
+    fake_client = FakeClient(
+        [
+            # First request: 403 agentic-harness gate.
+            FakeResponse(
+                403,
+                '{"error": {"message": "thinkingmachines/inkling:free is only available on agentic harnesses. Try plugging it into a coding agent or productivity app listed on https://openrouter.ai/apps", "code": 403}}',
+            ),
+            # Second request (fallback model): success.
+            FakeResponse(200, _stop_response("Recovered with fallback model.")),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    # Force a deterministic fallback model.
+    monkeypatch.setattr(
+        chat_completion_module,
+        "_resolve_fallback_model",
+        lambda request: "openrouter/auto-beta",
+    )
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "thinkingmachines/inkling:free",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    response = asyncio.run(chat_completion_module.chat_completions(request, None))
+
+    # The 403 was handled by falling back to a different model, then succeeded.
+    assert len(fake_client.posts) == 2
+    assert response.choices[0].message.content == "Recovered with fallback model."
+
+
+def test_chat_completions_agentic_harness_403_no_fallback_raises(monkeypatch):
+    """When no fallback model is available, the agentic-harness 403 still
+    raises a clean 502 (not an unhandled exception)."""
+    fake_client = FakeClient(
+        [
+            FakeResponse(
+                403,
+                '{"error": {"message": "thinkingmachines/inkling:free is only available on agentic harnesses", "code": 403}}',
+            ),
+        ]
+    )
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(chat_completion_module, "_resolve_fallback_model", lambda request: None)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "thinkingmachines/inkling:free",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    try:
+        asyncio.run(chat_completion_module.chat_completions(request, None))
+        assert False, "expected an HTTPException"
+    except HTTPException as exc:
+        assert exc.status_code == 502

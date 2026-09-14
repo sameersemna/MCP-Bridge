@@ -1196,6 +1196,34 @@ async def _post_synthesis_with_retry(
     return None
 
 
+def _parse_synthesis_response(text: str) -> CreateChatCompletionResponse | None:
+    """Parse a synthesis response body, recovering from a non-standard
+    ``finish_reason`` (e.g. Cohere's ``"error"``) just like the main tool loop
+    does.
+
+    The synthesis path previously did ``CreateChatCompletionResponse.
+    model_validate_json(text)`` directly. When a provider returned a
+    well-formed payload with ``finish_reason: "error"`` (Cohere via OpenRouter
+    does this when its own generation fails), the enum validation failed and
+    the whole synthesis was lost — even though the main loop recovers from
+    exactly this case via ``_try_recover_response_with_unknown_finish_reason``.
+
+    Returns the parsed response, or ``None`` if the body is not a valid chat
+    completion (and cannot be recovered).
+    """
+    try:
+        return CreateChatCompletionResponse.model_validate_json(text)
+    except Exception as exc:
+        recovered = _try_recover_response_with_unknown_finish_reason(text, exc)
+        if recovered is not None:
+            logger.warning(
+                "synthesis returned a non-standard finish_reason (e.g. Cohere's "
+                f"'error'); coerced to 'stop' and recovered the response: {exc}"
+            )
+            return recovered
+        return None
+
+
 async def _try_synthesize_tool_loop_result(
     client: Any,
     request: CreateChatCompletionRequest,
@@ -1220,7 +1248,11 @@ async def _try_synthesize_tool_loop_result(
                 if attempt == 0:
                     continue
                 return None
-            response = CreateChatCompletionResponse.model_validate_json(text)
+            response = _parse_synthesis_response(text)
+            if response is None:
+                if attempt == 0:
+                    continue
+                return None
             content = getattr(response.choices[0].message, "content", None) if response.choices else None
             if content is None:
                 if attempt == 0:
@@ -1270,7 +1302,9 @@ async def _try_synthesize_tool_loop_result(
             text = await _post_synthesis_with_retry(client, synthesis_request)
             if text is None:
                 return None
-            response = CreateChatCompletionResponse.model_validate_json(text)
+            response = _parse_synthesis_response(text)
+            if response is None:
+                return None
             content = getattr(response.choices[0].message, "content", None) if response.choices else None
             if content is None:
                 return None
@@ -2070,6 +2104,26 @@ def _is_transient_upstream_error(text: str) -> bool:
     return any(marker in lowered for marker in transient_markers)
 
 
+def _is_agentic_harness_403(status_code: int, text: str) -> bool:
+    """Return True if the upstream response is a 403 indicating the requested
+    model is only available on agentic harnesses.
+
+    OpenRouter gates some `:free` models (e.g. ``thinkingmachines/inkling:free``)
+    behind an "agentic harness" requirement. When called via a plain OpenAI API
+    request (as MCP-Bridge does), OpenRouter returns HTTP 403 with a message
+    like ``"only available on agentic harnesses"``. This is a *permanent* model
+    restriction, not a transient blip — retrying the same model will never
+    succeed. The bridge should fall back to a different model instead of
+    failing the whole request with a 502.
+    """
+    if status_code != 403:
+        return False
+    if not text:
+        return False
+    lowered = text.lower()
+    return "agentic harness" in lowered or "only available on" in lowered
+
+
 def _is_retryable_upstream_status(status_code: int, text: str) -> bool:
     """Return True if an upstream response is worth retrying.
 
@@ -2229,6 +2283,10 @@ async def chat_completions(
     seen_tool_calls: dict[str, int] = {}
     tool_result_cache = ToolResultCache()
     persistent_tool_cache = get_tool_cache()
+    # Whether we've already fallen back to a different model because the
+    # requested one is gated behind an "agentic harness" (OpenRouter 403).
+    # Guards against an infinite fallback loop.
+    _model_fallback_used = False
 
     # Per-server opt-in caching: only tools whose owning MCP server is
     # configured with `"cached": true` are read from / written to the caches.
@@ -2337,6 +2395,31 @@ async def chat_completions(
                     )
 
             if upstream_response.status_code >= 400:
+                # OpenRouter gates some `:free` models (e.g.
+                # `thinkingmachines/inkling:free`) behind an "agentic harness"
+                # requirement. When called via a plain OpenAI API request (as
+                # MCP-Bridge does), OpenRouter returns HTTP 403 with a message
+                # like "only available on agentic harnesses". This is a
+                # *permanent* model restriction — retrying the same model will
+                # never succeed. Fall back to a different model (the same one
+                # used for synthesis) instead of failing the whole request with
+                # a 502. Guard against infinite fallback loops by only falling
+                # back once.
+                if (
+                    _is_agentic_harness_403(upstream_response.status_code, text)
+                    and not _model_fallback_used
+                ):
+                    fallback_model = _resolve_fallback_model(request)
+                    if fallback_model is not None and fallback_model != getattr(request, "model", None):
+                        _model_fallback_used = True
+                        logger.warning(
+                            f"model '{getattr(request, 'model', None)}' is only available on "
+                            f"agentic harnesses (403); retrying with fallback model "
+                            f"'{fallback_model}'"
+                        )
+                        request.model = fallback_model
+                        continue
+
                 logger.error(f"upstream inference server returned status {upstream_response.status_code}: {text[:2000]}")
                 raise _record_and_raise_upstream_failure(
                     trace_logger,

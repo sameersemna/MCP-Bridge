@@ -1,6 +1,6 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-14T18:22:05.663580+00:00",
+  "fetched_at": "2026-09-14T18:56:50.030995+00:00",
   "model_count": 447,
   "models": {
     "~deepseek/deepseek-pro-latest": {
