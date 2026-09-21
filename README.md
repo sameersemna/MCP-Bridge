@@ -173,6 +173,39 @@ timeout — so this is fully opt-in and backward compatible. This prevents the
 bridge from resetting the session and giving up on a server that is merely
 slow rather than dead.
 
+### Tool-name alias resolution
+
+Models frequently invent a **generic name** for a tool that is registered under
+a more specific one. A real run showed the model calling `web_search` four times
+in a single batch (then again on the next turn) while the registered tool was
+`web_search_exa` — each call failed with `no MCP client found for tool
+'web_search'`, burning tool-loop turns for nothing.
+
+The bridge keeps a small curated alias table (`_TOOL_NAME_ALIASES` in
+`mcp_bridge/mcp_clients/McpClientManager.py`) mapping common generic names to
+ordered candidate registered names, e.g.:
+
+| Called by the model | Resolves to (first registered) |
+| --- | --- |
+| `web_search`, `websearch`, `search_web` | `web_search_exa` → `search` → `google_search` → `you_search` |
+| `web_fetch`, `fetch_url`, `open_url` | `web_fetch_exa` → `fetch_content` → `fetch` |
+| `think`, `reasoning` | `sequentialthinking` |
+| `paper_search`, `arxiv_search` | `search_papers` |
+
+Resolution only ever succeeds when a candidate is **actually registered** for
+the current server set, so the alias table can never invent a target. If none of
+the candidates exist, the call falls through to the normal corrective error path
+("Did you mean one of: …?") exactly as before.
+
+### Repeated-tool-call guard (streaming)
+
+Both the streaming and non-streaming tool loops stop when the same tool call is
+issued **3 or more times** without new information (the `_detect_repeated_tool_calls`
+guard), and both honour the per-model tool-turn budget. The streaming loop
+previously had no such bound, so a model that kept re-calling a non-existent tool
+could spin; it now emits a final assistant message plus a clean `[DONE]` and ends
+the stream.
+
 ### Model-aware tool-turn budget
 
 The maximum number of tool-calling turns is **model-specific** rather than
@@ -408,6 +441,70 @@ the original token preserved), just not persisted.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `MCP_BRIDGE_RESOLVE_REF_TOKENS` | `true` | Master switch. Set to `false` to disable `ref://` token resolution. |
+
+### Citation provenance guard (anti-fabrication)
+
+LLMs routinely **fabricate plausible-looking URLs** when a prompt demands
+sources for claims they never actually verified. A real generated report once
+cited:
+
+```
+https://www.youtube.com/watch?v=abc123
+https://www.youtube.com/watch?v=def456
+https://www.facebook.com/<page>/posts/123456789
+https://books.google.com/books?id=XYZ
+https://scholar.google.com/scholar?cluster=12345
+```
+
+None of those exist — yet the report asserted "All sources are publicly
+accessible". A reader has no way to tell a fabricated citation from a real one,
+which makes every generated report untrustworthy.
+
+The bridge's **citation guard** is a defense-in-depth check that runs at the
+HTTP boundary (`/v1/chat/completions`) on every non-streaming response. It does
+**not** rewrite the model's answer or remove claims — it only makes fabricated
+citations *visible* so the reader is informed rather than deceived.
+
+Two independent signals are checked:
+
+1. **Provenance** — a cited URL that never appeared in the tool results (or
+   tool-call arguments) retrieved during this request was not obtained, so it
+   is flagged as *not retrieved*. Only applied when tool evidence actually
+   exists.
+2. **Placeholder shape** — a URL containing an obvious placeholder identifier
+   (`abc123`, `XYZ`, `12345`, `example.com`, `your-url`, ...). Applied always,
+   because such a URL is fake regardless of provenance.
+
+When any citation is flagged, the guard appends a clearly marked warning block
+to the response:
+
+> [!WARNING]
+> **Unverified citations detected.** 6 cite an obvious placeholder identifier
+> (e.g. `abc123`, `XYZ`), which cannot be a real source; 4 do not appear in any
+> source retrieved during this request. The following cited link(s) may be
+> fabricated and could not be matched to retrieved evidence:
+>
+> - `https://www.youtube.com/watch?v=abc123` _(placeholder identifier)_
+> - `https://rsalafs.com/articles/nizar-sudani-uae` _(not retrieved)_
+
+It also records an `unverified_citations` trace event (with the flagged URLs
+and evidence size) and an inert
+`<!-- mcp-bridge:unverified-citations count="N" ... -->` marker that a script can
+grep for.
+
+In addition, the synthesis prompt is hardened with a **citation-integrity
+instruction**: cite only URLs that appear verbatim in the tool results, never
+invent or fill in a URL, and say "no source was retrieved" rather than
+fabricating a link.
+
+Evidence URLs are accumulated **as tool results arrive** during the tool loop,
+not recomputed from the message history at the end — so a URL is still
+recognized as retrieved even after context compression has replaced the older
+tool message with a URL-free summary.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MCP_BRIDGE_CITATION_GUARD` | `true` | Master switch. Set to `false` to disable the citation provenance guard. |
 
 ### Redis-backed tool cache (optional)
 

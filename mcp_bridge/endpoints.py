@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 from opentelemetry import trace
+from typing import Any
 
 from mcp_bridge.openai_clients import (
     get_client,
@@ -16,6 +17,63 @@ import json
 
 router = APIRouter(prefix="/v1", tags=[Tag.openai])
 tracer = trace.get_tracer("mcp_bridge.endpoints")
+
+
+def _apply_citation_guard(request: Any, response: Any, trace_logger: RequestTraceLogger) -> None:
+    """Flag fabricated/unverified citations in the final response.
+
+    Uses the evidence URLs the tool loop attached to the request
+    (``request._citation_evidence``), falling back to the request's message
+    history when that is unavailable (e.g. the streaming path). Never raises --
+    a failure here must not break an otherwise valid response.
+    """
+    try:
+        from mcp_bridge.openai_clients import citation_guard
+
+        if not citation_guard.get_citation_guard_enabled():
+            return
+
+        choices = getattr(response, "choices", None)
+        if not choices:
+            return
+        message = getattr(choices[0], "message", None)
+        if message is None:
+            return
+        content = getattr(message, "content", None)
+        if not isinstance(content, str) or not content.strip():
+            return
+
+        evidence = getattr(request, "_citation_evidence", None) or {}
+        evidence_urls = evidence.get("urls")
+        evidence_available = evidence.get("available")
+        if evidence_urls is None:
+            # No attachment (unexpected): derive from the conversation itself.
+            evidence_urls = citation_guard.collect_evidence_urls(
+                getattr(request, "messages", None)
+            )
+            evidence_available = None
+
+        new_content, report = citation_guard.annotate_response_content(
+            content, evidence_urls, evidence_available=evidence_available
+        )
+        if not report.has_issues:
+            return
+
+        message.content = new_content
+        try:
+            trace_logger.record(
+                "unverified_citations",
+                placeholders=report.placeholders,
+                unverified=report.unverified,
+                evidence_size=len(evidence_urls or set()),
+                evidence_available=report.evidence_available,
+            )
+        except Exception:
+            pass
+    except Exception:
+        # The guard is best-effort; never let it break a valid response.
+        pass
+
 
 
 @router.post("/completions")
@@ -69,6 +127,13 @@ async def openai_chat_completions(
             raise HTTPException(status_code=502, detail="Chat completion produced no response")
 
         if not request.stream:
+            # Citation provenance guard: flag any cited URL that cannot be
+            # traced to the tool evidence actually retrieved this request, so a
+            # fabricated citation is surfaced to the reader instead of being
+            # presented as authoritative. Runs at the HTTP boundary so every
+            # return path inside `chat_completions` is covered exactly once.
+            _apply_citation_guard(request, response, trace_logger)
+
             span.set_attribute(
                 "mcp_bridge.response.preview",
                 json.dumps(

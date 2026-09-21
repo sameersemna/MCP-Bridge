@@ -690,6 +690,102 @@ def test_resolve_tool_does_not_fallback_when_server_has_multiple_tools() -> None
     assert resolved is None
 
 
+def test_resolve_tool_uses_alias_for_generic_web_search_name() -> None:
+    # The model called `web_search`, but the registered tool is
+    # `web_search_exa`. Alias resolution should dispatch to the real tool
+    # instead of failing with "no MCP client found".
+    class ExaClient:
+        def __init__(self):
+            self.name = "exa"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(
+                tools=[
+                    SimpleNamespace(name="web_search_exa"),
+                    SimpleNamespace(name="web_fetch_exa"),
+                ]
+            )
+
+    manager = MCPClientManager()
+    manager.clients = {"exa": ExaClient()}
+
+    resolved = asyncio.run(
+        asyncio.wait_for(manager.resolve_tool("web_search", timeout=0.2), timeout=0.3)
+    )
+
+    assert resolved is not None
+    client, actual_name = resolved
+    assert getattr(client, "name", None) == "exa"
+    assert actual_name == "web_search_exa"
+
+
+def test_resolve_tool_alias_prefers_first_registered_candidate() -> None:
+    # Only `search` is registered (no `web_search_exa`), so the alias chain
+    # must fall through to the first candidate that actually exists.
+    class SearchClient:
+        def __init__(self):
+            self.name = "ydc"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[SimpleNamespace(name="search")])
+
+    manager = MCPClientManager()
+    manager.clients = {"ydc": SearchClient()}
+
+    resolved = asyncio.run(
+        asyncio.wait_for(manager.resolve_tool("web_search", timeout=0.2), timeout=0.3)
+    )
+
+    assert resolved is not None
+    _, actual_name = resolved
+    assert actual_name == "search"
+
+
+def test_resolve_tool_alias_does_not_match_absent_candidate() -> None:
+    # When none of the alias candidates are registered, resolution must still
+    # fail (no invented target) and fall through to the corrective path.
+    class UnrelatedClient:
+        def __init__(self):
+            self.name = "other"
+            self.session = SimpleNamespace(list_tools=self.list_tools)
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[SimpleNamespace(name="do_something_else")])
+
+    manager = MCPClientManager()
+    manager.clients = {"other": UnrelatedClient()}
+
+    resolved = asyncio.run(
+        asyncio.wait_for(manager.resolve_tool("web_search", timeout=0.2), timeout=0.3)
+    )
+
+    assert resolved is None
+
+
+def test_describe_exception_never_empty() -> None:
+    # `f"{exc}"` renders empty for the ExceptionGroup / bare-exception cases
+    # that routinely surface on SSE teardown, producing useless
+    # "ping failed for X: " log lines. The helper must always name the type.
+    from mcp_bridge.mcp_clients.SseClient import _describe_exception
+
+    class EmptyError(Exception):
+        pass
+
+    assert _describe_exception(EmptyError()) == "EmptyError"
+
+    try:
+        raise ExceptionGroup("grp", [ValueError(), EmptyError()])
+    except ExceptionGroup as eg:
+        described = _describe_exception(eg)
+    assert "ExceptionGroup" in described
+    assert "ValueError" in described
+    assert "EmptyError" in described
+
+    assert _describe_exception(ValueError("bad thing")) == "ValueError: bad thing"
+
+
 def test_suggest_tools_returns_close_matches() -> None:
     class Client:
         def __init__(self):

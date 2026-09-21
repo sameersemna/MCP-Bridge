@@ -36,6 +36,50 @@ DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS = 10.0
 
 client_types = Union[StdioClient, SseClient, HttpClient, DockerClient]
 
+# Curated aliases for tool names that LLMs commonly use to mean a specific
+# registered tool. Keys are normalized (lowercase, ``-`` -> ``_``); values are
+# ordered candidate normalized names, most-specific first. Resolution only
+# succeeds when a candidate is *actually registered* for the current server
+# set, so this map is always safe to apply -- on a server set where the
+# candidate does not exist, resolution simply falls through to the corrective
+# error path as before.
+#
+# This exists because models routinely invent a generic name (``web_search``)
+# for a tool registered under a more specific name (``web_search_exa``). Without
+# it the call fails, the model is told "not a registered tool", and it often
+# calls the same invented name again -- burning tool-loop turns for nothing.
+# Observed in a real run: ``no MCP client found for tool 'web_search'`` four
+# times in a single batch, then again on the next turn.
+_TOOL_NAME_ALIASES: dict[str, tuple[str, ...]] = {
+    # Generic web-search names -> the specific search tools this bridge exposes.
+    "web_search": ("web_search_exa", "search", "google_search", "you_search"),
+    "websearch": ("web_search_exa", "search", "google_search", "you_search"),
+    "search_web": ("web_search_exa", "search", "google_search", "you_search"),
+    "internet_search": ("web_search_exa", "search", "google_search"),
+    "online_search": ("web_search_exa", "search", "google_search"),
+    "google": ("google_search",),
+    "google_web_search": ("google_search",),
+    # Generic fetch names -> the specific fetch tools.
+    "web_fetch": ("web_fetch_exa", "fetch_content", "fetch"),
+    "webfetch": ("web_fetch_exa", "fetch_content", "fetch"),
+    "fetch_url": ("fetch_content", "fetch", "web_fetch_exa"),
+    "read_url": ("fetch_content", "fetch", "read_pdf"),
+    "get_url": ("fetch_content", "fetch"),
+    "open_url": ("fetch_content", "fetch"),
+    "download": ("fetch_content", "fetch", "download_paper"),
+    # PDF reading.
+    "pdf_read": ("read_pdf",),
+    "readpdf": ("read_pdf",),
+    # Reasoning.
+    "think": ("sequentialthinking",),
+    "reasoning": ("sequentialthinking",),
+    "sequential_thinking": ("sequentialthinking",),
+    # Paper search.
+    "arxiv_search": ("search_papers",),
+    "paper_search": ("search_papers",),
+    "papers": ("search_papers", "list_papers"),
+}
+
 # CLI flags (e.g. `--password`, `--api-key`) whose *following* arg value is a
 # secret. `redact_sensitive_data` only redacts dict values by key name, which
 # covers `env` and `auth`, but a value passed as a bare CLI arg inside
@@ -340,6 +384,31 @@ class MCPClientManager:
 
         for task in probe_tasks:
             task.cancel()
+
+        # Alias fallback: the called name may be a common generic synonym for a
+        # tool registered under a more specific name (e.g. the model calls
+        # ``web_search`` but the registered tool is ``web_search_exa``). Try each
+        # curated candidate in order and dispatch to the first one that is
+        # actually registered. This only ever resolves to a *real* tool, so it
+        # cannot invent a target on a server set where the candidate is absent.
+        alias_candidates = _TOOL_NAME_ALIASES.get(normalized_tool, ())
+        if alias_candidates:
+            normalized_to_client: dict[str, tuple[client_types, str]] = {}
+            for client in clients:
+                client_tools = await self._list_client_tools(client, effective_timeout)
+                for client_tool in client_tools:
+                    actual_name = getattr(client_tool, "name", "")
+                    if actual_name:
+                        normalized_to_client.setdefault(
+                            self._normalize_tool_name(actual_name), (client, actual_name)
+                        )
+            for candidate in alias_candidates:
+                match = normalized_to_client.get(candidate)
+                if match is not None:
+                    logger.debug(
+                        f"resolved tool alias '{tool}' -> '{match[1]}'"
+                    )
+                    return match
 
         # Server-name fallback: the called name matched no tool, but it may be
         # a *server* name. If that server exposes exactly one tool, dispatch to

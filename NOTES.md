@@ -33,7 +33,7 @@ python -m venv .open-webui
 pip install open-webui
 
 # set the HF_HUB_OFFLINE environment variable to 1 to prevent attempts to download models
-
+deactivate
 source .open-webui/bin/activate
 export HF_HUB_OFFLINE=1
 open-webui serve --host 0.0.0.0 --port 11409

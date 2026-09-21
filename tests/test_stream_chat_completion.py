@@ -431,3 +431,69 @@ def test_stream_yields_error_chunk_when_upstream_returns_non_stream_error(monkey
     forwarded_error = json.loads(results[0])
     assert forwarded_error["error"]["message"] == "Provider returned error"
     assert forwarded_error["error"]["metadata"]["provider_name"] == "Nvidia"
+
+
+def _tool_call_round(round_id: str, *, index: int = 0) -> list[str]:
+    """One upstream round that streams a single tool call, then [DONE]."""
+    return [
+        json.dumps(
+            {
+                "id": round_id, "object": "chat.completion.chunk", "created": 0, "model": "test",
+                "choices": [{
+                    "index": 0,
+                    "delta": {"tool_calls": [
+                        {"index": index, "id": f"call_{index}", "type": "function",
+                         "function": {"name": "web_search", "arguments": '{"query": "x"}'}}
+                    ]},
+                    "finish_reason": None,
+                }],
+            }
+        ),
+        json.dumps(
+            {
+                "id": round_id, "object": "chat.completion.chunk", "created": 0, "model": "test",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+            }
+        ),
+        "[DONE]",
+    ]
+
+
+def test_stream_stops_on_repeated_tool_call(monkeypatch):
+    """The streamed tool loop must stop when the same tool call is repeated
+    (mirroring the non-streaming `_detect_repeated_tool_calls` guard).
+
+    Regression: a model that kept calling a *non-existent* tool (observed:
+    `web_search` 4x in one batch, then again next turn) could previously spin
+    because the streaming loop had no repeat guard at all.
+    """
+    # Four rounds of the identical tool call; the guard trips on the 3rd.
+    rounds = [_tool_call_round(f"r{i}") for i in range(4)]
+    rounds.append(
+        [
+            json.dumps(
+                {
+                    "id": "final", "object": "chat.completion.chunk", "created": 0, "model": "test",
+                    "choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}],
+                }
+            ),
+            "[DONE]",
+        ]
+    )
+    _patch_stream_multi_round(monkeypatch, rounds)
+
+    async def fake_call_tools(tool_calls, **kwargs):
+        # The tool does not exist -> every dispatch fails, like the real
+        # `web_search` hallucination.
+        return [_FakeToolResult("no MCP client found for tool 'web_search'") for _ in tool_calls]
+
+    monkeypatch.setattr(stream_module, "call_tools", fake_call_tools)
+
+    results = _run_stream(_make_request())
+
+    # The loop stopped via the repeated-call guard and emitted a final
+    # assistant message + a clean [DONE] sentinel, rather than looping forever.
+    joined = " ".join(str(item) for item in results)
+    assert "repeated without new information" in joined
+    assert any(getattr(item, "data", None) == "[DONE]" for item in results)
+

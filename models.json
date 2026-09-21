@@ -1,12 +1,30 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-14T18:56:50.030995+00:00",
-  "model_count": 447,
+  "fetched_at": "2026-09-17T05:16:39.945509+00:00",
+  "model_count": 444,
   "models": {
+    "stealth/union-alpha": {
+      "name": "Union Alpha",
+      "context_length": 262144,
+      "max_completion_tokens": 131072,
+      "modality": "text+image->text",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0",
+      "completion_price": "0",
+      "input_cache_read_price": null,
+      "knowledge_cutoff": null,
+      "reasoning": false
+    },
     "~deepseek/deepseek-pro-latest": {
       "name": "DeepSeek: DeepSeek Pro Latest",
       "context_length": 1048576,
-      "max_completion_tokens": 393216,
+      "max_completion_tokens": 384000,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -14,9 +32,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000057948",
-      "completion_price": "0.00000173844",
-      "input_cache_read_price": "0.000000018438",
+      "prompt_price": "0.00000066",
+      "completion_price": "0.00000198",
+      "input_cache_read_price": "0.000000022",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -34,7 +52,7 @@
       ],
       "prompt_price": "0.00000015",
       "completion_price": "0.0000006",
-      "input_cache_read_price": "0.000000003",
+      "input_cache_read_price": "0.000000015",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -648,9 +666,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000015",
-      "completion_price": "0.0000005",
-      "input_cache_read_price": "0.00000003",
+      "prompt_price": "0.00000009",
+      "completion_price": "0.0000003",
+      "input_cache_read_price": "0.000000018",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -767,7 +785,7 @@
     "~z-ai/glm-latest": {
       "name": "Z.ai: GLM Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -775,9 +793,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000091",
-      "completion_price": "0.00000286",
-      "input_cache_read_price": "0.000000169",
+      "prompt_price": "0.0000008775",
+      "completion_price": "0.00000297",
+      "input_cache_read_price": "0.0000001755",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -986,7 +1004,7 @@
     "deepseek/deepseek-v4-pro-0813": {
       "name": "DeepSeek: DeepSeek V4 Pro 0813",
       "context_length": 1048576,
-      "max_completion_tokens": 393216,
+      "max_completion_tokens": 384000,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -994,9 +1012,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000057948",
-      "completion_price": "0.00000173844",
-      "input_cache_read_price": "0.000000018438",
+      "prompt_price": "0.00000066",
+      "completion_price": "0.00000198",
+      "input_cache_read_price": "0.000000022",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1191,8 +1209,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000004",
-      "completion_price": "0.0000001",
+      "prompt_price": "0.00000003",
+      "completion_price": "0.00000013",
       "input_cache_read_price": "0.00000001",
       "knowledge_cutoff": null,
       "reasoning": true
@@ -1250,25 +1268,6 @@
       "knowledge_cutoff": null,
       "reasoning": true
     },
-    "thinkingmachines/inkling-small:batch": {
-      "name": "Thinking Machines: Inkling Small (batch)",
-      "context_length": 524288,
-      "max_completion_tokens": 471859,
-      "modality": "text+image+audio->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "audio"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.0000005",
-      "completion_price": "0.0000012",
-      "input_cache_read_price": "0.0000001",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
     "thinkingmachines/inkling-small:free": {
       "name": "Thinking Machines: Inkling Small (free)",
       "context_length": 1048576,
@@ -1308,7 +1307,7 @@
       "reasoning": true
     },
     "anthropic/claude-opus-5": {
-      "name": "Claude Opus 5",
+      "name": "Anthropic: Claude Opus 5",
       "context_length": 1000000,
       "max_completion_tokens": 128000,
       "modality": "text+image+file->text",
@@ -1327,7 +1326,7 @@
       "reasoning": true
     },
     "anthropic/claude-opus-5:batch": {
-      "name": "Claude Opus 5 (batch)",
+      "name": "Anthropic: Claude Opus 5 (batch)",
       "context_length": 1000000,
       "max_completion_tokens": 128000,
       "modality": "text+image+file->text",
@@ -1589,9 +1588,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000002648138063",
-      "completion_price": "0.00001328272425",
-      "input_cache_read_price": "0.00000030264435",
+      "prompt_price": "0.000003",
+      "completion_price": "0.000015",
+      "input_cache_read_price": "0.0000003",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1963,9 +1962,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000000825",
-      "completion_price": "0.00000033",
-      "input_cache_read_price": "0.000000020625",
+      "prompt_price": "0.000000132",
+      "completion_price": "0.000000528",
+      "input_cache_read_price": "0.000000033",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2144,9 +2143,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000006832",
-      "completion_price": "0.0000021472",
-      "input_cache_read_price": "0.00000012688",
+      "prompt_price": "0.0000014",
+      "completion_price": "0.0000044",
+      "input_cache_read_price": "0.00000014",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2164,6 +2163,23 @@
       "prompt_price": "0.0000007",
       "completion_price": "0.0000022",
       "input_cache_read_price": "0.00000007",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "z-ai/glm-5.2:free": {
+      "name": "Z.ai: GLM 5.2 (free)",
+      "context_length": 32768,
+      "max_completion_tokens": 29491,
+      "modality": "text->text",
+      "input_modalities": [
+        "text"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0",
+      "completion_price": "0",
+      "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2196,9 +2212,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000071",
-      "completion_price": "0.0000035",
-      "input_cache_read_price": "0.00000015",
+      "prompt_price": "0.0000007062",
+      "completion_price": "0.00000321",
+      "input_cache_read_price": "0.00000018",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2298,7 +2314,7 @@
     "nvidia/nemotron-3-ultra-550b-a55b": {
       "name": "NVIDIA: Nemotron 3 Ultra",
       "context_length": 262144,
-      "max_completion_tokens": 182520,
+      "max_completion_tokens": 32768,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -2306,9 +2322,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000006",
-      "completion_price": "0.0000024",
-      "input_cache_read_price": "0.00000012",
+      "prompt_price": "0.000000625",
+      "completion_price": "0.000003125",
+      "input_cache_read_price": "0.0000001875",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2768,9 +2784,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000021",
-      "completion_price": "0.00001095",
-      "input_cache_read_price": "0.00000023",
+      "prompt_price": "0.000002",
+      "completion_price": "0.0000112",
+      "input_cache_read_price": "0.000000232",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -3011,9 +3027,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000008246",
-      "completion_price": "0.00000016492",
-      "input_cache_read_price": "0.000000016492",
+      "prompt_price": "0.000000088606",
+      "completion_price": "0.000000177212",
+      "input_cache_read_price": "0.0000000177212",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -3254,25 +3270,6 @@
       "prompt_price": "0.00000009",
       "completion_price": "0.00000034",
       "input_cache_read_price": "0.00000005",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
-    "google/gemma-4-31b-it:batch": {
-      "name": "Google: Gemma 4 31B (batch)",
-      "context_length": 262144,
-      "max_completion_tokens": 235929,
-      "modality": "text+image+video->text",
-      "input_modalities": [
-        "image",
-        "text",
-        "video"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00000039",
-      "completion_price": "0.00000097",
-      "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -3854,7 +3851,7 @@
     "qwen/qwen3.5-35b-a3b": {
       "name": "Qwen: Qwen3.5-35B-A3B",
       "context_length": 262144,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 65536,
       "modality": "text+image+video->text",
       "input_modalities": [
         "text",
@@ -3864,9 +3861,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000003125",
-      "completion_price": "0.00000125",
-      "input_cache_read_price": "0.00000015625",
+      "prompt_price": "0.0000001625",
+      "completion_price": "0.0000013",
+      "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -4510,9 +4507,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000005",
-      "completion_price": "0.0000002",
-      "input_cache_read_price": "0.00000003",
+      "prompt_price": "0.00000006",
+      "completion_price": "0.00000024",
+      "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -5273,7 +5270,7 @@
     "qwen/qwen3-vl-30b-a3b-instruct": {
       "name": "Qwen: Qwen3 VL 30B A3B Instruct",
       "context_length": 262144,
-      "max_completion_tokens": 16384,
+      "max_completion_tokens": 32768,
       "modality": "text+image->text",
       "input_modalities": [
         "text",
@@ -5282,8 +5279,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000015",
-      "completion_price": "0.0000006",
+      "prompt_price": "0.00000013",
+      "completion_price": "0.00000052",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2025-03-31",
       "reasoning": false
@@ -5539,7 +5536,7 @@
     "qwen/qwen3-next-80b-a3b-thinking": {
       "name": "Qwen: Qwen3 Next 80B A3B Thinking",
       "context_length": 262144,
-      "max_completion_tokens": 235929,
+      "max_completion_tokens": 32768,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -5873,23 +5870,6 @@
       "prompt_price": "0.00000003",
       "completion_price": "0.00000013",
       "input_cache_read_price": "0.00000003",
-      "knowledge_cutoff": "2024-06-30",
-      "reasoning": true
-    },
-    "openai/gpt-oss-20b:batch": {
-      "name": "OpenAI: gpt-oss-20b (batch)",
-      "context_length": 131072,
-      "max_completion_tokens": 117964,
-      "modality": "text->text",
-      "input_modalities": [
-        "text"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00000005",
-      "completion_price": "0.0000002",
-      "input_cache_read_price": null,
       "knowledge_cutoff": "2024-06-30",
       "reasoning": true
     },
@@ -6261,8 +6241,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000075",
-      "completion_price": "0.0000002",
+      "prompt_price": "0.00000009375",
+      "completion_price": "0.00000025",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2023-10-31",
       "reasoning": false
@@ -6278,7 +6258,7 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000055",
+      "prompt_price": "0.0000004",
       "completion_price": "0.0000022",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2024-06-30",
@@ -6480,27 +6460,6 @@
       "input_cache_read_price": "0.00000004",
       "knowledge_cutoff": "2025-03-31",
       "reasoning": false
-    },
-    "google/gemini-2.5-pro-preview-05-06": {
-      "name": "Google: Gemini 2.5 Pro Preview 05-06",
-      "context_length": 1048576,
-      "max_completion_tokens": 65535,
-      "modality": "text+image+file+audio+video->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "file",
-        "audio",
-        "video"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00000125",
-      "completion_price": "0.00001",
-      "input_cache_read_price": "0.000000125",
-      "knowledge_cutoff": "2025-01-31",
-      "reasoning": true
     },
     "meta-llama/llama-guard-4-12b": {
       "name": "Meta: Llama Guard 4 12B",
@@ -8013,23 +7972,6 @@
       "knowledge_cutoff": "2021-09-30",
       "reasoning": false
     },
-    "openai/gpt-4-turbo-preview": {
-      "name": "OpenAI: GPT-4 Turbo Preview",
-      "context_length": 128000,
-      "max_completion_tokens": 4096,
-      "modality": "text->text",
-      "input_modalities": [
-        "text"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00001",
-      "completion_price": "0.00003",
-      "input_cache_read_price": null,
-      "knowledge_cutoff": "2023-12-31",
-      "reasoning": false
-    },
     "openrouter/auto": {
       "name": "Auto Router",
       "context_length": 2000000,
@@ -8131,8 +8073,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000006",
-      "completion_price": "0.00000006",
+      "prompt_price": "0.00000008",
+      "completion_price": "0.00000011",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2023-06-30",
       "reasoning": false

@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Optional
 
 import httpx
@@ -52,7 +53,9 @@ except ImportError:  # pragma: no cover - fallback for minimal environments
 from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content, tool_names
 from .chatCompletion import (
     _contains_pseudo_tool_call_markers,
+    _detect_repeated_tool_calls,
     _parse_pseudo_tool_calls,
+    get_max_tool_turns,
 )
 from mcp_bridge.models import SSEData
 from .genericHttpxClient import get_client
@@ -146,6 +149,15 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
         trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
 
     fully_done = False
+    # Repeated-tool-call guard: the non-streaming loop stops when the same tool
+    # call is issued 3+ times without new information (a weak model "search
+    # loop"). This streaming loop previously had no such bound, so a model that
+    # kept calling a *non-existent* tool (observed: `web_search` 4x in one
+    # batch, then again next turn) could spin indefinitely. Mirrors the
+    # non-streaming behaviour.
+    seen_tool_calls: dict[str, int] = {}
+    max_tool_turns = get_max_tool_turns(getattr(request, "model", None))
+    stream_tool_turns = 0
     while not fully_done:
         # json_data = request.model_dump_json(
         #     exclude_defaults=True, exclude_none=True, exclude_unset=True
@@ -425,6 +437,56 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
         #### MOST OF THIS IS COPY PASTED FROM CHAT_COMPLETIONS
         if not collected_tool_calls:
             continue
+
+        # Stop the loop when the same tool call has been issued 3+ times, or
+        # when the per-model tool-turn budget is exhausted. A model that keeps
+        # re-issuing the same call (especially a hallucinated tool name that
+        # always fails) is not converging; end the stream cleanly with a final
+        # assistant message rather than looping forever.
+        stream_tool_turns += 1
+        repeated_calls = _detect_repeated_tool_calls(
+            [(tool_call.get("name", ""), tool_call.get("arguments", "")) for tool_call in collected_tool_calls],
+            seen_tool_calls,
+        )
+        if repeated_calls or stream_tool_turns >= max_tool_turns:
+            if repeated_calls:
+                logger.warning(
+                    "detected repeated tool call(s); stopping streamed tool loop"
+                )
+                stop_note = (
+                    "Note: The tool workflow stopped because the same tool call was "
+                    "repeated without new information."
+                )
+            else:
+                logger.warning(
+                    f"stopping streamed tool loop after {stream_tool_turns} turn(s); "
+                    f"max_tool_turns={max_tool_turns}"
+                )
+                stop_note = (
+                    "Note: The tool workflow reached its turn limit before finishing."
+                )
+            # The assistant message already lists these tool_calls, so each id
+            # still needs a matching tool reply or strict providers reject the
+            # next request as malformed -- but we are finishing the stream, so
+            # simply end with a final assistant summary instead.
+            final_message = f"{stop_note} Please refine the request or try again."
+            yield json.dumps(
+                {
+                    "id": "chatcmpl-stream-stop",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": getattr(request, "model", "") or "unknown",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": final_message},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                }
+            )
+            yield ServerSentEvent(event="message", data="[DONE]", id=None, retry=None)
+            return
 
         if trace_logger is not None:
             trace_logger.record("mcp_tool_calls", tool_calls=[{"name": tool_call.get("name", ""), "arguments": tool_call.get("arguments", "")} for tool_call in collected_tool_calls])

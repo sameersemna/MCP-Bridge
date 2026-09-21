@@ -23,6 +23,32 @@ from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
 from .AbstractClient import GenericMcpClient
 
+try:  # Python 3.11+
+    _BASE_EXCEPTION_GROUP: type[BaseException] | None = BaseExceptionGroup  # type: ignore[name-defined]
+except NameError:  # pragma: no cover - older runtimes
+    _BASE_EXCEPTION_GROUP = None
+
+
+def _describe_exception(exc: BaseException, *, depth: int = 0) -> str:
+    """Render an exception as a non-empty, greppable description.
+
+    ``f"{exc}"`` is empty for several exceptions that routinely surface on SSE
+    teardown (``ExceptionGroup`` with empty sub-exception messages, bare
+    ``ClosedResourceError``/``EndOfStream``). That produced useless
+    ``ping failed for google-search: `` log lines with no error text. This
+    always includes the type name and recurses into ``ExceptionGroup`` members.
+    """
+    try:
+        if _BASE_EXCEPTION_GROUP is not None and isinstance(exc, _BASE_EXCEPTION_GROUP):
+            members = "; ".join(
+                _describe_exception(sub, depth=depth + 1) for sub in exc.exceptions
+            )
+            return f"{type(exc).__name__}({members})"
+        text = str(exc).strip()
+        return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+    except Exception:
+        return type(exc).__name__
+
 
 class HttpMcpSession:
     def __init__(self, url: str, read_timeout_seconds: float | None = None) -> None:
@@ -286,7 +312,14 @@ class SseClient(GenericMcpClient):
                         await session.send_ping()
 
                 except Exception as exc:
-                    logger.error(f"ping failed for {self.name}: {exc}")
+                    # Include the exception *type* and a flattened view of any
+                    # ExceptionGroup sub-exceptions. A bare `{exc}` renders
+                    # empty for the common `ExceptionGroup` / closed-resource
+                    # teardown case, which made "ping failed for X: " logs
+                    # impossible to diagnose (no error text at all).
+                    logger.error(
+                        f"ping failed for {self.name}: {_describe_exception(exc)}"
+                    )
                     self.session = None
                     raise
 

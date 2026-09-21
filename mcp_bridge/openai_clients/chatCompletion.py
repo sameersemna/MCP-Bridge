@@ -24,6 +24,10 @@ from .utils import (
     tool_names,
 )
 from .genericHttpxClient import get_client
+from .citation_guard import (
+    collect_evidence_urls,
+    update_evidence_from_text,
+)
 from mcp_bridge.config import config
 from mcp_bridge.logging import RequestTraceLogger
 from loguru import logger
@@ -1067,17 +1071,34 @@ def _build_synthesis_request(
     synthesis_request.messages = list(request_messages)
     synthesis_request.tools = []
 
+    # Anti-fabrication instruction. The model must never invent a URL to
+    # satisfy a request for sources: a cited link that was not actually
+    # retrieved is indistinguishable from a real one to a reader, which makes
+    # the whole report untrustworthy. This is enforced post-hoc by the
+    # citation guard, but instructing the model up front reduces how often it
+    # is needed.
+    citation_rule = (
+        "Citation integrity: cite ONLY URLs that appear verbatim in the tool results "
+        "already present in this conversation. NEVER invent, guess, or fill in a URL, "
+        "and never use placeholder identifiers (e.g. `abc123`, `XYZ`, `12345`). If a "
+        "claim has no retrieved source, state plainly that no source was retrieved for "
+        "it rather than fabricating a link. Do not claim sources are 'publicly "
+        "accessible' or 'verified' unless you actually retrieved them."
+    )
+
     if force_answer:
         instruction = (
             "Write the final answer now. Do NOT call any tools and do NOT emit any tool-call "
             "markup. Use only the evidence already present in the conversation to produce a "
-            "complete, well-structured answer to the original question. Be concise but thorough."
+            "complete, well-structured answer to the original question. Be concise but thorough. "
+            + citation_rule
         )
     else:
         instruction = (
             "Synthesize the information gathered from the tool results into a helpful final answer. "
             "Use the evidence already present in the conversation, be concise but complete, and "
-            "avoid mentioning the tool-loop limit unless it is necessary to explain missing information."
+            "avoid mentioning the tool-loop limit unless it is necessary to explain missing information. "
+            + citation_rule
         )
     if stop_reason == "max_tool_turns":
         instruction += " The tool workflow stopped early, so if some information is incomplete, say so clearly."
@@ -1562,6 +1583,19 @@ def _finalize_recovered_response(
     if trace_logger is not None:
         trace_logger.record("early_stop_recovered", reason=reason)
     return response
+
+
+def _looks_like_real_tool_evidence(tool_text: str | None) -> bool:
+    """Return True if a tool result carries usable (non-empty) evidence.
+
+    Mirrors ``_has_tool_evidence``'s notion of "informative" so the citation
+    guard only enforces provenance once the model has actually retrieved
+    something -- a request that gathered no evidence should not have its
+    citations flagged for mere absence from an empty set.
+    """
+    if not tool_text:
+        return False
+    return not _looks_like_empty_search_fallback(tool_text)
 
 
 def _looks_like_empty_search_fallback(message: str) -> bool:
@@ -2288,6 +2322,24 @@ async def chat_completions(
     # Guards against an infinite fallback loop.
     _model_fallback_used = False
 
+    # URLs actually retrieved during this request (tool results + tool-call
+    # arguments). Accumulated as results arrive -- NOT recomputed from
+    # `request.messages` at the end -- because context compression replaces
+    # older tool messages with a URL-free summary. Used by the citation guard
+    # to tell a cited-but-fabricated URL from one that was genuinely fetched.
+    evidence_urls: set[str] = collect_evidence_urls(request.messages)
+    # Mutable holder attached to the request so the endpoint can annotate the
+    # final response (which may be returned from any of many branches below)
+    # with the citation guard exactly once.
+    citation_evidence: dict[str, Any] = {
+        "urls": evidence_urls,
+        "available": False,
+    }
+    try:
+        request._citation_evidence = citation_evidence  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
     # Per-server opt-in caching: only tools whose owning MCP server is
     # configured with `"cached": true` are read from / written to the caches.
     # The tool->server map is attached during tool discovery.
@@ -2906,15 +2958,22 @@ async def chat_completions(
                     tools_content = await _recover_mangled_pdf_tool_content(
                         tool_name, tool_call_arguments, tools_content
                     )
-                    request.messages.append(
-                        ChatCompletionRequestMessage.model_validate(
-                            {
-                                "role": "tool",
-                                "content": tools_content,
-                                "tool_call_id": getattr(tool_call, "id", None) if not isinstance(tool_call, dict) else tool_call.get("id"),
-                            }
-                        )
+                    tool_message = ChatCompletionRequestMessage.model_validate(
+                        {
+                            "role": "tool",
+                            "content": tools_content,
+                            "tool_call_id": getattr(tool_call, "id", None) if not isinstance(tool_call, dict) else tool_call.get("id"),
+                        }
                     )
+                    request.messages.append(tool_message)
+
+                    # Record retrieved URLs for the citation guard before the
+                    # result may later be compressed out of `request.messages`.
+                    if not getattr(tool_call_result, "isError", False):
+                        tool_text = _extract_tool_message_text(tool_message)
+                        update_evidence_from_text(evidence_urls, tool_text)
+                        if _looks_like_real_tool_evidence(tool_text):
+                            citation_evidence["available"] = True
 
                     if trace_logger is not None:
                         trace_logger.record(
