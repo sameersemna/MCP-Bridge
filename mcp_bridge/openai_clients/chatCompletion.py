@@ -642,11 +642,18 @@ def _context_budget_nearly_exceeded(
     response: CreateChatCompletionResponse,
     max_context_tokens: int,
     threshold: float = 0.7,
+    *,
+    appended_tokens: int = 0,
 ) -> bool:
     """Return True if the accumulated prompt context is approaching the budget.
 
     Used to trigger proactive context compression before the hard limit is hit,
     so the tool loop can keep going instead of stopping early.
+
+    ``appended_tokens`` is the estimated size of messages added AFTER the prompt
+    that produced ``response``'s ``usage``. Without it the check acts on a stale
+    count (see ``_estimate_appended_tokens``), which let one large tool round
+    leap from under this threshold to over the hard budget in a single step.
     """
     usage = getattr(response, "usage", None)
     if usage is None:
@@ -654,7 +661,59 @@ def _context_budget_nearly_exceeded(
     prompt_tokens = getattr(usage, "prompt_tokens", None)
     if not isinstance(prompt_tokens, int):
         return False
-    return prompt_tokens > (max_context_tokens * threshold)
+    projected_prompt_tokens = prompt_tokens + max(0, appended_tokens)
+    return projected_prompt_tokens > (max_context_tokens * threshold)
+
+
+def _estimate_appended_tokens(
+    messages: list[ChatCompletionRequestMessage],
+    start_index: int,
+) -> int:
+    """Estimate tokens for messages appended from ``start_index`` onwards."""
+    if start_index < 0 or start_index >= len(messages):
+        return 0
+    return sum(_estimate_message_tokens(message) for message in messages[start_index:])
+
+
+def _estimate_message_tokens(message: ChatCompletionRequestMessage | Any) -> int:
+    """Rough token estimate for one message, used only for budget decisions.
+
+    Deliberately cheap and approximate: the tool loop already has an EXACT
+    token count from the provider (`usage.prompt_tokens`), but that count
+    describes the prompt BEFORE this iteration's tool results were appended.
+    Deciding whether the *next* prompt will fit therefore needs an estimate of
+    just the newly-appended messages, which is what this provides.
+
+    The ~4-characters-per-token ratio is the usual OpenAI-family heuristic;
+    being off by a little is acceptable because it is only used to trigger
+    compression slightly early, never to hard-reject a request.
+    """
+    message_root = getattr(message, "root", message)
+
+    text = ""
+    if isinstance(message_root, dict):
+        content = message_root.get("content")
+        if isinstance(content, str):
+            text = content
+        elif content is not None:
+            text = str(content)
+    else:
+        content = getattr(message_root, "content", None)
+        # `content` may be a RootModel wrapper exposing the real value on
+        # `.root`; `getattr` is used (rather than `hasattr` + attribute access)
+        # so a `None` content does not trip a static type check.
+        content_root = getattr(content, "root", None)
+        if content_root is not None:
+            content = content_root
+        if isinstance(content, str):
+            text = content
+        elif content is not None:
+            text = str(content)
+
+    if not text:
+        return 0
+    # +8 accounts for the per-message role/formatting overhead.
+    return max(1, len(text) // 4 + 8)
 
 
 def _message_role(message: ChatCompletionRequestMessage | Any) -> Any:
@@ -2315,6 +2374,13 @@ async def chat_completions(
     stub_retry_count = 0
     tool_client_cache: dict[str, Any] = {}
     seen_tool_calls: dict[str, int] = {}
+    # Bounds how many times the hard context budget may be "rescued" by
+    # compressing history. If compression cannot reduce the conversation below
+    # the budget (e.g. the few retained recent rounds are themselves huge),
+    # compressing every iteration would loop forever, so after this many
+    # attempts the loop stops and synthesizes from the evidence gathered.
+    context_compressions = 0
+    MAX_CONTEXT_COMPRESSIONS = 5
     tool_result_cache = ToolResultCache()
     persistent_tool_cache = get_tool_cache()
     # Whether we've already fallen back to a different model because the
@@ -2353,6 +2419,12 @@ async def chat_completions(
     async with get_client(http_request) as client:
         while True:
             start_time = time.perf_counter()
+            # `usage.prompt_tokens` from the NEXT response will describe the
+            # messages that exist RIGHT NOW. Remembering how many there are lets
+            # the budget guard measure only what was appended afterwards, so it
+            # can project the following prompt's size instead of acting on a
+            # stale count.
+            messages_len_before_request = len(request.messages)
             # logger.debug(request.model_dump_json())
             upstream_response = await _post_chat_completion(client, request)
             text = upstream_response.text
@@ -2850,35 +2922,61 @@ async def chat_completions(
 
             max_context_tokens = get_max_context_tokens(getattr(request, "model", None))
             if _context_budget_exceeded(response, max_context_tokens):
-                prompt_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", None)
-                logger.warning(
-                    f"tool loop context budget exceeded ({prompt_tokens} > {max_context_tokens} tokens); "
-                    "stopping tool loop and synthesizing a final answer"
-                )
-                _append_placeholder_tool_results(
-                    request.messages,
-                    response.choices[0].message,
-                    reason="tool loop stopped: conversation context grew too large",
-                )
-                synthesized_response = await _try_synthesize_tool_loop_result(
-                    client,
-                    request,
-                    stop_reason="max_context_tokens",
-                    request_messages=request.messages,
-                )
-                if synthesized_response is not None:
-                    return _finalize_recovered_response(
-                        synthesized_response, trace_logger=trace_logger, reason="max_context_tokens"
+                # The prompt that produced this response ALREADY overflowed the
+                # budget. `prompt_tokens` describes the messages sent at the
+                # top of this iteration, i.e. everything EXCEPT the tool
+                # results appended since -- so the messages appended this round
+                # are exactly the growth that pushed it over.
+                #
+                # Compressing the older, already-answered rounds may free enough
+                # context to keep going, and unlike the previous behavior it
+                # does not throw away the tool calls the model just asked for:
+                # the round being dispatched right now has no `tool` replies
+                # yet, so `_group_tool_rounds` skips it and only complete
+                # history is compressed. Fall through to dispatch after a
+                # successful compression rather than `continue` -- skipping
+                # dispatch would leave the assistant `tool_calls` message with
+                # no matching `tool` replies, which strict providers reject.
+                if (
+                    _compress_tool_context(request.messages)
+                    and context_compressions < MAX_CONTEXT_COMPRESSIONS
+                ):
+                    context_compressions += 1
+                    logger.warning(
+                        "tool loop context budget exceeded "
+                        f"({getattr(getattr(response, 'usage', None), 'prompt_tokens', None)} > "
+                        f"{max_context_tokens} tokens); compressed older tool messages and continuing tool loop"
                     )
-                return _finalize_degraded_response(
-                    _build_tool_loop_stop_response(
-                        response,
+                else:
+                    prompt_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", None)
+                    logger.warning(
+                        f"tool loop context budget exceeded ({prompt_tokens} > {max_context_tokens} tokens); "
+                        "stopping tool loop and synthesizing a final answer"
+                    )
+                    _append_placeholder_tool_results(
+                        request.messages,
+                        response.choices[0].message,
+                        reason="tool loop stopped: conversation context grew too large",
+                    )
+                    synthesized_response = await _try_synthesize_tool_loop_result(
+                        client,
+                        request,
                         stop_reason="max_context_tokens",
                         request_messages=request.messages,
-                    ),
-                    trace_logger=trace_logger,
-                    reason="max_context_tokens",
-                )
+                    )
+                    if synthesized_response is not None:
+                        return _finalize_recovered_response(
+                            synthesized_response, trace_logger=trace_logger, reason="max_context_tokens"
+                        )
+                    return _finalize_degraded_response(
+                        _build_tool_loop_stop_response(
+                            response,
+                            stop_reason="max_context_tokens",
+                            request_messages=request.messages,
+                        ),
+                        trace_logger=trace_logger,
+                        reason="max_context_tokens",
+                    )
 
             tool_turns_completed += 1
 
@@ -3017,15 +3115,30 @@ async def chat_completions(
                         f"tool call failures detected; feeding errors back to the model for correction: {'; '.join(tool_errors)}"
                     )
 
-                # Proactive context compression: if the budget is nearly exceeded,
-                # compress older tool messages into a summary so the loop can keep
-                # going instead of stopping early. Deliberately placed AFTER this
-                # round's tool calls have been dispatched and answered (above):
-                # compressing before dispatch would leave the assistant's
-                # `tool_calls` message with no matching `tool` replies yet, which
-                # strict providers (observed with Minimax) reject outright as a
-                # malformed conversation.
-                if _context_budget_nearly_exceeded(response, max_context_tokens):
+                # Proactive context compression: if the next prompt is projected
+                # to approach the budget, compress older tool messages into a
+                # summary so the loop can keep going instead of stopping early.
+                # Deliberately placed AFTER this round's tool calls have been
+                # dispatched and answered (above): compressing before dispatch
+                # would leave the assistant's `tool_calls` message with no
+                # matching `tool` replies yet, which strict providers (observed
+                # with Minimax) reject outright as a malformed conversation.
+                #
+                # The trigger PROJECTS the next prompt's size rather than using
+                # `prompt_tokens` directly. `prompt_tokens` describes the prompt
+                # sent at the top of this iteration -- it does NOT include the
+                # tool results appended since. Acting on it alone meant a single
+                # large round (e.g. a big search result) could jump from below
+                # the 70% threshold straight past the hard budget in one step,
+                # skipping compression entirely and aborting the loop. Adding the
+                # estimated size of the newly-appended messages closes that gap.
+                if _context_budget_nearly_exceeded(
+                    response,
+                    max_context_tokens,
+                    appended_tokens=_estimate_appended_tokens(
+                        request.messages, messages_len_before_request
+                    ),
+                ):
                     if _compress_tool_context(request.messages):
                         logger.info(
                             "context budget nearly exceeded; compressed older tool messages; "

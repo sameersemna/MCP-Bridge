@@ -1,10 +1,126 @@
 {
   "source": "https://openrouter.ai/api/v1",
-  "fetched_at": "2026-09-17T05:16:39.945509+00:00",
+  "fetched_at": "2026-09-22T10:07:58.473293+00:00",
   "model_count": 444,
   "models": {
-    "stealth/union-alpha": {
-      "name": "Union Alpha",
+    "xiaomi/mimo-v2.6-pro-ultraspeed": {
+      "name": "Xiaomi: MiMo-V2.6-Pro-UltraSpeed",
+      "context_length": 1048576,
+      "max_completion_tokens": 131072,
+      "modality": "text+image+audio+video->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000435",
+      "completion_price": "0.0000087",
+      "input_cache_read_price": "0.000000036",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "xiaomi/mimo-v2.6-flash": {
+      "name": "Xiaomi: MiMo-V2.6-Flash",
+      "context_length": 1048576,
+      "max_completion_tokens": 131072,
+      "modality": "text+image+audio+video->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000014",
+      "completion_price": "0.00000028",
+      "input_cache_read_price": "0.0000000028",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "xiaomi/mimo-v2.6-pro": {
+      "name": "Xiaomi: MiMo-V2.6-Pro",
+      "context_length": 1048576,
+      "max_completion_tokens": 131072,
+      "modality": "text+image+audio+video->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "audio"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000435",
+      "completion_price": "0.00000087",
+      "input_cache_read_price": "0.0000000036",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "x-ai/grok-4.7": {
+      "name": "SpaceXAI: Grok 4.7",
+      "context_length": 500000,
+      "max_completion_tokens": 450000,
+      "modality": "text+image+file->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "file"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.0000016",
+      "completion_price": "0.0000048",
+      "input_cache_read_price": "0.0000004",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "prism-ml/ternary-bonsai-2-27b": {
+      "name": "PrismML: Ternary Bonsai 2 27B",
+      "context_length": 262144,
+      "max_completion_tokens": 32768,
+      "modality": "text+image->text",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000075",
+      "completion_price": "0.0000005",
+      "input_cache_read_price": null,
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "z-ai/glm-5.3-flashx": {
+      "name": "Z.ai: GLM 5.3 FlashX",
+      "context_length": 1048576,
+      "max_completion_tokens": 131072,
+      "modality": "text+image+video->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.00000037",
+      "completion_price": "0.00000125",
+      "input_cache_read_price": "0.000000075",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "unbiased/pareto": {
+      "name": "Pareto",
       "context_length": 262144,
       "max_completion_tokens": 131072,
       "modality": "text+image->text",
@@ -15,9 +131,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0",
-      "completion_price": "0",
-      "input_cache_read_price": null,
+      "prompt_price": "0.0000025",
+      "completion_price": "0.0000075",
+      "input_cache_read_price": "0.00000025",
       "knowledge_cutoff": null,
       "reasoning": false
     },
@@ -32,9 +148,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000066",
-      "completion_price": "0.00000198",
-      "input_cache_read_price": "0.000000022",
+      "prompt_price": "0.00000059862",
+      "completion_price": "0.00000179586",
+      "input_cache_read_price": "0.000000019954",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -50,9 +166,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000015",
-      "completion_price": "0.0000006",
-      "input_cache_read_price": "0.000000015",
+      "prompt_price": "0.00000012",
+      "completion_price": "0.00000048",
+      "input_cache_read_price": "0.0000000036",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -254,9 +370,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000015",
-      "completion_price": "0.0000006",
-      "input_cache_read_price": "0.000000003",
+      "prompt_price": "0.0000003",
+      "completion_price": "0.0000012",
+      "input_cache_read_price": "0.000000006",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -277,6 +393,24 @@
       "knowledge_cutoff": null,
       "reasoning": true
     },
+    "nex-agi/nex-n2.5-mini": {
+      "name": "Nex AGI: Nex-N2.5-Mini",
+      "context_length": 262144,
+      "max_completion_tokens": 235929,
+      "modality": "text+image->text",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000025",
+      "completion_price": "0.0000001",
+      "input_cache_read_price": "0.0000000025",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
     "nex-agi/nex-n2.5-mini:free": {
       "name": "Nex AGI: Nex-N2.5-Mini (free)",
       "context_length": 262144,
@@ -292,6 +426,24 @@
       "prompt_price": "0",
       "completion_price": "0",
       "input_cache_read_price": null,
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "nex-agi/nex-n2.5-pro": {
+      "name": "Nex AGI: Nex-N2.5-Pro",
+      "context_length": 262144,
+      "max_completion_tokens": 235929,
+      "modality": "text+image->text",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0.000000075",
+      "completion_price": "0.00000025",
+      "input_cache_read_price": "0.000000015",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -618,7 +770,7 @@
     "~z-ai/glm-flash-latest": {
       "name": "Z.ai: GLM Flash Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 943718,
       "modality": "text+image+video->text",
       "input_modalities": [
         "text",
@@ -656,7 +808,7 @@
     "z-ai/glm-5.3-flash": {
       "name": "Z.ai: GLM 5.3 Flash",
       "context_length": 1310720,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 943718,
       "modality": "text+image+video->text",
       "input_modalities": [
         "text",
@@ -666,9 +818,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000009",
-      "completion_price": "0.0000003",
-      "input_cache_read_price": "0.000000018",
+      "prompt_price": "0.00000015",
+      "completion_price": "0.0000005",
+      "input_cache_read_price": "0.00000005",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -785,7 +937,7 @@
     "~z-ai/glm-latest": {
       "name": "Z.ai: GLM Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 235929,
+      "max_completion_tokens": 943718,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -793,9 +945,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000008775",
-      "completion_price": "0.00000297",
-      "input_cache_read_price": "0.0000001755",
+      "prompt_price": "0.0000006545",
+      "completion_price": "0.000002057",
+      "input_cache_read_price": "0.000000107525",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -819,7 +971,7 @@
     "z-ai/glm-5.3": {
       "name": "Z.ai: GLM 5.3",
       "context_length": 1310720,
-      "max_completion_tokens": 943717,
+      "max_completion_tokens": 131072,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -827,9 +979,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000014",
-      "completion_price": "0.0000044",
-      "input_cache_read_price": "0.00000026",
+      "prompt_price": "0.00000084",
+      "completion_price": "0.00000264",
+      "input_cache_read_price": "0.000000156",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -863,9 +1015,28 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000214",
-      "completion_price": "0.00000255",
-      "input_cache_read_price": "0.00000015",
+      "prompt_price": "0.00000042",
+      "completion_price": "0.000003",
+      "input_cache_read_price": "0.000000085",
+      "knowledge_cutoff": null,
+      "reasoning": true
+    },
+    "qwen/qwen3.8-27b:free": {
+      "name": "Qwen: Qwen3.8 27B (free)",
+      "context_length": 262144,
+      "max_completion_tokens": 235929,
+      "modality": "text+image+video->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "prompt_price": "0",
+      "completion_price": "0",
+      "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -965,23 +1136,6 @@
       "knowledge_cutoff": null,
       "reasoning": true
     },
-    "qwen/qwen3.8-2.4t-a95b:batch": {
-      "name": "Qwen: Qwen3.8 2.4T A95B (batch)",
-      "context_length": 1010000,
-      "max_completion_tokens": 909000,
-      "modality": "text->text",
-      "input_modalities": [
-        "text"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.000002",
-      "completion_price": "0.000006",
-      "input_cache_read_price": "0.00000025",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
     "bytedance-seed/seed-2.0-code": {
       "name": "ByteDance Seed: Seed-2.0-Code",
       "context_length": 262144,
@@ -1012,9 +1166,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000066",
-      "completion_price": "0.00000198",
-      "input_cache_read_price": "0.000000022",
+      "prompt_price": "0.00000059862",
+      "completion_price": "0.00000179586",
+      "input_cache_read_price": "0.000000019954",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1074,7 +1228,7 @@
     "nvidia/nemotron-3.5-lightning": {
       "name": "NVIDIA: Nemotron 3.5 Lightning",
       "context_length": 262144,
-      "max_completion_tokens": 131072,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -1082,7 +1236,7 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000008",
+      "prompt_price": "0.00000007",
       "completion_price": "0.0000002",
       "input_cache_read_price": "0.00000004",
       "knowledge_cutoff": null,
@@ -1144,7 +1298,7 @@
     "meta/muse-glimmer-30b": {
       "name": "Meta: Muse Glimmer 30B",
       "context_length": 131072,
-      "max_completion_tokens": 117964,
+      "max_completion_tokens": 16384,
       "modality": "text+image->text",
       "input_modalities": [
         "text",
@@ -1153,8 +1307,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000035",
-      "completion_price": "0.0000015",
+      "prompt_price": "0.0000003",
+      "completion_price": "0.0000012",
       "input_cache_read_price": "0.00000004",
       "knowledge_cutoff": null,
       "reasoning": true
@@ -1201,7 +1355,7 @@
     "~deepseek/deepseek-v4-flash-latest": {
       "name": "DeepSeek: DeepSeek V4 Flash Latest",
       "context_length": 1310720,
-      "max_completion_tokens": 393216,
+      "max_completion_tokens": 943718,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -1210,8 +1364,8 @@
         "text"
       ],
       "prompt_price": "0.00000003",
-      "completion_price": "0.00000013",
-      "input_cache_read_price": "0.00000001",
+      "completion_price": "0.000001",
+      "input_cache_read_price": "0.000000008",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1226,9 +1380,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000006",
-      "completion_price": "0.00000012",
-      "input_cache_read_price": "0.000000012",
+      "prompt_price": "0.00000004",
+      "completion_price": "0.00000064",
+      "input_cache_read_price": "0.000000016",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -1515,25 +1669,6 @@
       "knowledge_cutoff": null,
       "reasoning": true
     },
-    "thinkingmachines/inkling:batch": {
-      "name": "Thinking Machines: Inkling (batch)",
-      "context_length": 524288,
-      "max_completion_tokens": 471859,
-      "modality": "text+image+audio->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "audio"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.000001",
-      "completion_price": "0.00000405",
-      "input_cache_read_price": "0.00000017",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
     "thinkingmachines/inkling:free": {
       "name": "Thinking Machines: Inkling (free)",
       "context_length": 1048576,
@@ -1577,25 +1712,6 @@
     },
     "moonshotai/kimi-k3": {
       "name": "MoonshotAI: Kimi K3",
-      "context_length": 1048576,
-      "max_completion_tokens": 943718,
-      "modality": "text+image+video->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "video"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.000003",
-      "completion_price": "0.000015",
-      "input_cache_read_price": "0.0000003",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
-    "moonshotai/kimi-k3:batch": {
-      "name": "MoonshotAI: Kimi K3 (batch)",
       "context_length": 1048576,
       "max_completion_tokens": 943718,
       "modality": "text+image+video->text",
@@ -1911,9 +2027,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000002",
-      "completion_price": "0.000006",
-      "input_cache_read_price": "0.0000005",
+      "prompt_price": "0.0000016",
+      "completion_price": "0.0000048",
+      "input_cache_read_price": "0.0000004",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2143,9 +2259,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000014",
-      "completion_price": "0.0000044",
-      "input_cache_read_price": "0.00000014",
+      "prompt_price": "0.0000006496",
+      "completion_price": "0.0000020416",
+      "input_cache_read_price": "0.00000012064",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2314,7 +2430,7 @@
     "nvidia/nemotron-3-ultra-550b-a55b": {
       "name": "NVIDIA: Nemotron 3 Ultra",
       "context_length": 262144,
-      "max_completion_tokens": 32768,
+      "max_completion_tokens": 182520,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -2322,9 +2438,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000000625",
-      "completion_price": "0.000003125",
-      "input_cache_read_price": "0.0000001875",
+      "prompt_price": "0.0000006",
+      "completion_price": "0.0000024",
+      "input_cache_read_price": "0.00000012",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2367,25 +2483,6 @@
       "name": "MiniMax: MiniMax M3",
       "context_length": 1048576,
       "max_completion_tokens": 512000,
-      "modality": "text+image+video->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "video"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.0000003",
-      "completion_price": "0.0000012",
-      "input_cache_read_price": "0.00000006",
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
-    "minimax/minimax-m3:batch": {
-      "name": "MiniMax: MiniMax M3 (batch)",
-      "context_length": 524288,
-      "max_completion_tokens": 471859,
       "modality": "text+image+video->text",
       "input_modalities": [
         "text",
@@ -2784,9 +2881,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.000002",
-      "completion_price": "0.0000112",
-      "input_cache_read_price": "0.000000232",
+      "prompt_price": "0.0000015",
+      "completion_price": "0.0000075",
+      "input_cache_read_price": "0.00000015",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -2881,8 +2978,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000001",
-      "completion_price": "0.0000009",
+      "prompt_price": "0.00000015",
+      "completion_price": "0.000001",
       "input_cache_read_price": "0.00000005",
       "knowledge_cutoff": null,
       "reasoning": true
@@ -3002,7 +3099,7 @@
     "deepseek/deepseek-v4-pro": {
       "name": "DeepSeek: DeepSeek V4 Pro 0423",
       "context_length": 1048576,
-      "max_completion_tokens": 393216,
+      "max_completion_tokens": 384000,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -3010,9 +3107,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000016",
-      "completion_price": "0.0000032",
-      "input_cache_read_price": "0.000000135",
+      "prompt_price": "0.00000095526",
+      "completion_price": "0.00000191052",
+      "input_cache_read_price": "0.000000079605",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -3423,23 +3520,6 @@
       "knowledge_cutoff": null,
       "reasoning": false
     },
-    "kwaipilot/kat-coder-pro-v2": {
-      "name": "Kwaipilot: KAT-Coder-Pro V2",
-      "context_length": 262144,
-      "max_completion_tokens": 144000,
-      "modality": "text->text",
-      "input_modalities": [
-        "text"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.0000003",
-      "completion_price": "0.0000012",
-      "input_cache_read_price": "0.00000006",
-      "knowledge_cutoff": null,
-      "reasoning": false
-    },
     "rekaai/reka-edge": {
       "name": "Reka Edge",
       "context_length": 16384,
@@ -3661,7 +3741,7 @@
     "qwen/qwen3.5-9b": {
       "name": "Qwen: Qwen3.5-9B",
       "context_length": 262144,
-      "max_completion_tokens": 235929,
+      "max_completion_tokens": 32768,
       "modality": "text+image+video->text",
       "input_modalities": [
         "text",
@@ -3673,25 +3753,6 @@
       ],
       "prompt_price": "0.0000001",
       "completion_price": "0.00000015",
-      "input_cache_read_price": null,
-      "knowledge_cutoff": null,
-      "reasoning": true
-    },
-    "qwen/qwen3.5-9b:batch": {
-      "name": "Qwen: Qwen3.5-9B (batch)",
-      "context_length": 262144,
-      "max_completion_tokens": 235929,
-      "modality": "text+image+video->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "video"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.00000017",
-      "completion_price": "0.00000025",
       "input_cache_read_price": null,
       "knowledge_cutoff": null,
       "reasoning": true
@@ -3851,7 +3912,7 @@
     "qwen/qwen3.5-35b-a3b": {
       "name": "Qwen: Qwen3.5-35B-A3B",
       "context_length": 262144,
-      "max_completion_tokens": 65536,
+      "max_completion_tokens": 16384,
       "modality": "text+image+video->text",
       "input_modalities": [
         "text",
@@ -3861,9 +3922,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000001625",
-      "completion_price": "0.0000013",
-      "input_cache_read_price": null,
+      "prompt_price": "0.0000003125",
+      "completion_price": "0.00000125",
+      "input_cache_read_price": "0.00000015625",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -4507,9 +4568,9 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.00000006",
-      "completion_price": "0.00000024",
-      "input_cache_read_price": null,
+      "prompt_price": "0.00000005",
+      "completion_price": "0.0000002",
+      "input_cache_read_price": "0.00000003",
       "knowledge_cutoff": null,
       "reasoning": true
     },
@@ -4786,25 +4847,6 @@
       "prompt_price": "0.0000001",
       "completion_price": "0.0000001",
       "input_cache_read_price": "0.00000001",
-      "knowledge_cutoff": null,
-      "reasoning": false
-    },
-    "mistralai/mistral-large-2512": {
-      "name": "Mistral: Mistral Large 3 2512",
-      "context_length": 262144,
-      "max_completion_tokens": 209715,
-      "modality": "text+image+file->text",
-      "input_modalities": [
-        "text",
-        "image",
-        "file"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.0000005",
-      "completion_price": "0.0000015",
-      "input_cache_read_price": "0.00000005",
       "knowledge_cutoff": null,
       "reasoning": false
     },
@@ -5536,7 +5578,7 @@
     "qwen/qwen3-next-80b-a3b-thinking": {
       "name": "Qwen: Qwen3 Next 80B A3B Thinking",
       "context_length": 262144,
-      "max_completion_tokens": 32768,
+      "max_completion_tokens": 235929,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -5825,24 +5867,7 @@
     "openai/gpt-oss-120b": {
       "name": "OpenAI: gpt-oss-120b",
       "context_length": 131072,
-      "max_completion_tokens": 117964,
-      "modality": "text->text",
-      "input_modalities": [
-        "text"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.000000037",
-      "completion_price": "0.00000017",
-      "input_cache_read_price": null,
-      "knowledge_cutoff": "2024-06-30",
-      "reasoning": true
-    },
-    "openai/gpt-oss-120b:batch": {
-      "name": "OpenAI: gpt-oss-120b (batch)",
-      "context_length": 131072,
-      "max_completion_tokens": 117964,
+      "max_completion_tokens": 65536,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -5852,7 +5877,7 @@
       ],
       "prompt_price": "0.00000015",
       "completion_price": "0.0000006",
-      "input_cache_read_price": null,
+      "input_cache_read_price": "0.000000075",
       "knowledge_cutoff": "2024-06-30",
       "reasoning": true
     },
@@ -6404,28 +6429,9 @@
       "knowledge_cutoff": "2025-03-31",
       "reasoning": true
     },
-    "anthropic/claude-opus-4": {
-      "name": "Anthropic: Claude Opus 4",
-      "context_length": 200000,
-      "max_completion_tokens": 32000,
-      "modality": "text+image+file->text",
-      "input_modalities": [
-        "image",
-        "text",
-        "file"
-      ],
-      "output_modalities": [
-        "text"
-      ],
-      "prompt_price": "0.000015",
-      "completion_price": "0.000075",
-      "input_cache_read_price": "0.0000015",
-      "knowledge_cutoff": "2025-01-31",
-      "reasoning": true
-    },
     "anthropic/claude-sonnet-4": {
       "name": "Anthropic: Claude Sonnet 4",
-      "context_length": 1000000,
+      "context_length": 200000,
       "max_completion_tokens": 64000,
       "modality": "text+image+file->text",
       "input_modalities": [
@@ -7252,7 +7258,7 @@
     "deepseek/deepseek-chat": {
       "name": "DeepSeek: DeepSeek V3",
       "context_length": 163840,
-      "max_completion_tokens": 16000,
+      "max_completion_tokens": 16384,
       "modality": "text->text",
       "input_modalities": [
         "text"
@@ -7260,8 +7266,8 @@
       "output_modalities": [
         "text"
       ],
-      "prompt_price": "0.0000002574",
-      "completion_price": "0.0000010287",
+      "prompt_price": "0.00000032",
+      "completion_price": "0.00000089",
       "input_cache_read_price": null,
       "knowledge_cutoff": "2024-07-31",
       "reasoning": false

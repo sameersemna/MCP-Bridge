@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import os
 from typing import Any
 
 import httpx
@@ -27,6 +28,49 @@ try:  # Python 3.11+
     _BASE_EXCEPTION_GROUP: type[BaseException] | None = BaseExceptionGroup  # type: ignore[name-defined]
 except NameError:  # pragma: no cover - older runtimes
     _BASE_EXCEPTION_GROUP = None
+
+# How long a `ping` (a liveness probe, NOT a data request) is allowed to wait
+# for its reply before the session is considered dead.
+#
+# This is deliberately decoupled from `requestTimeout`. `requestTimeout` is a
+# *data* timeout -- a search server may legitimately take 120s to answer a
+# `tools/call`. Reusing it as the ping timeout meant a ping queued behind a
+# long-running tool call waited the FULL request budget and then declared the
+# session dead, tearing down a perfectly healthy server mid-workflow. A ping
+# only proves liveness, so it needs a much shorter leash.
+DEFAULT_SSE_PING_TIMEOUT_SECONDS = 20.0
+
+# Sentinel distinguishing "caller did not override the read timeout" from
+# "caller explicitly wants no timeout" (None).
+_UNSET_TIMEOUT = object()
+
+
+def get_sse_ping_timeout_seconds() -> float:
+    """Resolve the liveness-ping timeout, overridable via environment.
+
+    Kept short by default because it measures liveness only. Operators whose
+    remote server is genuinely slow to answer even a `ping` can raise it.
+    """
+    raw_value = os.getenv("MCP_BRIDGE_SSE_PING_TIMEOUT_SECONDS")
+    if raw_value is None:
+        return DEFAULT_SSE_PING_TIMEOUT_SECONDS
+
+    try:
+        value = float(raw_value)
+    except ValueError:
+        logger.warning(
+            f"invalid MCP_BRIDGE_SSE_PING_TIMEOUT_SECONDS value: {raw_value}; "
+            f"using default {DEFAULT_SSE_PING_TIMEOUT_SECONDS}"
+        )
+        return DEFAULT_SSE_PING_TIMEOUT_SECONDS
+
+    if value <= 0:
+        logger.warning(
+            f"MCP_BRIDGE_SSE_PING_TIMEOUT_SECONDS={value} must be > 0; "
+            f"using default {DEFAULT_SSE_PING_TIMEOUT_SECONDS}"
+        )
+        return DEFAULT_SSE_PING_TIMEOUT_SECONDS
+    return value
 
 
 def _describe_exception(exc: BaseException, *, depth: int = 0) -> str:
@@ -174,10 +218,24 @@ class HttpMcpSession:
 
 
 class SseMcpSession:
-    def __init__(self, read_stream: Any, write_stream: Any, read_timeout_seconds: float | None = None) -> None:
+    def __init__(
+        self,
+        read_stream: Any,
+        write_stream: Any,
+        read_timeout_seconds: float | None = None,
+        ping_timeout_seconds: float | None = _UNSET_TIMEOUT,  # type: ignore[assignment]
+    ) -> None:
         self._read_stream = read_stream
         self._write_stream = write_stream
         self._read_timeout_seconds = read_timeout_seconds
+        # A ping is a liveness probe, so by default it uses a short, dedicated
+        # timeout instead of the (much larger) data `read_timeout_seconds`.
+        # Callers that explicitly pass a value -- including None -- keep it.
+        self._ping_timeout_seconds = (
+            get_sse_ping_timeout_seconds()
+            if ping_timeout_seconds is _UNSET_TIMEOUT
+            else ping_timeout_seconds
+        )
         self._pending_responses: dict[int, asyncio.Future[Any]] = {}
         self._request_id = 1
         self._message_task: asyncio.Task[None] | None = None
@@ -187,10 +245,37 @@ class SseMcpSession:
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        if self._message_task is not None:
-            self._message_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._message_task
+        # Fail every in-flight request so no caller is left awaiting a reply
+        # that can never arrive now the stream is closing. Without this, a
+        # teardown triggered by one request (e.g. a ping timeout) could leave
+        # unrelated in-flight calls hanging until their own timeout.
+        for future in list(self._pending_responses.values()):
+            if not future.done():
+                future.cancel()
+        self._pending_responses.clear()
+
+        task = self._message_task
+        self._message_task = None
+        if task is None:
+            return
+
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            try:
+                await task
+            except Exception as exc:
+                # CRITICAL: this runs while an existing exception (e.g. the
+                # TimeoutError from a failed ping) is already propagating out
+                # of the `async with` body. Raising here would REPLACE that
+                # exception, which previously surfaced as the misleading
+                #   ExceptionGroup('unhandled errors in a TaskGroup',
+                #                   [InvalidStateError('invalid state')])
+                # and completely hid the real cause. Log it and let the
+                # original exception continue unwinding instead.
+                logger.debug(
+                    f"SSE message loop exited with {_describe_exception(exc)} "
+                    "during session teardown"
+                )
 
     async def _message_loop(self) -> None:
         while True:
@@ -204,17 +289,46 @@ class SseMcpSession:
                 continue
 
             if isinstance(root, types.JSONRPCResponse):
-                request_id = getattr(root, "id", None)
-                if request_id in self._pending_responses:
-                    self._pending_responses.pop(request_id).set_result(root)
+                self._resolve_future(
+                    getattr(root, "id", None),
+                    result=root,
+                )
             elif isinstance(root, types.JSONRPCError):
-                request_id = getattr(root, "id", None)
-                if request_id in self._pending_responses:
-                    self._pending_responses.pop(request_id).set_exception(McpError(root.error))
+                self._resolve_future(
+                    getattr(root, "id", None),
+                    exception=McpError(root.error),
+                )
             elif isinstance(root, types.JSONRPCNotification):
                 logger.debug(f"received notification from SSE server: {root}")
             elif isinstance(root, types.JSONRPCRequest):
                 logger.debug(f"received request from SSE server: {root}")
+
+    def _resolve_future(
+        self,
+        request_id: Any,
+        *,
+        result: Any = None,
+        exception: BaseException | None = None,
+    ) -> None:
+        """Settle the future for ``request_id`` if it is still pending.
+
+        ``asyncio.wait_for`` CANCELS the awaited future the instant it times
+        out, while the `finally` that drops the map entry only runs on the next
+        event-loop tick. A reply arriving in that window previously hit an
+        unconditional ``set_result()`` on an already-cancelled future, raising
+        ``asyncio.InvalidStateError('invalid state')`` INSIDE the message-loop
+        task. That killed the loop and its exception later masked the real
+        timeout during `sse_client`'s TaskGroup teardown. Treating an
+        already-settled future as a normal "too late, ignore it" case removes
+        the race entirely.
+        """
+        future = self._pending_responses.pop(request_id, None)
+        if future is None or future.done():
+            return
+        if exception is not None:
+            future.set_exception(exception)
+        else:
+            future.set_result(result)
 
     async def initialize(self) -> Any:
         response = await self._send_request(
@@ -233,7 +347,12 @@ class SseMcpSession:
         return response
 
     async def send_ping(self) -> Any:
-        return await self._send_request("ping", None, result_type=types.EmptyResult)
+        return await self._send_request(
+            "ping",
+            None,
+            result_type=types.EmptyResult,
+            timeout_seconds=self._ping_timeout_seconds,
+        )
 
     async def list_tools(self) -> Any:
         return await self._send_request("tools/list", None, result_type=types.ListToolsResult)
@@ -245,7 +364,13 @@ class SseMcpSession:
             result_type=types.CallToolResult,
         )
 
-    async def _send_request(self, method: str, params: Any, result_type: Any) -> Any:
+    async def _send_request(
+        self,
+        method: str,
+        params: Any,
+        result_type: Any,
+        timeout_seconds: float | None = _UNSET_TIMEOUT,  # type: ignore[assignment]
+    ) -> Any:
         request_id = self._request_id
         self._request_id += 1
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
@@ -261,8 +386,14 @@ class SseMcpSession:
         await self._write_stream.send(types.JSONRPCMessage(types.JSONRPCRequest(**payload)))
 
         try:
-            timeout_seconds = self._read_timeout_seconds
-            timeout = None if timeout_seconds is None else float(timeout_seconds)
+            # An explicit per-call timeout wins; otherwise fall back to the
+            # session-wide data timeout (None means "wait indefinitely").
+            effective_timeout = (
+                self._read_timeout_seconds
+                if timeout_seconds is _UNSET_TIMEOUT
+                else timeout_seconds
+            )
+            timeout = None if effective_timeout is None else float(effective_timeout)
             if timeout is None:
                 response = await future
             else:
@@ -298,7 +429,10 @@ class SseClient(GenericMcpClient):
 
     async def _maintain_session(self) -> None:
         async with sse_client(self.config.url) as client:
-            async with SseMcpSession(*client, read_timeout_seconds=self.config.requestTimeout / 1000.0 if self.config.requestTimeout else None) as session:
+            async with SseMcpSession(
+                *client,
+                read_timeout_seconds=self.config.requestTimeout / 1000.0 if self.config.requestTimeout else None,
+            ) as session:
                 await session.initialize()
                 logger.debug(f"finished initialise session for {self.name}")
                 self.session = session
@@ -306,10 +440,40 @@ class SseClient(GenericMcpClient):
                 try:
                     while True:
                         await asyncio.sleep(10)
+
+                        # Never ping while a tool call is in flight: an
+                        # in-flight call is itself proof the session is alive,
+                        # and a ping queued behind a long search would
+                        # otherwise "time out" and tear down a healthy server
+                        # mid-workflow. This was the actual cause of the
+                        # spurious `ping failed for google-search` resets.
+                        if not self.should_send_ping():
+                            if config.logging.log_server_pings:
+                                logger.debug(
+                                    f"skipping ping for {self.name}: "
+                                    f"{self._in_flight_calls} tool call(s) in flight"
+                                )
+                            continue
+
                         if config.logging.log_server_pings:
                             logger.debug(f"pinging session for {self.name}")
 
-                        await session.send_ping()
+                        try:
+                            await session.send_ping()
+                        except (TimeoutError, asyncio.TimeoutError) as ping_exc:
+                            # One lost ping is not proof of death -- a busy or
+                            # briefly-bliping remote server can miss a single
+                            # probe. Confirm with a second one before tearing
+                            # the session down, so a transient blip does not
+                            # reset every subsequent tool call.
+                            logger.warning(
+                                f"ping timed out for {self.name}: "
+                                f"{_describe_exception(ping_exc)}; confirming before reset"
+                            )
+                            await asyncio.sleep(1)
+                            if not self.should_send_ping():
+                                continue
+                            await session.send_ping()
 
                 except Exception as exc:
                     # Include the exception *type* and a flattened view of any
@@ -345,12 +509,34 @@ class HttpClient(GenericMcpClient):
         try:
             while True:
                 await asyncio.sleep(10)
+
+                # Same rationale as the SSE client: an in-flight tool call
+                # already proves the server is reachable, and pinging during it
+                # can queue behind the call and falsely report a dead session.
+                if not self.should_send_ping():
+                    if config.logging.log_server_pings:
+                        logger.debug(
+                            f"skipping ping for {self.name}: "
+                            f"{self._in_flight_calls} tool call(s) in flight"
+                        )
+                    continue
+
                 if config.logging.log_server_pings:
                     logger.debug(f"pinging session for {self.name}")
 
-                await session.send_ping()
+                try:
+                    await session.send_ping()
+                except (TimeoutError, asyncio.TimeoutError) as ping_exc:
+                    logger.warning(
+                        f"ping timed out for {self.name}: "
+                        f"{_describe_exception(ping_exc)}; confirming before reset"
+                    )
+                    await asyncio.sleep(1)
+                    if not self.should_send_ping():
+                        continue
+                    await session.send_ping()
         except Exception as exc:
-            logger.error(f"ping failed for {self.name}: {exc}")
+            logger.error(f"ping failed for {self.name}: {_describe_exception(exc)}")
             self.session = None
             raise
 

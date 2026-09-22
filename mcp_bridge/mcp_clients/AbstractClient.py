@@ -121,8 +121,31 @@ class GenericMcpClient(ABC):
         self._started = False
         self._maintainer_task = None
         self._offline = False
+        # Number of tool calls currently executing on this client's session.
+        # Used to suppress liveness pings while real work is in flight: a ping
+        # queued behind a long-running tool call is not evidence that the
+        # server is dead, and treating it as such tore down healthy sessions.
+        self._in_flight_calls = 0
 
         logger.debug(f"initializing client class for {name}")
+
+    @property
+    def has_in_flight_calls(self) -> bool:
+        """True while at least one tool call is executing on this client.
+
+        An in-flight call is itself proof that the session is alive, so
+        keep-alive pings can be skipped for its duration.
+        """
+        return self._in_flight_calls > 0
+
+    def should_send_ping(self) -> bool:
+        """Whether a keep-alive ping is worth sending right now.
+
+        Pings are suppressed while a tool call is in flight: a ping queued
+        behind a long-running call is not evidence the server is dead, and
+        treating it as such previously tore down healthy sessions mid-workflow.
+        """
+        return not self.has_in_flight_calls
 
     def set_max_concurrent_calls(self, limit: int) -> None:
         """Set the maximum number of concurrent tool calls on this client.
@@ -281,10 +304,14 @@ class GenericMcpClient(ABC):
                             session = self.session
                         if session is None:
                             raise RuntimeError("MCP session is not ready")
-                        return await session.call_tool(
-                            name=name,
-                            arguments=normalized_arguments,
-                        )
+                        self._in_flight_calls += 1
+                        try:
+                            return await session.call_tool(
+                                name=name,
+                                arguments=normalized_arguments,
+                            )
+                        finally:
+                            self._in_flight_calls -= 1
 
             except asyncio.TimeoutError:
                 await self._reset_session(f"timeout calling tool {name}")

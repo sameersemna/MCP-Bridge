@@ -146,6 +146,31 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_UPSTREAM_CONNECT_TIMEOUT_SECONDS` | `10` | Connect timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_WRITE_TIMEOUT_SECONDS` | `10` | Write timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_POOL_TIMEOUT_SECONDS` | `10` | Connection-pool timeout for upstream LLM requests (seconds). |
+| `MCP_BRIDGE_SSE_PING_TIMEOUT_SECONDS` | `20` | Liveness-ping timeout for SSE/HTTP MCP servers (seconds). Deliberately separate from `requestTimeout`, which is a *data* timeout. See below. |
+
+### SSE/HTTP session keep-alive and liveness pings
+
+The bridge keeps an SSE (or HTTP) MCP session alive by sending a `ping` every
+10 seconds, and resets the session if the server stops responding.
+
+Two rules keep a **healthy** server from being reset mid-workflow (a real run
+tore down a healthy `google-search` session and logged a misleading
+`InvalidStateError` instead of the actual timeout):
+
+- **Pings are skipped while a tool call is in flight.** An in-flight call is
+  itself proof the server is alive; a ping merely queued behind a slow search
+  is not evidence of death. Pinging during it previously waited the full
+  request budget and then reset the session out from under the running call.
+- **Pings use a short, dedicated liveness timeout** (`MCP_BRIDGE_SSE_PING_TIMEOUT_SECONDS`,
+  default `20s`) rather than the server's `requestTimeout`. `requestTimeout` is
+  a *data* timeout — a search server may legitimately take 120s to answer a
+  `tools/call`, but a `ping` should answer almost immediately. Reusing the data
+  timeout as the ping budget gave a dead server a 2-minute grace period before
+  the bridge noticed.
+
+A single lost ping is also no longer proof of death: the bridge confirms with a
+second probe (skipping the check if a tool call has since started) before
+resetting, so a transient blip does not reset every subsequent tool call.
 
 ### Per-server tool-call timeout (`requestTimeout`)
 
@@ -330,6 +355,18 @@ Example `config.json`:
 ```
 
 Setting `MCP_BRIDGE_MAX_CONTEXT_TOKENS` explicitly always overrides the derived budget.
+
+When the budget *is* hit, the bridge first tries to **compress older,
+already-answered tool rounds** and continue, rather than immediately stopping
+and synthesizing from a stale context. Because `usage.prompt_tokens` describes
+the prompt sent at the *top* of the turn (it excludes the tool results appended
+since), the compression trigger also projects the size of the newly-appended
+messages — otherwise one large tool result could jump straight past the hard
+budget in a single step, skipping compression entirely. The tool calls the model
+just issued are still dispatched after a successful compression; the loop only
+stops (and synthesizes) when there is nothing left worth compressing. Compression
+is bounded so a conversation that cannot be reduced below the budget still ends
+the loop instead of compressing forever.
 
 ### Tool-result caching
 

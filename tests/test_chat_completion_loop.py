@@ -16,6 +16,8 @@ from mcp_bridge.openai_clients.chatCompletion import (
     _context_budget_nearly_exceeded,
     _degraded_marker_comment,
     _detect_repeated_tool_calls,
+    _estimate_appended_tokens,
+    _estimate_message_tokens,
     _extract_message_text,
     _extract_tool_calls,
     _extract_tool_message_text,
@@ -1087,6 +1089,142 @@ def test_context_budget_nearly_exceeded_false_when_well_under():
     )
 
     assert _context_budget_nearly_exceeded(response, 60000) is False
+
+
+def test_context_budget_nearly_exceeded_accounts_for_appended_tokens():
+    """Regression test for the tool-loop context-budget abort.
+
+    A real run reported:
+        finish reason: tool_calls; tool_calls=True
+        (15ms later) tool loop context budget exceeded (99224 > 96000 tokens)
+
+    ``usage.prompt_tokens`` describes the prompt sent at the TOP of the
+    iteration -- it excludes the tool results appended since. A single large
+    tool round could therefore jump from below the 70% compression threshold
+    straight past the hard budget in one step, skipping compression entirely.
+    Projecting the next prompt's size by adding the appended messages closes
+    that gap.
+    """
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            # Under the 70% threshold (42000) on its own.
+            "usage": {"prompt_tokens": 40000, "completion_tokens": 10, "total_tokens": 40010},
+        }
+    )
+
+    # Without projection this looks safe...
+    assert _context_budget_nearly_exceeded(response, 60000) is False
+    # ...but with ~25000 tokens of freshly-appended tool results it does not.
+    assert _context_budget_nearly_exceeded(response, 60000, appended_tokens=25000) is True
+
+
+def test_context_budget_nearly_exceeded_unchanged_without_appended_tokens():
+    """`appended_tokens` must default to 0 so existing callers are unaffected."""
+    response = CreateChatCompletionResponse.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test",
+            "choices": [],
+            "usage": {"prompt_tokens": 50000, "completion_tokens": 10, "total_tokens": 50010},
+        }
+    )
+
+    assert _context_budget_nearly_exceeded(response, 60000) is True
+    assert _context_budget_nearly_exceeded(response, 60000, appended_tokens=0) is True
+
+
+def test_estimate_message_tokens_scales_with_text_length():
+    short = ChatCompletionRequestMessage.model_validate({"role": "user", "content": "hi"})
+    long = ChatCompletionRequestMessage.model_validate(
+        {"role": "user", "content": "word " * 1000}
+    )
+
+    assert _estimate_message_tokens(long) > _estimate_message_tokens(short)
+    # ~4 chars per token for 5001 chars.
+    assert 1000 < _estimate_message_tokens(long) < 2000
+
+
+def test_estimate_message_tokens_handles_empty_content():
+    empty = ChatCompletionRequestMessage.model_validate({"role": "assistant", "content": ""})
+    assert _estimate_message_tokens(empty) == 0
+
+
+def test_estimate_message_tokens_handles_list_content():
+    message = ChatCompletionRequestMessage.model_validate(
+        {"role": "tool", "content": [{"type": "text", "text": "evidence " * 100}], "tool_call_id": "c1"}
+    )
+    assert _estimate_message_tokens(message) > 0
+
+
+def test_estimate_appended_tokens_only_counts_new_messages():
+    messages = [
+        ChatCompletionRequestMessage.model_validate({"role": "user", "content": "q"}),
+        ChatCompletionRequestMessage.model_validate({"role": "assistant", "content": "a"}),
+        ChatCompletionRequestMessage.model_validate(
+            {"role": "tool", "content": [{"type": "text", "text": "big result " * 500}], "tool_call_id": "c1"}
+        ),
+    ]
+
+    # Nothing new appended since index 3 -> zero.
+    assert _estimate_appended_tokens(messages, 3) == 0
+    # Only the tool message is new.
+    assert _estimate_appended_tokens(messages, 2) == _estimate_message_tokens(messages[2])
+    # Everything is new.
+    assert _estimate_appended_tokens(messages, 0) == sum(
+        _estimate_message_tokens(m) for m in messages
+    )
+
+
+def test_estimate_appended_tokens_tolerates_out_of_range_start():
+    messages = [ChatCompletionRequestMessage.model_validate({"role": "user", "content": "q"})]
+
+    assert _estimate_appended_tokens(messages, -1) == 0
+    assert _estimate_appended_tokens(messages, 99) == 0
+    assert _estimate_appended_tokens([], 0) == 0
+
+
+def test_compress_tool_context_leaves_an_unanswered_round_alone():
+    """The in-flight round has no `tool` replies yet.
+
+    The hard-budget rescue compresses history and then FALLS THROUGH to dispatch
+    the calls the model just asked for, rather than `continue`-ing past them.
+    Compression must therefore skip the newest, not-yet-answered round -- it is
+    still the assistant `tool_calls` message with zero replies, and
+    `_group_tool_rounds` correctly finds no complete round there.
+    """
+    messages = [ChatCompletionRequestMessage.model_validate({"role": "system", "content": "system"})]
+    for index in range(5):
+        messages.append(_assistant_tool_call_message([f"call_{index}"]))
+        messages.append(_tool_result_message(f"call_{index}", f"Search result {index} with useful evidence"))
+
+    # The model has just issued a NEW tool call that has not been answered yet.
+    pending_round = _assistant_tool_call_message(["call_pending"])
+    messages.append(pending_round)
+
+    compressed = _compress_tool_context(messages, keep_recent_rounds=2)
+
+    assert compressed is True
+    # The pending, unanswered assistant tool_calls message is still present and
+    # still the last message -- it was never compressed away.
+    assert messages[-1] is pending_round
+    # And no orphaned rounds were created for the older rounds that WERE
+    # compressed: every remaining assistant tool_calls message is answered.
+    for index, message in enumerate(messages[:-1]):
+        if getattr(getattr(message, "root", message), "role", None) != "assistant":
+            continue
+        expected_ids = {tc["id"] if isinstance(tc, dict) else getattr(tc, "id", None)
+                        for tc in _extract_tool_calls(message)}
+        if not expected_ids:
+            continue
+        following = messages[index + 1]
+        assert getattr(getattr(following, "root", following), "role", None) == "tool"
 
 
 def _assistant_tool_call_message(call_ids: list[str]) -> ChatCompletionRequestMessage:

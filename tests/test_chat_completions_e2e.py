@@ -787,3 +787,92 @@ def test_chat_completions_agentic_harness_403_no_fallback_raises(monkeypatch):
         assert False, "expected an HTTPException"
     except HTTPException as exc:
         assert exc.status_code == 502
+
+
+def test_hard_context_budget_compresses_and_still_dispatches_tool_calls(monkeypatch):
+    """Regression test for the exact abort seen in production:
+
+        finish reason: tool_calls; tool_calls=True
+        (15ms later) tool loop context budget exceeded (99224 > 96000 tokens);
+                    stopping tool loop and synthesizing a final answer
+
+    ``usage.prompt_tokens`` describes the prompt sent at the TOP of the turn --
+    it EXCLUDES the tool results appended since. So the hard-budget check fired
+    on a stale count and then threw away tool calls the model had just asked
+    for, ending a long research run in degraded synthesis while there was still
+    compressible history available.
+
+    Correct behavior: compress the older, already-answered rounds and CONTINUE
+    (dispatching the current round's tool calls), instead of stopping.
+    """
+    max_ctx = chat_completion_module.get_max_context_tokens("test")
+    over_budget_prompt_tokens = max_ctx + 500
+    final_round_call_id = "call_over_budget"
+
+    fake_client = FakeClient(
+        [
+            # Enough complete rounds that compression has something to compress.
+            *(
+                FakeResponse(
+                    200,
+                    _multi_tool_calls_response([(f"call_r{r}", "search", f'{{"query": "q{r}"}}')]),
+                )
+                for r in range(5)
+            ),
+            # This turn reports a prompt OVER the hard budget AND issues a tool call.
+            FakeResponse(
+                200,
+                _multi_tool_calls_response(
+                    [(final_round_call_id, "search", '{"query": "final angle"}')],
+                    prompt_tokens=over_budget_prompt_tokens,
+                ),
+            ),
+            FakeResponse(200, _stop_response("Final answer after budget rescue.")),
+        ]
+    )
+
+    dispatched: list[tuple[str, str]] = []
+
+    @asynccontextmanager
+    async def fake_get_client(request=None):
+        yield fake_client
+
+    async def fake_call_tools(tool_calls, **kwargs):
+        dispatched.extend(tool_calls)
+        return [
+            CallToolResult(
+                content=[TextContent(type="text", text=f"result for {name} {arguments}")],
+                isError=False,
+            )
+            for name, arguments in tool_calls
+        ]
+
+    monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(chat_completion_module, "call_tools", fake_call_tools)
+
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "research a lot"}],
+            "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+        }
+    )
+
+    response = asyncio.run(chat_completion_module.chat_completions(request, None))
+
+    # The model's own final answer won -- NOT a degraded evidence dump.
+    assert response.choices[0].message.content == "Final answer after budget rescue."
+
+    # The over-budget round's tool call was actually DISPATCHED rather than
+    # discarded (this is the core regression: it used to be dropped).
+    assert any(
+        arguments and "final angle" in arguments for _name, arguments in dispatched
+    ), f"over-budget tool call was not dispatched; dispatched={dispatched}"
+
+    # Compression genuinely ran (so this is not passing vacuously).
+    assert any(
+        "[Earlier tool results summarized to save context]" in str(m.get("content"))
+        for _url, kwargs in fake_client.posts
+        for m in kwargs["json"]["messages"]
+        if m.get("role") == "user"
+    )
