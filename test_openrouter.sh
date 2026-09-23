@@ -27,6 +27,11 @@ C_CYAN=$'\033[36m'
 MIN_CONTEXT_LENGTH="${MIN_CONTEXT_LENGTH:-196608}"
 # MIN_CONTEXT_LENGTH="${MIN_CONTEXT_LENGTH:-262145}"
 
+# Hard wall-clock cap (seconds) for each model request, passed through to test.sh.
+# One hour: a stalled bridge/provider must never hang the harness indefinitely
+# (observed: 2h28m58s on nex-agi/nex-n2.5-pro:free with zero bytes received).
+TIMEOUT="${TIMEOUT:-3600}"
+
 models=()
 # models=(
 #     "poolside/laguna-xs-2.1:free"
@@ -90,8 +95,8 @@ for model in "${models[@]}"; do
     # echo "---------------------------------------------"
     # continue
 
-    echo "Running test.sh with model: $model"
-    MODEL="$model" bash test.sh
+    echo "Running test.sh with model: $model (timeout: ${TIMEOUT}s)"
+    MODEL="$model" TIMEOUT="$TIMEOUT" bash test.sh
     sleep 2
     echo ''
     echo "---------------------------------------------"

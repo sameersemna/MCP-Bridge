@@ -14,7 +14,10 @@ C_CYAN=$'\033[36m'
 
 PORT="${PORT:-11410}"
 MODEL="${MODEL:-deepseek-v4-flash:cloud}"
-TIMEOUT="${TIMEOUT:-600}"
+# Hard wall-clock ceiling (seconds) for the whole request. Defaults to one hour:
+# without it a stalled bridge/provider left the client hanging indefinitely
+# (observed: 2h28m58s with zero bytes received). Callers may override.
+TIMEOUT="${TIMEOUT:-3600}"
 BASE_URL="http://localhost:${PORT}"
 OLLAMA_URL="http://localhost:11434"
 
@@ -100,11 +103,34 @@ dataPost=$(jq -n --arg model "$MODEL" --arg content "$content" --arg systemConte
   "temperature": 0.1
 }')
 
-echo "${C_CYAN}CURL request to ${BASE_URL}/v1/chat/completions using model ${MODEL}...${C_RESET}"
-# curl --fail --silent --show-error --max-time "$TIMEOUT" --connect-timeout 5 \
-curl -X POST "${BASE_URL}/v1/chat/completions" \
+echo "${C_CYAN}CURL request to ${BASE_URL}/v1/chat/completions using model ${MODEL} (hard cap ${TIMEOUT}s)...${C_RESET}"
+# Hard cap: --max-time bounds the WHOLE request (connect + transfer), so a stalled
+# downstream can never hang the harness. `--fail` is deliberately omitted so the
+# bridge's 502/504 diagnostic body is preserved; the content check below rejects
+# any non-completion body. A timeout is treated as a graceful skip (exit 0) so the
+# per-model loop in the runner scripts continues under `set -euo pipefail`.
+# Deliberately NOT `--silent`: the progress meter (transfer totals, speed, and the
+# Total/Spent/Left timings) is written to stderr and is the at-a-glance status the
+# harness has always shown. The `-w` summary is prefixed with `%{stderr}` so the
+# timings go to stderr too -- curl writes `-w` output to stdout by default, and
+# stdout is the response body here, so an unredirected write-out would corrupt
+# response.json.
+curl_status=0
+curl --show-error --max-time "$TIMEOUT" --connect-timeout 10 \
+  -o response.json \
+  -w '%{stderr}[curl] http_code=%{http_code} time_namelookup=%{time_namelookup}s time_connect=%{time_connect}s time_starttransfer=%{time_starttransfer}s time_total=%{time_total}s size_download=%{size_download}B speed_download=%{speed_download}B/s\n' \
+  -X POST "${BASE_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -d "$dataPost" > response.json
+  -d "$dataPost" || curl_status=$?
+if (( curl_status != 0 )); then
+  echo "${C_RED}CURL request failed (exit ${curl_status}) after max ${TIMEOUT}s for model ${MODEL}.${C_RESET}" >&2
+  if (( curl_status == 28 )); then
+    echo "${C_RED}Reason: timed out (--max-time ${TIMEOUT}s exceeded).${C_RESET}" >&2
+  fi
+  echo "${C_RED}No usable completion was produced for model ${MODEL}; skipping.${C_RESET}" >&2
+  : > response.json
+  exit 0
+fi
 
 echo ''
 echo "${C_GREEN}-- Response received and saved to response.json from model ${MODEL} ------------------------------------${C_RESET}"
