@@ -495,6 +495,62 @@ def _default_for_schema(schema: Any) -> Any:
     return None
 
 
+def _numeric_floor(schema: Any) -> tuple[float, bool] | None:
+    """Return ``(bound, exclusive)`` for a schema's numeric lower bound.
+
+    Checks the numeric form of ``exclusiveMinimum`` first, then ``minimum``,
+    then descends into ``anyOf``/``oneOf``/``allOf`` branches (first floor found
+    wins, mirroring how ``_default_for_schema`` resolves combinators). Returns
+    ``None`` when the schema declares no numeric floor.
+    """
+    if not isinstance(schema, dict):
+        return None
+    exclusive = schema.get("exclusiveMinimum")
+    if isinstance(exclusive, (int, float)) and not isinstance(exclusive, bool):
+        return (float(exclusive), True)
+    minimum = schema.get("minimum")
+    if isinstance(minimum, (int, float)) and not isinstance(minimum, bool):
+        return (float(minimum), False)
+    for combinator in ("anyOf", "oneOf", "allOf"):
+        branches = schema.get(combinator)
+        if isinstance(branches, list):
+            for branch in branches:
+                floor = _numeric_floor(branch)
+                if floor is not None:
+                    return floor
+    return None
+
+
+def _below_numeric_floor(value: Any, schema: Any) -> bool:
+    """Return True if ``value`` is a number below the schema's declared floor.
+
+    Models emit ``0`` as an "unset" placeholder for *optional* numeric fields.
+    ``sequential-thinking``'s ``revisesThought``/``branchFromThought`` are both
+    optional with ``minimum: 1``, so a model that sends ``0`` for them (while
+    also sending ``isRevision: false``) gets the whole call rejected with
+    ``-32602 Input validation error: Too small: expected number to be >=1``.
+    The bridge then spends an entire extra LLM round trip feeding that error
+    back so the model can correct ``0`` to ``1``.
+
+    Dropping the key instead restores the model's evident intent -- "not
+    revising / not branching" is exactly what an absent optional field means --
+    and lets the *first* call succeed.
+
+    Only a *below-floor* value is treated as a placeholder. A value above the
+    schema's ``maximum`` is left untouched: an over-large number is more likely
+    to be real intent the server should reject explicitly than an unset marker.
+    Bools are excluded (``bool`` is an ``int`` subclass in Python) so ``False``
+    is never mistaken for ``0``.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    floor = _numeric_floor(schema)
+    if floor is None:
+        return False
+    bound, exclusive = floor
+    return value <= bound if exclusive else value < bound
+
+
 def repair_tool_arguments(tool_name: str | None, arguments: Any) -> Any:
     """Repair/coerce LLM-produced tool arguments against the tool's inputSchema.
 
@@ -505,6 +561,7 @@ def repair_tool_arguments(tool_name: str | None, arguments: Any) -> Any:
 
     * drops unknown keys when ``additionalProperties`` is ``false``
     * coerces values to the declared JSON-schema types
+    * drops optional numerics that violate the schema's floor (see below)
     * fills missing required fields with schema defaults (or per-tool defaults)
 
     Returns the (possibly unchanged) arguments dict.
@@ -534,7 +591,19 @@ def repair_tool_arguments(tool_name: str | None, arguments: Any) -> Any:
                 continue
             repaired[key] = value
             continue
-        repaired[key] = _coerce_value(value, prop_schema)
+        coerced = _coerce_value(value, prop_schema)
+        # Drop an OPTIONAL numeric placeholder that violates the schema's floor
+        # (e.g. `revisesThought: 0` where the schema says `minimum: 1`). The
+        # coercion above runs first so a string `"0"` is compared numerically.
+        # Required fields are deliberately left alone -- dropping one would just
+        # trade a "too small" error for a "missing required" one.
+        if key not in required_set and _below_numeric_floor(coerced, prop_schema):
+            logger.debug(
+                f"dropped out-of-range optional argument '{key}'={coerced!r} for "
+                f"{tool_name} (below schema minimum)"
+            )
+            continue
+        repaired[key] = coerced
 
     # Fill missing required fields.
     for key in required_set:

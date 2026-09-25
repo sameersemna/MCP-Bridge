@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sys
 from collections.abc import Mapping
@@ -137,6 +138,78 @@ def log_event(message: str, **fields: Any) -> None:
     """Emit a structured event log entry while redacting secrets."""
 
     logger.info(json.dumps(redact_sensitive_data({"message": message, **fields})))
+
+
+# Paths whose uvicorn access-log lines are suppressed. The container's
+# HEALTHCHECK (see Dockerfile) hits `/health` on every interval -- `docker ps`
+# health checks are the intended consumer, so the request itself must keep
+# working, but one access-log line per check floods the CLI log stream (and
+# drowns out the request lines that actually matter). Only the *access log* is
+# filtered: the endpoint still runs, still returns 200/500, and still drives
+# Docker's health status.
+_QUIET_ACCESS_PATHS = frozenset({"/health"})
+
+
+def _is_quiet_access_path(path: Any) -> bool:
+    """Return True if an access-log path should be suppressed.
+
+    Matches the path with any query string and trailing slash stripped, so
+    ``/health``, ``/health/`` and ``/health?verbose=1`` are all suppressed.
+    """
+    if not isinstance(path, str):
+        return False
+    trimmed = path.split("?", 1)[0].rstrip("/")
+    return trimmed in _QUIET_ACCESS_PATHS
+
+
+class _SuppressAccessLogPaths(logging.Filter):
+    """Suppress uvicorn access-log records for a set of low-value paths.
+
+    uvicorn formats its access record as
+    ``'%s - "%s %s HTTP/%s" %d'`` with
+    ``record.args = (client_addr, method, path, http_version, status_code)``,
+    so the request path is ``record.args[2]``. Filtering here (rather than
+    turning uvicorn's access log off wholesale) keeps every other request --
+    ``POST /v1/chat/completions`` above all -- fully visible.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        args = getattr(record, "args", None)
+        if isinstance(args, tuple) and len(args) >= 3:
+            return not _is_quiet_access_path(args[2])
+        # Non-tuple args (a pre-formatted message) are left untouched.
+        return True
+
+
+def build_uvicorn_log_config() -> dict[str, Any]:
+    """Return uvicorn's default logging config with the access-path filter added.
+
+    Starts from ``uvicorn.config.LOGGING_CONFIG`` so uvicorn's own formatters
+    and handlers are preserved, then attaches the filter to the ``access``
+    handler. Copied (not mutated in place) so uvicorn's module-level default is
+    never modified as a side effect.
+    """
+    from copy import deepcopy
+
+    try:
+        from uvicorn.config import LOGGING_CONFIG
+    except Exception:  # pragma: no cover - uvicorn always ships this
+        return {}
+
+    log_config = deepcopy(LOGGING_CONFIG)
+    handlers = log_config.get("handlers")
+    if not isinstance(handlers, dict):
+        return log_config
+    access_handler = handlers.get("access")
+    if isinstance(access_handler, dict):
+        filters = list(access_handler.get("filters") or [])
+        if "suppress_access_log_paths" not in filters:
+            filters.append("suppress_access_log_paths")
+        access_handler["filters"] = filters
+        log_config.setdefault("filters", {})["suppress_access_log_paths"] = {
+            "()": _SuppressAccessLogPaths,
+        }
+    return log_config
 
 
 class RequestTraceLogger:

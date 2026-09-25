@@ -76,12 +76,18 @@ def get_app() -> FastAPI:
 def run() -> None:
     import uvicorn
 
+    from mcp_bridge.logging import build_uvicorn_log_config
+
     uvicorn.run(
         "mcp_bridge.main:get_app",
         host=config.network.host,
         port=config.network.port,
         reload=False,
         factory=True,
+        # Keep uvicorn's access log, but drop the HEALTHCHECK's `/health` lines
+        # (see `build_uvicorn_log_config`). They arrive on every health interval
+        # and otherwise flood the CLI log stream.
+        log_config=build_uvicorn_log_config(),
     )
 
 if __name__ == "__main__":

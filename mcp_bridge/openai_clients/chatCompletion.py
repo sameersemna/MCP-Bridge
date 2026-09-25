@@ -320,6 +320,23 @@ def _try_recover_response_with_unknown_finish_reason(
         return None
 
 
+def _coerced_finish_reason_label(response: CreateChatCompletionResponse) -> str | None:
+    """Return the ``finish_reason`` of a finish_reason-recovered response.
+
+    ``_try_recover_response_with_unknown_finish_reason`` coerces a non-standard
+    finish_reason to ``"tool_calls"`` when the message carries tool calls, and
+    to ``"stop"`` otherwise. The recovery warnings used to hardcode "coerced to
+    'stop'", which made the log contradict the very next
+    ``chat completion finish reason: tool_calls`` line. Reporting the real
+    value here keeps the two lines consistent.
+    """
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return None
+    finish_reason = getattr(choices[0], "finish_reason", None)
+    return getattr(finish_reason, "value", finish_reason)
+
+
 # Upper bound on how long we will wait for a provider's `Retry-After` hint.
 # Free-tier providers often ask for 60s; we honor it but cap it so a single
 # request cannot stall the worker for an unreasonable time.
@@ -1298,7 +1315,8 @@ def _parse_synthesis_response(text: str) -> CreateChatCompletionResponse | None:
         if recovered is not None:
             logger.warning(
                 "synthesis returned a non-standard finish_reason (e.g. Cohere's "
-                f"'error'); coerced to 'stop' and recovered the response: {exc}"
+                f"'error'); coerced to '{_coerced_finish_reason_label(recovered)}' "
+                f"and recovered the response: {exc}"
             )
             return recovered
         return None
@@ -2162,39 +2180,98 @@ async def _handle_stub_or_stop(
     )
 
 
-def _is_transient_upstream_error(text: str) -> bool:
-    """Return True if the upstream body indicates a transient provider error.
+# Markers that indicate a transient provider error. These are matched
+# case-insensitively against an *error payload* only -- never against a
+# successful completion's assistant content (see `_is_transient_upstream_error`).
+_TRANSIENT_ERROR_MARKERS = (
+    "overloaded",
+    "unavailable",
+    "upstream provider error",
+    "provider returned error",
+    "temporarily",
+    "try again later",
+    "rate limit",
+    "too many requests",
+    "internal server error",
+    "bad gateway",
+    "service unavailable",
+    # OpenRouter/OpenAI-style timeout errors (HTTP 200 with an error body
+    # like `{"error": {"message": "A Timeout Occurred", "code": 504}}`).
+    "timeout occurred",
+    "timed out",
+    "timeout",
+    "provider_unavailable",
+    "provider unavailable",
+    "upstream timeout",
+)
 
-    Free-tier providers sometimes return HTTP 200 with an error body like
-    ``{"error": {"message": "Upstream provider error", "code": 502}}`` or a
-    5xx "overloaded"/"unavailable" message. These are transient and worth a
-    short retry rather than failing the whole run.
-    """
+
+def _contains_transient_marker(text: str) -> bool:
+    """Return True if ``text`` contains any transient-provider-error marker."""
     if not text:
         return False
     lowered = text.lower()
-    transient_markers = (
-        "overloaded",
-        "unavailable",
-        "upstream provider error",
-        "provider returned error",
-        "temporarily",
-        "try again later",
-        "rate limit",
-        "too many requests",
-        "internal server error",
-        "bad gateway",
-        "service unavailable",
-        # OpenRouter/OpenAI-style timeout errors (HTTP 200 with an error body
-        # like `{"error": {"message": "A Timeout Occurred", "code": 504}}`).
-        "timeout occurred",
-        "timed out",
-        "timeout",
-        "provider_unavailable",
-        "provider unavailable",
-        "upstream timeout",
-    )
-    return any(marker in lowered for marker in transient_markers)
+    return any(marker in lowered for marker in _TRANSIENT_ERROR_MARKERS)
+
+
+def _is_transient_upstream_error(text: str) -> bool:
+    """Return True if the upstream body is a transient provider error envelope.
+
+    Free-tier providers sometimes return HTTP 200 with an *error body* like
+    ``{"error": {"message": "Upstream provider error", "code": 502}}`` or a
+    provider-specific 5xx such as ``{"error": {"message": "A Timeout
+    Occurred", "code": 504}}``. These are transient and worth a short retry
+    rather than failing the whole run.
+
+    IMPORTANT: this must NOT match on a normal completion. The markers above are
+    ordinary English words (``timeout``, ``unavailable``, ``rate limit``, ...),
+    so a naive scan of the *whole* body misfires whenever the model simply
+    writes about them -- e.g. an answer containing "rate limiting, caching, or
+    multi-tenant architectures" was previously retried three times and then
+    discarded, turning a perfectly good response into a degraded fallback. A
+    body is therefore only treated as an error when it is an actual error
+    envelope:
+
+    * a JSON object with a truthy top-level ``error`` key -- the markers are
+      matched against that error payload only, never the assistant content; or
+    * a non-JSON body (e.g. an HTML/text gateway error page) -- no structured
+      content exists to protect, so the raw text is matched; or
+    * a JSON body that is not a usable completion (no ``choices``, or an empty
+      ``choices`` list) -- there is no answer to preserve.
+
+    A JSON object with a non-empty ``choices`` list is, by definition, a
+    completion and is never treated as a transient error.
+    """
+    if not text:
+        return False
+
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        # Not JSON: a bare HTML/text gateway error (e.g. "502 Bad Gateway" or
+        # "upstream timeout" from a proxy). There is no assistant content to
+        # protect, so match markers against the raw body.
+        return _contains_transient_marker(text)
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if error:
+            # A real error envelope. Match markers against the error payload
+            # ONLY -- never the rest of the body, which may carry (or, on a
+            # malformed response, mimic) assistant content.
+            return _contains_transient_marker(json.dumps(error))
+
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or not choices:
+            # JSON, but not a usable completion (missing/empty choices): there
+            # is no answer to preserve, so treat it as an error body.
+            return _contains_transient_marker(text)
+
+        # A JSON object with a non-empty choices list IS a completion.
+        return False
+
+    # A stray JSON array or scalar is not a chat completion either.
+    return _contains_transient_marker(text)
 
 
 def _is_agentic_harness_403(status_code: int, text: str) -> bool:
@@ -2349,7 +2426,16 @@ async def _post_chat_completion(client: Any, request: CreateChatCompletionReques
             json=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
         )
     except httpx.TransportError as e:
-        logger.warning(f"upstream request failed at the transport level; treating as a retryable error: {type(e).__name__}: {e}")
+        # Some transport errors (notably a bare ``httpx.ReadError``) carry an
+        # empty message, which would render as a dangling "ReadError: " in the
+        # log. Guard it the same way `_synthetic_transport_error_response` does
+        # and add the model being called so the line is diagnosable on its own
+        # (a read timeout vs. a reset mid-read is otherwise indistinguishable).
+        reason = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+        logger.warning(
+            "upstream request failed at the transport level; treating as a retryable error: "
+            f"{reason} (model={getattr(request, 'model', None)})"
+        )
         return _synthetic_transport_error_response(e)
 
 
@@ -2586,7 +2672,8 @@ async def chat_completions(
                 if recovered is not None:
                     logger.warning(
                         "upstream returned a non-standard finish_reason (e.g. Cohere's "
-                        f"'error'); coerced to 'stop' and recovered the response: {e}"
+                        f"'error'); coerced to '{_coerced_finish_reason_label(recovered)}' "
+                        f"and recovered the response: {e}"
                     )
                     response = recovered
                     if trace_logger is not None:

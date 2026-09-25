@@ -28,7 +28,7 @@ ENV HOME=/home/appuser \
 USER appuser
 
 EXPOSE 11410
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=120s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:11410/health', timeout=2).read()" || exit 1
 
 # Run as the unprivileged `appuser`. The `/app/logs` directory is created and
