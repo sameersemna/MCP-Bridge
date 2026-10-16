@@ -1,5 +1,22 @@
 #!/bin/bash
 set -euo pipefail
+
+API_URL="https://integrate.api.nvidia.com/v1"
+API_KEY="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"
+
+# curl $API_URL/models -H "Authorization: Bearer $API_KEY" | jq '.data[]'
+for m in $(curl -s $API_URL/models -H "Authorization: Bearer $API_KEY" | jq -r '.data[].id'); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" $API_URL/chat/completions \
+    -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+    -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}")
+  #   echo "$code  $m"
+  if [ "$code" -eq 200 ]; then
+    echo "Model $m: HTTP $code"
+  fi
+  sleep 2   # stay under the rate limit
+done
+exit 0
+
 clear
 echo "Start...."
 

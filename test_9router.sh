@@ -1,8 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-
 API_KEY="sk-94e4f8c6325c93bf-8kt2c4-ebeef45c"
-
 # curl http://zidan:20129/v1/models -H "Authorization: Bearer $API_KEY" | jq '.data[].id'
 # exit 0
 

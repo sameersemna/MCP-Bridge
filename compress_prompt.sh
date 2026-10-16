@@ -12,6 +12,7 @@ MODEL="qwen2.5:1.5b-instruct-q8_0" # Dense
 # python compress_prompt.py ./prompts/content.md --method hybrid    --level wenyan --model $MODEL  --output ./tmp/compressed.md
 
 echo "Compressing prompts using Model: $MODEL ..."
+# python compress_prompt.py ./prompts/content.md --method hybrid --output ./prompts/compressed/content.md
 python compress_prompt.py ./prompts/content.md --method hybrid --model $MODEL  --output ./prompts/compressed/content.md
 # echo "Compressing system prompt..."
 # python compress_prompt.py ./prompts/system.md --method hybrid --model $MODEL  --output ./prompts/compressed/system.md
