@@ -7,7 +7,7 @@ also switched the logger to loguru since we are vendoring it anyway
 
 """
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
@@ -97,15 +97,53 @@ class SseServerTransport:
                         }
                     )
 
-        async with anyio.create_task_group() as tg:
-            response = EventSourceResponse(
-                content=sse_stream_reader, data_sender_callable=sse_writer
-            )
-            logger.debug("Starting SSE response task")
-            tg.start_soon(response, request.scope, request.receive, request._send)
+        async def response_wrapper() -> None:
+            """Run the SSE response and close our stream ends on disconnect.
 
-            logger.debug("Yielding read and write streams")
-            yield (read_stream, write_stream)
+            Ported from upstream mcp (issue #1227). Without this, a session's
+            streams stayed open after the client went away and the server
+            handler could wait on a reader nobody would ever write to.
+            """
+            try:
+                await EventSourceResponse(
+                    content=sse_stream_reader, data_sender_callable=sse_writer
+                )(request.scope, request.receive, request._send)
+            finally:
+                with anyio.CancelScope(shield=True):
+                    for stream in (
+                        read_stream_writer,
+                        write_stream_reader,
+                        sse_stream_reader,
+                    ):
+                        with suppress(Exception):
+                            await stream.aclose()
+
+        try:
+            async with anyio.create_task_group() as tg:
+                logger.debug("Starting SSE response task")
+                tg.start_soon(response_wrapper)
+
+                logger.debug("Yielding read and write streams")
+                yield (read_stream, write_stream)
+        finally:
+            # Always drop the session, including when the task group is
+            # cancelled by server shutdown rather than by a client disconnect.
+            # Leaving it behind leaked one memory stream per SSE connection for
+            # the life of the process, and made POSTs to dead sessions look
+            # routable.
+            self._read_stream_writers.pop(session_id, None)
+            logger.debug(f"Client session disconnected {session_id}")
+            with anyio.CancelScope(shield=True):
+                # Close both directions so a blocked server handler unblocks.
+                for stream in (
+                    read_stream_writer,
+                    write_stream_reader,
+                    sse_stream_reader,
+                    read_stream,
+                    write_stream,
+                ):
+                    with suppress(Exception):
+                        await stream.aclose()
 
     async def handle_post_message(
         self, scope: Scope, receive: Receive, send: Send
