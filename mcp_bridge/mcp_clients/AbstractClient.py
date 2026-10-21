@@ -234,6 +234,21 @@ class GenericMcpClient(ABC):
             return True
         return _annotations_allow_retry(self._tool_annotations.get(tool_name, {}))
 
+    def is_cache_safe(self, tool_name: str) -> bool:
+        """Whether caching or deduplicating this tool is safe.
+
+        A tool that declares itself mutating must never be served from a
+        cache. Unannotated tools keep the legacy per-server opt-in behavior;
+        P0-05's rule is specifically about tools annotated
+        ``readOnlyHint: false`` or ``destructiveHint: true``.
+        """
+        annotations = self._tool_annotations.get(tool_name, {})
+        if annotations.get("destructiveHint") is True:
+            return False
+        if annotations.get("readOnlyHint") is False:
+            return False
+        return True
+
     @abstractmethod
     async def _maintain_session(self):
         pass

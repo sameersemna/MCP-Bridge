@@ -1498,21 +1498,47 @@ class ToolResultCache:
     """
 
     def __init__(self, *, max_entries: int = 64) -> None:
-        self._entries: list[tuple[str, str, Any]] = []
+        self._entries: list[tuple[str, str, str, str, Any]] = []
         self._max_entries = max_entries
 
-    def _find(self, tool_name: str, query: str) -> Any | None:
-        for cached_name, cached_query, result in self._entries:
-            if cached_name != tool_name:
+    def _find(
+        self,
+        server_name: str,
+        tool_name: str,
+        query: str,
+        other_arguments_key: str,
+    ) -> Any | None:
+        for cached_server, cached_tool, cached_query, cached_other, result in self._entries:
+            if cached_server != server_name or cached_tool != tool_name:
+                continue
+            # Fuzzy matching is only valid when every other argument is
+            # identical; otherwise the cached result did not answer this call.
+            if cached_other != other_arguments_key:
                 continue
             if _queries_are_near_duplicates(cached_query, query):
                 return result
         return None
 
-    def get(self, tool_name: str, query: str) -> Any | None:
-        return self._find(tool_name, query)
+    def get(
+        self,
+        tool_name: str,
+        query: str = "",
+        *,
+        server_name: str = "",
+        other_arguments: dict[str, Any] | None = None,
+    ) -> Any | None:
+        other_key = _canonical_json(other_arguments or {})
+        return self._find(server_name, tool_name, query, other_key)
 
-    def put(self, tool_name: str, query: str, result: Any) -> None:
+    def put(
+        self,
+        tool_name: str,
+        query: str = "",
+        result: Any = None,
+        *,
+        server_name: str = "",
+        other_arguments: dict[str, Any] | None = None,
+    ) -> None:
         if result is None:
             return
         # Don't cache error results (works for both objects and dicts).
@@ -1521,10 +1547,11 @@ class ToolResultCache:
                 return
         elif getattr(result, "isError", False):
             return
-        # Avoid caching the same query twice.
-        if self._find(tool_name, query) is not None:
+        other_key = _canonical_json(other_arguments or {})
+        # Avoid caching the same (server, tool, arguments) twice.
+        if self._find(server_name, tool_name, query, other_key) is not None:
             return
-        self._entries.append((tool_name, query, result))
+        self._entries.append((server_name, tool_name, query, other_key, result))
         if len(self._entries) > self._max_entries:
             self._entries.pop(0)
 
@@ -1563,9 +1590,56 @@ def get_tool_cache_enabled() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
-def _tool_cache_key(tool_name: str, query: str) -> str:
-    """Stable hash key for a (tool_name, query) pair."""
-    raw = f"{tool_name}::{_normalize_query_text(query)}"
+# Bumped whenever the key material changes. It is hashed as part of the key and
+# written into the payload, so entries from an older scheme are never served.
+_TOOL_CACHE_KEY_VERSION = 2
+
+
+def _canonical_json(value: Any) -> str:
+    """Deterministic JSON for cache keys.
+
+    Object keys are sorted and whitespace inside strings is collapsed, so two
+    equivalent calls (different key order, incidental spacing) share a key.
+    List order is preserved because it can be meaningful.
+    """
+
+    def normalize(item: Any) -> Any:
+        if isinstance(item, str):
+            return " ".join(item.split())
+        if isinstance(item, dict):
+            return {
+                str(key): normalize(val)
+                for key, val in sorted(item.items(), key=lambda pair: str(pair[0]))
+            }
+        if isinstance(item, (list, tuple)):
+            return [normalize(element) for element in item]
+        return item
+
+    return json.dumps(normalize(value), ensure_ascii=False, separators=(",", ":"))
+
+
+def _coerce_cache_arguments(arguments: Any) -> dict[str, Any]:
+    """Accept a dict of tool arguments, or a legacy bare query string."""
+    if isinstance(arguments, dict):
+        return arguments
+    if isinstance(arguments, str):
+        return {"query": arguments} if arguments else {}
+    return {}
+
+
+def _tool_cache_key(server_name: str, tool_name: str, arguments: Any) -> str:
+    """Stable v2 key covering the server, tool and every argument.
+
+    Hashing only ``query`` made calls that differed in ``max_results``,
+    ``page``, ``site`` or a date range return each other's results.
+    """
+    material = {
+        "v": _TOOL_CACHE_KEY_VERSION,
+        "server": server_name or "",
+        "tool": tool_name,
+        "arguments": _coerce_cache_arguments(arguments),
+    }
+    raw = _canonical_json(material)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -1606,15 +1680,22 @@ class PersistentToolCache:
     def _path_for(self, key: str) -> str:
         return os.path.join(self._cache_dir, f"{key}.json")
 
-    def get(self, tool_name: str, query: str) -> Any | None:
-        if not self._enabled or not query:
+    def get(
+        self, tool_name: str, arguments: Any = None, *, server_name: str = ""
+    ) -> Any | None:
+        arguments = _coerce_cache_arguments(arguments)
+        if not self._enabled or not arguments:
             return None
-        key = _tool_cache_key(tool_name, query)
+        key = _tool_cache_key(server_name, tool_name, arguments)
         path = self._path_for(key)
         try:
             with open(path, encoding="utf-8") as fh:
                 payload = json.load(fh)
         except (OSError, json.JSONDecodeError):
+            return None
+
+        if payload.get("key_version") != _TOOL_CACHE_KEY_VERSION:
+            # A v1 (or hand-written) entry is ignored rather than mis-served.
             return None
 
         cached_at = payload.get("cached_at", 0)
@@ -1631,8 +1712,16 @@ class PersistentToolCache:
         except Exception:
             return None
 
-    def put(self, tool_name: str, query: str, result: Any) -> None:
-        if not self._enabled or not query or result is None:
+    def put(
+        self,
+        tool_name: str,
+        arguments: Any = None,
+        result: Any = None,
+        *,
+        server_name: str = "",
+    ) -> None:
+        arguments = _coerce_cache_arguments(arguments)
+        if not self._enabled or not arguments or result is None:
             return
         # Don't cache error results.
         if isinstance(result, dict):
@@ -1651,11 +1740,13 @@ class PersistentToolCache:
 
         payload = {
             "tool_name": tool_name,
-            "query": query,
+            "server": server_name,
+            "arguments": arguments,
+            "key_version": _TOOL_CACHE_KEY_VERSION,
             "cached_at": time.time(),
             "result": result_dict,
         }
-        key = _tool_cache_key(tool_name, query)
+        key = _tool_cache_key(server_name, tool_name, arguments)
         path = self._path_for(key)
         try:
             # Atomic write: write to a temp file then rename, so concurrent
@@ -1715,14 +1806,17 @@ class RedisToolCache:
                 logger.warning(f"redis unavailable ({exc}); Redis tool cache disabled")
                 self._client = None
 
-    def _key(self, tool_name: str, query: str) -> str:
-        return f"{self._prefix}:{_tool_cache_key(tool_name, query)}"
+    def _key(self, server_name: str, tool_name: str, arguments: Any) -> str:
+        return f"{self._prefix}:{_tool_cache_key(server_name, tool_name, arguments)}"
 
-    def get(self, tool_name: str, query: str) -> Any | None:
-        if not self._enabled or not query or self._client is None:
+    def get(
+        self, tool_name: str, arguments: Any = None, *, server_name: str = ""
+    ) -> Any | None:
+        arguments = _coerce_cache_arguments(arguments)
+        if not self._enabled or not arguments or self._client is None:
             return None
         try:
-            raw = self._client.get(self._key(tool_name, query))
+            raw = self._client.get(self._key(server_name, tool_name, arguments))
         except Exception as exc:
             logger.debug(f"redis cache read failed: {exc}")
             return None
@@ -1732,13 +1826,23 @@ class RedisToolCache:
             payload = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             return None
+        if payload.get("key_version") != _TOOL_CACHE_KEY_VERSION:
+            return None
         try:
             return CallToolResult.model_validate(payload.get("result"))
         except Exception:
             return None
 
-    def put(self, tool_name: str, query: str, result: Any) -> None:
-        if not self._enabled or not query or result is None or self._client is None:
+    def put(
+        self,
+        tool_name: str,
+        arguments: Any = None,
+        result: Any = None,
+        *,
+        server_name: str = "",
+    ) -> None:
+        arguments = _coerce_cache_arguments(arguments)
+        if not self._enabled or not arguments or result is None or self._client is None:
             return
         # Don't cache error results.
         if isinstance(result, dict):
@@ -1757,12 +1861,18 @@ class RedisToolCache:
 
         payload = {
             "tool_name": tool_name,
-            "query": query,
+            "server": server_name,
+            "arguments": arguments,
+            "key_version": _TOOL_CACHE_KEY_VERSION,
             "cached_at": time.time(),
             "result": result_dict,
         }
         try:
-            self._client.set(self._key(tool_name, query), json.dumps(payload, ensure_ascii=False), ex=self._ttl_seconds)
+            self._client.set(
+                self._key(server_name, tool_name, arguments),
+                json.dumps(payload, ensure_ascii=False),
+                ex=self._ttl_seconds,
+            )
         except Exception as exc:
             logger.debug(f"redis cache write failed: {exc}")
 
@@ -1984,6 +2094,26 @@ async def call_tool(
         return result
 
 
+def _tool_cache_safe(tool_name: str, server_name: str) -> bool:
+    """Whether the owning client permits caching this tool.
+
+    Without a server map we cannot know the owning client, so legacy direct
+    callers keep the previous behavior (their ``cache_enabled`` predicate is
+    the only gate). With a map, a tool that declares itself mutating is never
+    cached or deduplicated, even on a server opted into caching.
+    """
+    if not server_name:
+        return True
+    client = ClientManager.clients.get(server_name)
+    checker = getattr(client, "is_cache_safe", None)
+    if not callable(checker):
+        return True
+    try:
+        return bool(checker(tool_name))
+    except Exception:
+        return False
+
+
 async def call_tools(
     tool_calls: list[tuple[str, str]], timeout: int | None = None,
     trace_logger: RequestTraceLogger | None = None,
@@ -2027,32 +2157,49 @@ async def call_tools(
     # same future and reuse its result. This only applies to cacheable tools
     # with a query argument, so it adds zero overhead for non-cached tools and
     # never dedups stateful tools (memory, sequential-thinking, etc.).
-    in_flight: dict[tuple[str, str], asyncio.Future[Any]] = {}
+    in_flight: dict[tuple[str, str, str], asyncio.Future[Any]] = {}
 
     async def _run(call: tuple[str, str]) -> Any:
         name, payload = call
-        query = _extract_query_argument(payload)
-        cacheable = _should_cache(name)
+        parsed_arguments = _parse_lenient_json(payload)
+        if not isinstance(parsed_arguments, dict):
+            parsed_arguments = {}
+        raw_query = parsed_arguments.get("query")
+        query = raw_query.strip() if isinstance(raw_query, str) else ""
+        other_arguments = {
+            key: value for key, value in parsed_arguments.items() if key != "query"
+        }
+        server_name = (tool_server_map or {}).get(name, "")
+        # Cache only when the server opted in AND the owning client does not
+        # declare the tool mutating. Without a server map, keep the previous
+        # cache_enabled-only behavior for legacy direct callers.
+        cacheable = _should_cache(name) and _tool_cache_safe(name, server_name)
+        cacheable = cacheable and bool(parsed_arguments)
+        arguments_key = _canonical_json(parsed_arguments)
 
         # 1. In-memory fuzzy cache (near-duplicate queries within this request).
-        if cacheable and result_cache is not None and query:
-            cached = result_cache.get(name, query)
+        if cacheable and result_cache is not None:
+            cached = result_cache.get(
+                name,
+                query,
+                server_name=server_name,
+                other_arguments=other_arguments,
+            )
             if cached is not None:
                 logger.debug(f"tool call served from in-memory cache: name={name}; query={query[:80]}")
                 return cached
 
-        # 2. Persistent on-disk cache (exact-match queries across requests).
-        if cacheable and persistent_cache is not None and query:
-            cached = persistent_cache.get(name, query)
+        # 2. Persistent cache (exact match over every argument).
+        if cacheable and persistent_cache is not None:
+            cached = persistent_cache.get(name, parsed_arguments, server_name=server_name)
             if cached is not None:
                 logger.debug(f"tool call served from persistent cache: name={name}; query={query[:80]}")
                 return cached
 
-        # 3. In-flight dedup: if an identical (tool, query) is already being
-        #    fetched concurrently in this batch, await that fetch instead of
-        #    issuing a duplicate upstream call.
-        if cacheable and query:
-            key = (name, query)
+        # 3. In-flight dedup: only for cacheable tools, keyed by every argument
+        #    so calls that differ in max_results/page/etc. are not collapsed.
+        if cacheable:
+            key = (server_name, name, arguments_key)
             existing = in_flight.get(key)
             if existing is not None:
                 logger.debug(f"tool call deduplicated in-flight: name={name}; query={query[:80]}")
@@ -2073,8 +2220,8 @@ async def call_tools(
                 result = await call_tool(name, payload, timeout)
         except BaseException as exc:
             # Resolve the future so any waiters don't hang, then re-raise.
-            if cacheable and query:
-                key = (name, query)
+            if cacheable:
+                key = (server_name, name, arguments_key)
                 if key in in_flight:
                     in_flight.pop(key, None)
                     if not future.done():
@@ -2095,8 +2242,9 @@ async def call_tools(
         # Resolution routes `expand_link` to the same server that produced the
         # token (via the tool->server map).
         if result is not None:
-            server_name = (tool_server_map or {}).get(name)
-            result = await _unredirect_ref_tool_result(result, server_name)
+            # ``server_name`` was computed above (defaulting to ""); do not
+            # overwrite it here, because the cache key is written later.
+            result = await _unredirect_ref_tool_result(result, server_name or None)
 
         # A result that STILL carries an unresolved Google redirect wrapper
         # (e.g. the goto token is session-bound and Google returns HTTP 400) is
@@ -2110,17 +2258,25 @@ async def call_tools(
         # NOT cached, so bad links never enter the cache.
         cacheable_result = cacheable_result and not _result_has_unresolved_ref(result)
 
-        if cacheable and query:
-            key = (name, query)
+        if cacheable:
+            key = (server_name, name, arguments_key)
             if key in in_flight:
                 in_flight.pop(key, None)
                 if not future.done():
                     future.set_result(result)
             if cacheable_result:
                 if result_cache is not None:
-                    result_cache.put(name, query, result)
+                    result_cache.put(
+                        name,
+                        query,
+                        result,
+                        server_name=server_name,
+                        other_arguments=other_arguments,
+                    )
                 if persistent_cache is not None:
-                    persistent_cache.put(name, query, result)
+                    persistent_cache.put(
+                        name, parsed_arguments, result, server_name=server_name
+                    )
             else:
                 logger.debug(
                     f"not caching tool result with unresolved google redirect or ref token: "

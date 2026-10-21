@@ -1828,7 +1828,7 @@ def test_call_tools_resolves_ref_tokens_and_caches(monkeypatch: pytest.MonkeyPat
         tool_server_map={"search": "ydc-server"},
     ))
 
-    cached = cache.get("search", query)
+    cached = cache.get("search", query, server_name="ydc-server")
     assert cached is not None
     text = cached["content"][0]["text"]
     assert "https://www.facebook.com/permalink.php?id=123" in text
@@ -1864,4 +1864,4 @@ def test_call_tools_does_not_cache_unresolved_ref(monkeypatch: pytest.MonkeyPatc
     ))
 
     assert len(cache) == 0
-    assert cache.get("search", query) is None
+    assert cache.get("search", query, server_name="ydc-server") is None

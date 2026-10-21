@@ -346,10 +346,11 @@ A value of `1` (the default) preserves the historical serialized behavior, so
 this is fully opt-in and backward compatible. Stateful tools (e.g. `memory`,
 `sequential-thinking`) are best left at the default of `1`.
 
-**In-flight dedup:** when two concurrent tool calls in the same batch are the
-exact same `(tool, query)` and the tool is cacheable, the bridge collapses them
-into a single upstream fetch and shares the result — so parallel search calls
-don't duplicate identical web requests.
+**In-flight dedup:** when two concurrent tool calls in the same batch have the
+same server, tool and **all arguments**, and the tool is cacheable and not
+declared mutating, the bridge collapses them into a single upstream fetch and
+shares the result — so parallel search calls don't duplicate identical web
+requests. Calls that differ in any argument are never collapsed.
 
 **Upstream retry behavior:** when the inference provider returns a transient
 error (5xx, HTTP 429 rate-limit, or HTTP 200 with an "overloaded"/"rate limit"
@@ -401,7 +402,7 @@ the loop instead of compressing forever.
 
 A model doing research often re-issues near-identical search queries (e.g. appending one keyword at a time: `"بدعة" "فتوى" ...` → `... "الكفار"` → `... "تشبه"`). Instead of blocking these (which would prevent legitimate multi-angle research), the bridge **caches tool results per request**. When a near-duplicate query is issued, the previously fetched result is returned instantly from the cache instead of re-fetching from the web — so the model can keep exploring from different angles without burning 30+ minutes on repeated web fetches.
 
-- Two queries are "near-duplicates" when they share ≥4 terms and ≥80% of the smaller query's terms.
+- Two queries are "near-duplicates" when they share ≥4 terms and ≥80% of the smaller query's terms **and every non-query argument is identical**. A different `max_results`, `site` or date range is a miss.
 - Only successful (non-error) results are cached.
 - The cache is per-request (in-memory) and bounded (64 entries), so it adds no cross-request staleness or unbounded memory.
 
@@ -409,9 +410,9 @@ A model doing research often re-issues near-identical search queries (e.g. appen
 
 In addition to the in-memory cache, the bridge keeps a **persistent on-disk cache** of tool results so repeat queries across requests (and across process restarts) are served from disk instead of re-fetching from the web — the biggest latency source. This also means that if a request fails halfway, the next attempt reuses the already-fetched results.
 
-- Stored as one small JSON file per exact query (SHA-256 key) in a cache directory.
+- Stored as one small JSON file per exact call — SHA-256 over the **server, tool and every argument**, with a `v2` key version — in a cache directory.
 - **TTL** (default 48h) expires stale entries so search results don't go stale.
-- Exact-match keys mean a lookup is a single file read — no RAM bloat, no scanning.
+- Exact-match keys mean a lookup is a single file read — no RAM bloat, no scanning. Pre-`v2` entries are ignored rather than mis-served.
 - Atomic writes (temp file + rename) keep concurrent requests safe.
 
 **Per-server opt-in (recommended):** caching is **disabled by default** for all
@@ -433,6 +434,11 @@ server's entry in `config.json`:
 Only tools owned by a server with `"cached": true` are read from / written to
 the caches. This avoids caching stateful tools (e.g. `memory`,
 `sequential-thinking`) or cheap tools that don't benefit from caching.
+
+**Mutating tools are never cached.** Even on an opted-in server, a tool that
+declares `readOnlyHint: false` or `destructiveHint: true` in its MCP annotations
+is not read from or written to either cache, and is not deduplicated. This is
+the same annotation source used by the retry policy above.
 
 | Variable | Default | Description |
 | --- | --- | --- |
