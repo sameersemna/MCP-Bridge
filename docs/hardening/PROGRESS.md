@@ -19,7 +19,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | ID | Title | Status (todo/in-progress/done/deferred/blocked) | Commit | Notes |
 |----|-------|------|--------|-------|
 | P0-01 | Secrets in repo | done | 5c29ad6 | 4 values replaced with `${ENV_VAR}`; scanner + pytest + pre-commit + CI job. History not rewritten (D1). **Rotate the exposed keys.** |
-| P0-02 | Shared upstream pool closed per request | todo | | |
+| P0-02 | Shared upstream pool closed per request | done | 6b54606 | Proxy transport with no-op `aclose`; `close_shared_transport()` called from lifespan. 4 new tests. |
 | P0-03 | No graceful shutdown | todo | | |
 | P0-04 | `[design]` Retries not idempotency-aware | todo | | |
 | P0-05 | `[design]` Tool-result caches key on query only | todo | | |
@@ -56,3 +56,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 12:35 User decisions D1–D4 recorded (see above).
 - 2026-10-21 12:52 P0-01 done (5c29ad6). Scanner detected the 4 real pre-fix values at `HEAD` (non-vacuity proven); working tree scans clean; gate 376 passed / ruff 3 / mypy 72.
 - **Action for operator:** rotate the Context7 and Tavily keys that were committed (they remain in git history).
+- 2026-10-21 13:03 P0-02 done (6b54606). Confirmed in httpx 0.28.1 source that `AsyncClient.aclose()` closes the shared transport (2 closes across 2 requests before the fix). Gate 380 passed / ruff 3 / mypy 72.
