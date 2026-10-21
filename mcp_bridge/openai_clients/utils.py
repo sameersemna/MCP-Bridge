@@ -176,9 +176,24 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
     tool_server_map: dict[str, str] = {}
 
     for entry in ClientManager.registry.all():
-        _cache_tool_schema(entry.name, getattr(entry.tool, "inputSchema", None))
-        tool_server_map[entry.name] = entry.server
-        request.tools.append(mcp2openai(entry.tool))
+        exposed = entry.exposed or entry.name
+        _cache_tool_schema(exposed, getattr(entry.tool, "inputSchema", None))
+        tool_server_map[exposed] = entry.server
+        converted = mcp2openai(entry.tool)
+        try:
+            converted.function.name = exposed
+        except Exception:
+            try:
+                converted = converted.model_copy(
+                    update={
+                        "function": converted.function.model_copy(
+                            update={"name": exposed}
+                        )
+                    }
+                )
+            except Exception:
+                pass
+        request.tools.append(converted)
 
     # Attach the tool->server map to the request for cache gating downstream.
     try:

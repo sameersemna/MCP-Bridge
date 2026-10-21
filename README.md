@@ -136,6 +136,19 @@ JSON object. Any failure aborts startup with a clear error unless
 `MCP_BRIDGE__CONFIG__HTTP_OPTIONAL=true`, which logs a warning and continues
 without that config source.
 
+### Tool namespacing
+
+`tool_namespacing` controls the names exposed to clients:
+
+- `on_collision` (default) prefixes `server__tool` only when two servers expose
+  the same tool name;
+- `always` prefixes every tool with its server;
+- `none` keeps plain names.
+
+Every form is sanitized to `^[a-zA-Z0-9_-]{1,64}$` (the OpenAI function-name
+rule), with a stable 8-character hash suffix when a name must be truncated.
+Dispatch maps the exposed name back to the canonical tool on the owning server.
+
 ### Tool-loop environment variables
 
 The tool-calling loop can be tuned with the following environment variables:

@@ -309,6 +309,16 @@ class Settings(BaseSettings):
         ),
     )
 
+    tool_namespacing: Literal["none", "on_collision", "always"] = Field(
+        "on_collision",
+        description=(
+            "How MCP tool names are exposed to clients. 'always' prefixes every "
+            "tool with its server; 'on_collision' does so only when two servers "
+            "expose the same tool name; 'none' keeps plain names. Every form is "
+            "sanitized to ^[a-zA-Z0-9_-]{1,64}$."
+        ),
+    )
+
     sampling: Sampling = Field(default_factory=Sampling, description="sampling config")
 
     logging: Logging = Field(default_factory=Logging, description="logging config")

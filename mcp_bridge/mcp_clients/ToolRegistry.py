@@ -9,19 +9,58 @@ resolved in config order so a name collision has a stable winner.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
+import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from loguru import logger
 
 DEFAULT_TOOL_REGISTRY_TTL_SECONDS = 300.0
+DEFAULT_TOOL_NAMESPACING = "on_collision"
+_MAX_OPENAI_NAME_LENGTH = 64
+_INVALID_NAME_CHARS = re.compile(r"[^A-Za-z0-9_-]")
 
 
 def normalize_tool_name(tool: str) -> str:
     """Normalize separators/case the same way tool resolution always has."""
     return str(tool).strip().lower().replace("-", "_")
+
+
+def sanitize_tool_name(name: str) -> str:
+    """Make a name valid for an OpenAI function (``^[A-Za-z0-9_-]{1,64}$``)."""
+    sanitized = _INVALID_NAME_CHARS.sub("_", str(name)).strip("_")
+    return sanitized or "tool"
+
+
+def _truncate_with_hash(name: str) -> str:
+    """Truncate to 64 chars with a stable 8-char suffix so it stays unique."""
+    if len(name) <= _MAX_OPENAI_NAME_LENGTH:
+        return name
+    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+    return f"{name[:_MAX_OPENAI_NAME_LENGTH - 9]}_{digest}"
+
+
+def make_exposed_name(server: str, tool: str, *, namespace: bool) -> str:
+    """Return the model-facing name for a tool."""
+    base = (
+        f"{sanitize_tool_name(server)}__{sanitize_tool_name(tool)}"
+        if namespace
+        else sanitize_tool_name(tool)
+    )
+    return _truncate_with_hash(base)
+
+
+def _configured_namespacing() -> str:
+    try:
+        from mcp_bridge.config import config
+
+        value = getattr(config, "tool_namespacing", DEFAULT_TOOL_NAMESPACING)
+        return value or DEFAULT_TOOL_NAMESPACING
+    except Exception:
+        return DEFAULT_TOOL_NAMESPACING
 
 
 def _ttl_seconds() -> float:
@@ -45,6 +84,8 @@ class RegisteredTool:
     name: str
     tool: Any
     annotations: dict[str, Any] = field(default_factory=dict)
+    # Model-facing name (sanitized/truncated, optionally server-prefixed).
+    exposed: str = ""
 
     @property
     def schema(self) -> Any:
@@ -52,11 +93,15 @@ class RegisteredTool:
 
 
 class ToolRegistry:
-    def __init__(self, ttl_seconds: float | None = None) -> None:
+    def __init__(
+        self, ttl_seconds: float | None = None, namespacing: str | None = None
+    ) -> None:
         self._ttl_seconds = (
             ttl_seconds if ttl_seconds is not None else _ttl_seconds()
         )
+        self._namespacing = namespacing or _configured_namespacing()
         self._entries: dict[str, RegisteredTool] = {}
+        self._exposed: dict[str, RegisteredTool] = {}
         self._order: list[RegisteredTool] = []
         self._server_entries: dict[str, list[RegisteredTool]] = {}
         self._server_order: list[str] = []
@@ -112,31 +157,52 @@ class ToolRegistry:
         self._refreshed_at = time.monotonic()
 
     def _rebuild(self) -> None:
-        mapping: dict[str, RegisteredTool] = {}
-        order: list[RegisteredTool] = []
+        ordered: list[RegisteredTool] = []
         for server in self._server_order:
-            for entry in self._server_entries.get(server, []):
-                key = normalize_tool_name(entry.name)
-                if not key:
-                    continue
-                existing = mapping.get(key)
-                if existing is not None:
-                    marker = f"{key}\x1f{existing.server}\x1f{entry.server}"
-                    if marker not in self._collisions_logged:
-                        self._collisions_logged.add(marker)
-                        logger.warning(
-                            f"tool name collision on '{entry.name}': keeping server "
-                            f"'{existing.server}', ignoring '{entry.server}' "
-                            "(earlier config entry wins)"
-                        )
-                    continue
-                mapping[key] = entry
-                order.append(entry)
-        self._entries = mapping
-        self._order = order
+            ordered.extend(self._server_entries.get(server, []))
+
+        groups: dict[str, list[RegisteredTool]] = {}
+        for entry in ordered:
+            groups.setdefault(sanitize_tool_name(entry.name), []).append(entry)
+
+        exposed_map: dict[str, RegisteredTool] = {}
+        exposed_order: list[RegisteredTool] = []
+        canonical: dict[str, RegisteredTool] = {}
+        updated_server_entries: dict[str, list[RegisteredTool]] = {}
+
+        for entry in ordered:
+            base = sanitize_tool_name(entry.name)
+            collides = len({item.server for item in groups.get(base, [])}) > 1
+            namespace = self._namespacing == "always" or (
+                self._namespacing == "on_collision" and collides
+            )
+            exposed = make_exposed_name(entry.server, entry.name, namespace=namespace)
+            exposed_entry = replace(entry, exposed=exposed)
+            updated_server_entries.setdefault(entry.server, []).append(exposed_entry)
+
+            canonical.setdefault(normalize_tool_name(entry.name), exposed_entry)
+
+            key = normalize_tool_name(exposed)
+            existing = exposed_map.get(key)
+            if existing is not None:
+                marker = f"{key}\x1f{existing.server}\x1f{entry.server}"
+                if marker not in self._collisions_logged:
+                    self._collisions_logged.add(marker)
+                    logger.warning(
+                        f"exposed tool name collision on '{exposed}': keeping "
+                        f"server '{existing.server}', ignoring '{entry.server}'"
+                    )
+                continue
+            exposed_map[key] = exposed_entry
+            exposed_order.append(exposed_entry)
+
+        self._entries = canonical
+        self._exposed = exposed_map
+        self._order = exposed_order
+        self._server_entries = updated_server_entries
 
     def get(self, normalized_name: str) -> RegisteredTool | None:
-        return self._entries.get(normalized_name)
+        return self._exposed.get(normalized_name) or self._entries.get(normalized_name)
 
     def all(self) -> list[RegisteredTool]:
         return list(self._order)

@@ -56,7 +56,20 @@ async def list_resource_templates() -> list[types.ResourceTemplate]:
 async def list_tools() -> list[types.Tool]:
     # Read the warm registry instead of issuing one tools/list per client.
     await ClientManager.refresh_tool_registry()
-    return [entry.tool for entry in ClientManager.registry.all()]
+    tools: list[types.Tool] = []
+    for entry in ClientManager.registry.all():
+        name = entry.exposed or entry.name
+        try:
+            tools.append(
+                types.Tool(
+                    name=name,
+                    description=getattr(entry.tool, "description", None),
+                    inputSchema=getattr(entry.tool, "inputSchema", {}) or {},
+                )
+            )
+        except Exception:
+            tools.append(entry.tool)
+    return tools
 
 
 ## get functions

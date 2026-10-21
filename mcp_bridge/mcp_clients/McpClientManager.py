@@ -607,9 +607,12 @@ class MCPClientManager:
         # Server-name match: the model likely meant a tool on this server.
         for server_name in clients:
             if self._normalize_tool_name(server_name) == normalized_tool:
-                return [entry.name for entry in self.registry.for_server(server_name)]
+                return [
+                    entry.exposed or entry.name
+                    for entry in self.registry.for_server(server_name)
+                ]
 
-        all_tool_names = [entry.name for entry in self.registry.all()]
+        all_tool_names = [entry.exposed or entry.name for entry in self.registry.all()]
         if not all_tool_names:
             return []
 
