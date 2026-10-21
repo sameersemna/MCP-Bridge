@@ -43,7 +43,7 @@
       ],
       "environment": {
         "DEFAULT_MINIMUM_TOKENS": "8192",
-        "API_KEY": "ctx7sk-165bd5e6-321a-4ba2-988a-947dd43c8f6c"
+        "API_KEY": "${CONTEXT7_API_KEY}"
       }
     },
     "google-search": {
@@ -116,7 +116,7 @@
         "tavily-mcp@0.2.3"
       ],
       "environment": {
-        "TAVILY_API_KEY": "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"
+        "TAVILY_API_KEY": "${TAVILY_API_KEY}"
       }
     },
     "ddg-search": {

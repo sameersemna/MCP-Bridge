@@ -1,0 +1,11 @@
+# Dependency-free secret scan. Kept as a local hook so contributors do not need
+# gitleaks/detect-secrets installed; the same script runs in CI and in pytest.
+repos:
+  - repo: local
+    hooks:
+      - id: secret-scan
+        name: secret scan (tracked credential formats)
+        entry: python scripts/check_secrets.py --staged
+        language: system
+        pass_filenames: false
+        always_run: true

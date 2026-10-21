@@ -28,6 +28,21 @@ jobs:
       - name: Run tests
         run: uv run pytest -q
 
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # stdlib only, so this job does not need the project environment.
+      - name: Scan tracked files for credentials
+        run: python scripts/check_secrets.py
+
   lint:
     name: Lint & Type check (informational)
     runs-on: ubuntu-latest
