@@ -220,6 +220,7 @@ class MCPClientManager:
 
             configured_disabled_servers = set(getattr(config, "disabled_mcp_servers", set()) or set())
 
+            enabled: list[tuple[str, Any]] = []
             for server_name, server_config in config.mcp_servers.items():
                 if server_name in configured_disabled_servers or _is_disabled_server(server_config):
                     disabled_servers.append(server_name)
@@ -227,15 +228,27 @@ class MCPClientManager:
                     continue
 
                 enabled_servers.append(server_name)
-                try:
-                    self.clients[server_name] = await self.construct_client(
-                        server_name, server_config
-                    )
-                except Exception as exc:
-                    failed_servers.append((server_name, str(exc)))
+                enabled.append((server_name, server_config))
+
+            # Start every server concurrently: one slow server (a remote SSE
+            # handshake, an npx download) must not delay all the others.
+            # ``return_exceptions`` keeps a single failure isolated.
+            results = await asyncio.gather(
+                *(
+                    self.construct_client(server_name, server_config)
+                    for server_name, server_config in enabled
+                ),
+                return_exceptions=True,
+            )
+
+            for (server_name, _), result in zip(enabled, results):
+                if isinstance(result, BaseException):
+                    failed_servers.append((server_name, str(result)))
                     logger.error(
-                        f"Failed to initialize MCP server '{server_name}': {exc}"
+                        f"Failed to initialize MCP server '{server_name}': {result}"
                     )
+                else:
+                    self.clients[server_name] = result
 
             if failed_servers:
                 logger.warning(
