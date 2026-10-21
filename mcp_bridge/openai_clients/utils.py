@@ -1725,6 +1725,25 @@ class PersistentToolCache:
         except OSError as exc:
             logger.debug(f"tool cache write failed: {exc}")
 
+    async def aget(
+        self, tool_name: str, arguments: Any = None, *, server_name: str = ""
+    ) -> Any | None:
+        return await asyncio.to_thread(
+            self.get, tool_name, arguments, server_name=server_name
+        )
+
+    async def aput(
+        self,
+        tool_name: str,
+        arguments: Any = None,
+        result: Any = None,
+        *,
+        server_name: str = "",
+    ) -> None:
+        await asyncio.to_thread(
+            self.put, tool_name, arguments, result, server_name=server_name
+        )
+
 
 class RedisToolCache:
     """Redis-backed, TTL-bounded cache of tool results.
@@ -1737,11 +1756,10 @@ class RedisToolCache:
     the file backend writes, so a cache populated by either backend is readable
     by the other.
 
-    Uses the synchronous ``redis.Redis`` client (not ``redis.asyncio``) to keep
-    the interface identical to the file backend. Redis operations are fast and
-    the tool loop is already I/O-bound, so this does not meaningfully block the
-    event loop. If Redis is unreachable, the cache degrades gracefully to a
-    no-op (misses on read, silent drop on write) rather than raising.
+    Uses a single ``redis.asyncio`` client for ``aget``/``aput`` so Redis I/O
+    does not block the event loop and the connection pool is reused. The
+    synchronous ``get``/``put`` remain for the legacy API and tests. If Redis is
+    unreachable, the async methods degrade to a no-op (misses/silent drop).
     """
 
     def __init__(
@@ -1754,17 +1772,11 @@ class RedisToolCache:
         self._prefix = (prefix or get_redis_prefix()).rstrip(":")
         self._ttl_seconds = ttl_seconds if ttl_seconds is not None else get_tool_cache_ttl_seconds()
         self._enabled = get_tool_cache_enabled()
+        # Sync client for the legacy get/put API (tests). Production uses
+        # aget/aput with one redis.asyncio client, created lazily so importing
+        # this module never opens a connection.
         self._client: Any | None = None
-        if self._enabled and self._url:
-            try:
-                from redis import Redis  # local import keeps redis optional at import time
-                self._client = Redis.from_url(self._url, decode_responses=True)
-                # Fail fast: verify connectivity so we can log a clear warning
-                # and fall back to a no-op instead of failing on every request.
-                self._client.ping()
-            except Exception as exc:
-                logger.warning(f"redis unavailable ({exc}); Redis tool cache disabled")
-                self._client = None
+        self._async_client: Any | None = None
 
     def _key(self, server_name: str, tool_name: str, arguments: Any) -> str:
         return f"{self._prefix}:{_tool_cache_key(server_name, tool_name, arguments)}"
@@ -1836,6 +1848,92 @@ class RedisToolCache:
         except Exception as exc:
             logger.debug(f"redis cache write failed: {exc}")
 
+    def _get_async_client(self) -> Any:
+        if self._async_client is None:
+            from redis.asyncio import Redis
+
+            self._async_client = Redis.from_url(self._url, decode_responses=True)
+        return self._async_client
+
+    async def aget(
+        self, tool_name: str, arguments: Any = None, *, server_name: str = ""
+    ) -> Any | None:
+        arguments = _coerce_cache_arguments(arguments)
+        if not self._enabled or not arguments:
+            return None
+        try:
+            if self._async_client is None and self._client is not None:
+                # Legacy/test seam: a client injected directly into ``_client``.
+                raw = self._client.get(
+                    self._key(server_name, tool_name, arguments)
+                )
+            else:
+                raw = await self._get_async_client().get(
+                    self._key(server_name, tool_name, arguments)
+                )
+        except Exception as exc:
+            logger.debug(f"redis cache read failed: {exc}")
+            return None
+        if not raw:
+            return None
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if payload.get("key_version") != _TOOL_CACHE_KEY_VERSION:
+            return None
+        try:
+            return CallToolResult.model_validate(payload.get("result"))
+        except Exception:
+            return None
+
+    async def aput(
+        self,
+        tool_name: str,
+        arguments: Any = None,
+        result: Any = None,
+        *,
+        server_name: str = "",
+    ) -> None:
+        arguments = _coerce_cache_arguments(arguments)
+        if not self._enabled or not arguments or result is None:
+            return
+        if isinstance(result, dict):
+            if result.get("isError"):
+                return
+        elif getattr(result, "isError", False):
+            return
+        try:
+            result_dict = (
+                result
+                if isinstance(result, dict)
+                else result.model_dump(exclude_defaults=True, exclude_none=True)
+            )
+        except Exception:
+            return
+        payload = {
+            "tool_name": tool_name,
+            "server": server_name,
+            "arguments": arguments,
+            "key_version": _TOOL_CACHE_KEY_VERSION,
+            "cached_at": time.time(),
+            "result": result_dict,
+        }
+        try:
+            key = self._key(server_name, tool_name, arguments)
+            if self._async_client is None and self._client is not None:
+                self._client.set(
+                    key, json.dumps(payload, ensure_ascii=False), ex=self._ttl_seconds
+                )
+            else:
+                await self._get_async_client().set(
+                    key,
+                    json.dumps(payload, ensure_ascii=False),
+                    ex=self._ttl_seconds,
+                )
+        except Exception as exc:
+            logger.debug(f"redis cache write failed: {exc}")
+
 
 def get_redis_url() -> str:
     """Return the Redis connection URL from ``REDIS_URL`` (or empty)."""
@@ -1847,22 +1945,27 @@ def get_redis_prefix() -> str:
     return os.getenv("REDIS_PREFIX", "mcp-bridge").strip()
 
 
-def get_tool_cache() -> PersistentToolCache | RedisToolCache:
-    """Return the configured persistent tool cache.
+_TOOL_CACHE_SINGLETONS: dict[tuple[str, str], Any] = {}
 
-    If ``REDIS_URL`` is set (and Redis is reachable), returns a
-    :class:`RedisToolCache`. Otherwise falls back to the on-disk
-    :class:`PersistentToolCache`. This lets operators opt into Redis caching
-    purely by setting environment variables, with the existing file-based cache
-    as the default.
+
+def get_tool_cache() -> PersistentToolCache | RedisToolCache:
+    """Return the configured persistent tool cache (one instance per config).
+
+    Constructing this per request re-ran Redis connection setup and re-opened
+    the cache directory on every turn. The instance is cached per
+    ``(REDIS_URL, REDIS_PREFIX)`` so environment changes in tests still work.
     """
-    if get_redis_url():
-        redis_cache = RedisToolCache()
-        if redis_cache._client is not None:
-            logger.info("using Redis tool cache")
-            return redis_cache
-        logger.warning("Redis configured but unreachable; falling back to on-disk tool cache")
-    return PersistentToolCache()
+    key = (get_redis_url(), get_redis_prefix())
+    cached = _TOOL_CACHE_SINGLETONS.get(key)
+    if cached is not None:
+        return cached
+    if key[0]:
+        cache: Any = RedisToolCache()
+        logger.info("using Redis tool cache")
+    else:
+        cache = PersistentToolCache()
+    _TOOL_CACHE_SINGLETONS[key] = cache
+    return cache
 
 
 async def call_tool(
@@ -2074,6 +2177,24 @@ def _tool_cache_safe(tool_name: str, server_name: str) -> bool:
         return False
 
 
+_CALL_TOOL_PARAMETERS: dict[Any, frozenset[str]] = {}
+
+
+def _call_tool_parameters(fn: Any) -> frozenset[str]:
+    """Cache the callable's parameter names.
+
+    ``call_tools`` needs to know whether the (possibly monkeypatched in tests)
+    ``call_tool`` accepts ``trace_logger``/``client_cache``. Recomputing
+    ``inspect.signature`` on every tool call was measurable work on the hot
+    path; keying the cache by the callable keeps test overrides working.
+    """
+    cached = _CALL_TOOL_PARAMETERS.get(fn)
+    if cached is None:
+        cached = frozenset(inspect.signature(fn).parameters)
+        _CALL_TOOL_PARAMETERS[fn] = cached
+    return cached
+
+
 async def call_tools(
     tool_calls: list[tuple[str, str]], timeout: int | None = None,
     trace_logger: RequestTraceLogger | None = None,
@@ -2151,7 +2272,9 @@ async def call_tools(
 
         # 2. Persistent cache (exact match over every argument).
         if cacheable and persistent_cache is not None:
-            cached = persistent_cache.get(name, parsed_arguments, server_name=server_name)
+            cached = await persistent_cache.aget(
+                name, parsed_arguments, server_name=server_name
+            )
             if cached is not None:
                 logger.debug(f"tool call served from persistent cache: name={name}; query={query[:80]}")
                 return cached
@@ -2172,8 +2295,8 @@ async def call_tools(
             if trace_logger is not None:
                 call_kwargs["trace_logger"] = trace_logger
 
-            signature = inspect.signature(call_tool)
-            if "trace_logger" in signature.parameters:
+            signature = _call_tool_parameters(call_tool)
+            if "trace_logger" in signature:
                 call_kwargs["client_cache"] = client_cache
                 result = await call_tool(name, payload, **call_kwargs)
             else:
@@ -2234,7 +2357,7 @@ async def call_tools(
                         other_arguments=other_arguments,
                     )
                 if persistent_cache is not None:
-                    persistent_cache.put(
+                    await persistent_cache.aput(
                         name, parsed_arguments, result, server_name=server_name
                     )
             else:

@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 import os
 import sys
+import threading
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -224,6 +226,9 @@ class RequestTraceLogger:
         self._path = LOG_DIR / f"{self._timestamp}_{self._sanitize_path(http_path)}.json"
         self._directory = LOG_DIR
         self._directory.mkdir(parents=True, exist_ok=True)
+        # Serialize writes from executor threads: each trace rewrites the whole
+        # file, and two interleaved rewrites could corrupt it.
+        self._write_lock = threading.Lock()
 
     @staticmethod
     def _sanitize_path(path: str) -> str:
@@ -238,9 +243,21 @@ class RequestTraceLogger:
                 **{k: redact_sensitive_data(v) for k, v in payload.items()},
             }
         )
-        self._write()
+        # Rewriting the full trace file on every event used to block the event
+        # loop. When a loop is running, hand the write to the default executor;
+        # outside async code (tests, CLI helpers) keep the synchronous path.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._write()
+            return
+        loop.run_in_executor(None, self._write)
 
     def _write(self) -> None:
+        with self._write_lock:
+            self._write_locked()
+
+    def _write_locked(self) -> None:
         # A trace file should be self-describing at a glance: whether this
         # request hard-failed (an "error" event -- the request never got a
         # response) or soft-degraded (a "degraded_response" event -- it got a

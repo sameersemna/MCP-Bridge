@@ -636,12 +636,15 @@ To enable it, set `REDIS_URL` (and optionally `REDIS_PREFIX`) in `.env`:
 
 Behavior:
 
-- When `REDIS_URL` is set **and** Redis is reachable, the bridge uses a
-  `RedisToolCache` (same SHA-256 keys, same JSON payload, same TTL as the file
-  backend — so a cache populated by either backend is readable by the other).
-- If `REDIS_URL` is **not** set, or Redis is unreachable at startup, the bridge
-  **falls back to the on-disk cache** in `tool_cache/` automatically. No code
-  changes needed — just set the env vars to opt in.
+- When `REDIS_URL` is set, the bridge uses a `RedisToolCache` (same v2 keys,
+  same JSON payload, same TTL as the file backend — so a cache populated by
+  either backend is readable by the other).
+- The Redis client is created lazily and the connection pool is reused; Redis
+  I/O does not block the event loop. If Redis is unreachable, reads miss and
+  writes are dropped (logged at debug) — the bridge keeps running and does
+  **not** silently switch to a different cache backend.
+- If `REDIS_URL` is **not** set, the bridge uses the on-disk cache in
+  `tool_cache/`. Set the env vars to opt in to Redis.
 - The per-server `"cached": true` opt-in and the `MCP_BRIDGE_TOOL_CACHE_*`
   switches apply to the Redis cache exactly as they do to the file cache.
 
