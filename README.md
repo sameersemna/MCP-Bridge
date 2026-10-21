@@ -169,6 +169,13 @@ tool-argument previews by default. Set `telemetry.capture_payloads=true` to opt
 in; values are redacted (`Authorization`, API keys, credentials in URL query
 strings) before they are attached.
 
+### Metrics
+
+Set `telemetry.metrics_enabled=true` to expose Prometheus text metrics at
+`/metrics` (protected by the API key when auth is enabled). Metrics include
+upstream latency/status, tool calls by tool/server/outcome, cache hits/misses by
+layer, idempotency replays, session resets and tool-loop turns.
+
 ## Configuration
 
 To add new MCP servers, edit the config.json file.

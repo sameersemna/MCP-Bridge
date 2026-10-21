@@ -59,6 +59,7 @@ except ImportError:  # pragma: no cover - allows minimal environments to import
         pass
 
 from mcp_bridge.config import config
+from mcp_bridge.metrics import metrics
 from mcp_bridge.mcp_clients.session import McpClientSession
 from mcp_bridge.models.mcpServerStatus import McpServerStatus
 
@@ -421,6 +422,9 @@ class GenericMcpClient(ABC):
 
     async def _reset_session(self, reason: str) -> None:
         logger.info(f"resetting MCP session for {self.name}: {reason}")
+        metrics.increment(
+            "mcp_bridge_session_resets_total", {"server": self.name}
+        )
         self.session = None
         self._offline = False
         # A new session may expose a different tool set.

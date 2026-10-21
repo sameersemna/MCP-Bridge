@@ -19,6 +19,7 @@ from opentelemetry import trace
 from mcp_bridge.logging import RequestTraceLogger
 from mcp_bridge.mcp_clients.AbstractClient import CallToolResult, TextContent
 from mcp_bridge.telemetry import payload_preview
+from mcp_bridge.metrics import metrics
 
 try:
     from lmos_openai_types import ChatCompletionRequestMessage, CreateChatCompletionRequest
@@ -2081,6 +2082,10 @@ async def call_tool(
                     f"No MCP client found for tool '{tool_call_name}'. "
                     f"Only call tools by their exact registered names."
                 )
+            metrics.increment(
+                "mcp_bridge_tool_calls_total",
+                {"tool": tool_call_name, "server": "", "outcome": "not_found"},
+            )
             return ToolDispatchError(message)
 
         try:
@@ -2178,6 +2183,14 @@ async def call_tool(
                         )
                     return mirror_result
 
+        metrics.increment(
+            "mcp_bridge_tool_calls_total",
+            {
+                "tool": tool_call_name,
+                "server": getattr(session, "name", ""),
+                "outcome": "error" if getattr(result, "isError", False) else "ok",
+            },
+        )
         return result
 
 
@@ -2291,6 +2304,9 @@ async def call_tools(
                 other_arguments=other_arguments,
             )
             if cached is not None:
+                metrics.increment(
+                    "mcp_bridge_tool_cache_hits_total", {"layer": "memory"}
+                )
                 logger.debug(f"tool call served from in-memory cache: name={name}; query={query[:80]}")
                 return cached
 
@@ -2300,8 +2316,16 @@ async def call_tools(
                 name, parsed_arguments, server_name=server_name
             )
             if cached is not None:
+                metrics.increment(
+                    "mcp_bridge_tool_cache_hits_total", {"layer": "persistent"}
+                )
                 logger.debug(f"tool call served from persistent cache: name={name}; query={query[:80]}")
                 return cached
+
+        if cacheable:
+            metrics.increment(
+                "mcp_bridge_tool_cache_misses_total", {"layer": "persistent"}
+            )
 
         # 3. In-flight dedup: only for cacheable tools, keyed by every argument
         #    so calls that differ in max_results/page/etc. are not collapsed.

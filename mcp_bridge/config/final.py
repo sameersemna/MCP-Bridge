@@ -250,6 +250,13 @@ class Telemetry(BaseModel):
             "enabled, values are redacted first."
         ),
     )
+    metrics_enabled: bool = Field(
+        False,
+        description=(
+            "Expose Prometheus text metrics at /metrics. Follows the auth "
+            "setting (protected when security.auth.enabled is true)."
+        ),
+    )
     service_name: str = Field(
         default="MCP Bridge", description="Name of the service"
     )

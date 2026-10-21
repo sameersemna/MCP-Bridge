@@ -5,6 +5,7 @@ from mcp_bridge.idempotency import (
     make_fingerprint,
     request_identity,
 )
+from mcp_bridge.metrics import metrics
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp.types import ListToolsResult, CallToolResult
 
@@ -65,6 +66,9 @@ async def call_tool(
                     detail="Stored idempotent response is no longer available",
                 )
             response.headers["Idempotent-Replayed"] = "true"
+            metrics.increment(
+                "mcp_bridge_idempotency_replays_total", {"endpoint": "tool"}
+            )
             return CallToolResult.model_validate(entry.body)
 
     try:

@@ -21,6 +21,7 @@ from mcp_bridge.idempotency import (
 )
 from mcp_bridge.request_context import get_request_id
 from mcp_bridge.telemetry import payload_preview
+from mcp_bridge.metrics import metrics
 import json
 
 router = APIRouter(prefix="/v1", tags=[Tag.openai])
@@ -165,6 +166,9 @@ async def openai_chat_completions(
                 )
             headers = dict(entry.headers)
             headers["Idempotent-Replayed"] = "true"
+            metrics.increment(
+                "mcp_bridge_idempotency_replays_total", {"endpoint": "chat"}
+            )
             return JSONResponse(
                 status_code=entry.status or 200,
                 content=entry.body,

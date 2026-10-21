@@ -31,6 +31,7 @@ from .citation_guard import (
 from mcp_bridge.config import config
 from mcp_bridge.logging import RequestTraceLogger
 from mcp_bridge.cancellation import ClientDisconnected, run_until_disconnected
+from mcp_bridge.metrics import metrics
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.openai_clients.tool_policy import split_tool_calls
 from loguru import logger
@@ -2517,6 +2518,14 @@ async def chat_completions(
             messages_len_before_request = len(request.messages)
             # logger.debug(request.model_dump_json())
             upstream_response = await _post_chat_completion(client, request)
+            metrics.observe(
+                "mcp_bridge_upstream_latency_seconds",
+                time.perf_counter() - start_time,
+            )
+            metrics.increment(
+                "mcp_bridge_upstream_requests_total",
+                {"status": str(upstream_response.status_code)},
+            )
             text = upstream_response.text
             logger.log("DEBUGIMP", f"upstream chat completion response received: status={upstream_response.status_code}")
             _record_timing(trace_logger, "upstream_llm_request", time.perf_counter() - start_time)
@@ -3070,6 +3079,9 @@ async def chat_completions(
                     )
 
             tool_turns_completed += 1
+            metrics.observe(
+                "mcp_bridge_tool_loop_turns", float(tool_turns_completed)
+            )
 
             client_calls, mcp_calls = split_tool_calls(request, tool_call_items)
             if client_calls:
