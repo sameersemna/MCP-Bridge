@@ -40,7 +40,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P0-11 | Insecure-by-default exposure | done | 7dbef54 | New `security.auth.required_for_non_loopback` (default false); loud warning or hard startup failure for unauthenticated non-loopback binds. `/health/live` public, `/health/ready` follows auth; `/health` unchanged. README Security section. 8 tests. |
 | P0-12 | Config HTTP load has no timeout/status check | done | edb7b50 | Explicit env timeout (10s), `raise_for_status`, JSON-object check; non-zero exit with a token-safe message unless `MCP_BRIDGE__CONFIG__HTTP_OPTIONAL=true`. 9 tests. |
 | P1-01 | `[design]` Tool registry | done | 1743778 | ADR 003. Process-wide registry in config order; TTL 300s; invalidated by `tools/list_changed` (stdio/SSE) and session resets; resolution/discovery/suggestions/aggregated list read it. Discovery skips unready sessions; resolution stops on first match. 7 tests. |
-| P1-02 | Tool-name collisions / OpenAI name constraints | todo | | |
+| P1-02 | Tool-name collisions / OpenAI name constraints | done | 47c573c | `tool_namespacing` = none/on_collision (default)/always. Exposed names sanitized to `^[A-Za-z0-9_-]{1,64}$`, truncated with a stable hash; reverse lookup dispatches to the canonical tool. Applied to discovery, suggestions, aggregated list. 6 tests. |
 | P1-03 | `[design]` `Idempotency-Key` support | todo | | |
 | P1-04 | Blocking I/O on the event loop | todo | | |
 | P1-05 | Sequential startup | todo | | |
@@ -78,3 +78,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 16:28 P0-12 done (edb7b50). **All P0 items complete.** `httpx.get` has no `transport` parameter; switched the seam to an explicit `httpx.Client`. Gate 452 passed / ruff 3 / mypy 72.
 - 2026-10-21 17:05 P1-01 done (1743778), ADR `docs/hardening/adr/003-tool-registry.md`. Two regressions surfaced and were fixed rather than accepted: a global registry barrier delayed resolution behind a slow server (now incremental with early exit and per-server freshness), and the process-wide registry leaked tools between tests when the client set changed (now invalidated on client-set change). Mypy fell to 71. Gate 459 passed / ruff 3 / mypy 71.
 - 2026-10-21 17:12 P0-07 follow-up: the vendored stdio session advertised `roots` but never answered `roots/list`; it now advertises sampling only (the capability it actually implements). Gate 460 passed / ruff 3 / mypy 71.
+- 2026-10-21 17:35 P1-02 done (47c573c). A structural edit briefly deleted the `_ttl_seconds` function header and a per-server exposed-name update was initially missed; both were caught before running. Gate 466 passed / ruff 3 / mypy 71.
