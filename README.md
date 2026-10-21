@@ -763,6 +763,51 @@ between the two: it shows low-frequency debug summaries (tool calls made,
 finish reasons, turn boundaries) without the full per-chunk streaming firehose
 (one log line per SSE event) that `"DEBUG"` produces.
 
+## Security
+
+### Defaults and the startup warning
+
+For backward compatibility the defaults are `network.host = "0.0.0.0"`,
+`security.auth.enabled = false`, and wildcard CORS. That means anyone who can
+reach the port can call `/mcp/tools/{name}/call`, which can run filesystem and
+shell-capable MCP servers.
+
+The bridge logs a loud `SECURITY WARNING` at startup when authentication is
+disabled and the bind address is not loopback. To make that fatal, set:
+
+```json
+{
+  "security": {
+    "auth": {
+      "enabled": false,
+      "required_for_non_loopback": true
+    }
+  }
+}
+```
+
+Environment form:
+`MCP_BRIDGE__SECURITY__AUTH__REQUIRED_FOR_NON_LOOPBACK=true`. The default is
+`false`; enabling it is strongly recommended for any network-accessible
+deployment. Loopback means `127.0.0.1`, `::1`, `localhost` or `127.*`; `0.0.0.0`
+and `::` are wildcards and count as exposed.
+
+### Recommended production posture
+
+- Bind to `127.0.0.1` behind a reverse proxy, or enable `security.auth` with at
+  least one API key.
+- Restrict CORS origins instead of `*`.
+- Point the load balancer at `/health/live` and keep detailed readiness behind
+  auth.
+
+### Health endpoints
+
+| Endpoint | Auth | Response |
+| --- | --- | --- |
+| `/health` | public (unchanged) | Full detail; 500 when unhealthy. |
+| `/health/live` | public | `{"status":"ok"}`; liveness only. |
+| `/health/ready` | follows `security.auth` | Full detail; 500 when unhealthy. Requires the Bearer key when auth is enabled. |
+
 ## Support
 
 If you encounter any issues please open an issue or join the [discord](https://discord.gg/4NVQHqNxSZ).

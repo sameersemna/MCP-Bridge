@@ -217,6 +217,14 @@ class ApiKey(BaseModel):
 class Auth(BaseModel):
     enabled: bool = Field(False, description="Enable authentication")
     api_keys: list[ApiKey] = Field(default_factory=list, description="API keys")
+    required_for_non_loopback: bool = Field(
+        False,
+        description=(
+            "Refuse to start when authentication is disabled and the server "
+            "binds to a non-loopback host. Defaults to false for backward "
+            "compatibility; recommended true in production."
+        ),
+    )
 
 
 class Security(BaseModel):

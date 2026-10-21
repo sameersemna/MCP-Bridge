@@ -17,6 +17,7 @@ from mcp_bridge.config import config
 from mcp_bridge.routers import secure_router, public_router
 from mcp_bridge.lifespan import lifespan
 from mcp_bridge.openapi_tags import tags_metadata
+from mcp_bridge.security_posture import enforce_security_posture
 from mcp_bridge.telemetry import setup_tracing
 
 
@@ -31,6 +32,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         openapi_tags=tags_metadata,
     )
+
+    # Loudly flag (or refuse) an unauthenticated non-loopback bind before any
+    # route is served.
+    enforce_security_posture()
 
     # setup tracing
     setup_tracing(app)
