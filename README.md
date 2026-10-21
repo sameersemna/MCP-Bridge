@@ -177,6 +177,12 @@ Retries are never free: an upstream chat-completion retry re-sends the prompt
 and is billed again. Tool retries are limited to declared-safe tools for the
 same reason — repeating a side effect is worse than repeating a token cost.
 
+Session resets are conservative too. A JSON-RPC application error (for example
+`-32602 invalid params`) is returned to the model without touching the session,
+and a single tool-call timeout does not reset it: three consecutive timeouts
+within 60 seconds trip a breaker that does. This keeps one slow call from
+aborting unrelated in-flight calls on the same server.
+
 ### SSE/HTTP session keep-alive and liveness pings
 
 The bridge keeps an SSE (or HTTP) MCP session alive by sending a `ping` every

@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import os
+import time
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -67,6 +68,13 @@ DEFAULT_MCP_SESSION_POLL_INTERVAL_SECONDS = 0.5
 DEFAULT_MCP_SESSION_LOG_INTERVAL_SECONDS = 5.0
 DEFAULT_MCP_TOOL_RETRY_COUNT = 1
 DEFAULT_MCP_TOOL_RETRY_DELAY_SECONDS = 0.25
+
+# A single timeout is not evidence that the session is broken: the server may
+# simply be slow. Resetting on every timeout also aborted unrelated in-flight
+# calls sharing the session. Only repeated, consecutive timeouts inside this
+# window trip a reset (a small circuit breaker).
+DEFAULT_TIMEOUT_BREAKER_THRESHOLD = 3
+DEFAULT_TIMEOUT_BREAKER_WINDOW_SECONDS = 60.0
 
 
 def get_tool_retry_count() -> int:
@@ -170,8 +178,43 @@ class GenericMcpClient(ABC):
         # Used to decide whether a timed-out call may be retried: a timeout does
         # not prove the server skipped the side effect.
         self._tool_annotations: dict[str, dict[str, Any]] = {}
+        # Consecutive-timeout breaker state (see _record_timeout_and_maybe_reset).
+        self._consecutive_timeouts = 0
+        self._first_timeout_at: float | None = None
 
         logger.debug(f"initializing client class for {name}")
+
+    def _record_timeout_and_maybe_reset(self, tool_name: str) -> bool:
+        """Track consecutive timeouts and report whether the breaker tripped.
+
+        Returns True only when ``DEFAULT_TIMEOUT_BREAKER_THRESHOLD`` timeouts
+        occurred within ``DEFAULT_TIMEOUT_BREAKER_WINDOW_SECONDS``. A single
+        timeout is deliberately not enough: the server may just be slow, and a
+        reset tears down the shared session under any concurrent callers.
+        """
+        now = time.monotonic()
+        if (
+            self._first_timeout_at is None
+            or now - self._first_timeout_at > DEFAULT_TIMEOUT_BREAKER_WINDOW_SECONDS
+        ):
+            self._first_timeout_at = now
+            self._consecutive_timeouts = 1
+        else:
+            self._consecutive_timeouts += 1
+
+        if self._consecutive_timeouts >= DEFAULT_TIMEOUT_BREAKER_THRESHOLD:
+            logger.warning(
+                f"{self._consecutive_timeouts} consecutive timeouts for {self.name} "
+                f"within {DEFAULT_TIMEOUT_BREAKER_WINDOW_SECONDS:.0f}s; resetting session"
+            )
+            self._consecutive_timeouts = 0
+            self._first_timeout_at = None
+            return True
+        return False
+
+    def _clear_timeout_breaker(self) -> None:
+        self._consecutive_timeouts = 0
+        self._first_timeout_at = None
 
     @property
     def has_in_flight_calls(self) -> bool:
@@ -394,20 +437,25 @@ class GenericMcpClient(ABC):
                             raise RuntimeError("MCP session is not ready")
                         self._in_flight_calls += 1
                         try:
-                            return await session.call_tool(
+                            result = await session.call_tool(
                                 name=name,
                                 arguments=normalized_arguments,
                             )
+                            self._clear_timeout_breaker()
+                            return result
                         finally:
                             self._in_flight_calls -= 1
 
             except asyncio.TimeoutError:
-                await self._reset_session(f"timeout calling tool {name}")
-                # A timeout says nothing about whether the server ran the tool.
-                # Only re-execute when the tool is declared safe; otherwise tell
-                # the model the outcome is unknown so it can verify instead of
-                # blindly repeating a side effect.
                 retry_safe = self._retry_is_safe(name)
+                # Do not reset on a single timeout: that aborted unrelated
+                # in-flight calls on the same session. Only the breaker resets.
+                if self._record_timeout_and_maybe_reset(name):
+                    await self._reset_session(
+                        f"{DEFAULT_TIMEOUT_BREAKER_THRESHOLD} consecutive timeouts "
+                        f"within {DEFAULT_TIMEOUT_BREAKER_WINDOW_SECONDS:.0f}s "
+                        f"calling tool {name}"
+                    )
 
                 if retry_safe and attempt < retry_count:
                     logger.debug(
@@ -446,12 +494,31 @@ class GenericMcpClient(ABC):
                 )
 
             except McpError as e:
-                await self._reset_session(f"error calling tool {name}: {e}")
-                logger.error(f"error calling {name}: {e}")
+                if self._is_transport_error(e):
+                    await self._reset_session(f"transport error calling tool {name}: {e}")
+                    logger.error(f"transport error calling {name}: {e}")
+                else:
+                    # A JSON-RPC application error (e.g. -32602 invalid params)
+                    # says nothing about the session's health. Resetting here
+                    # used to abort unrelated in-flight calls sharing it.
+                    logger.debug(f"tool {name} returned a JSON-RPC error: {e}")
                 return CallToolResult(
                     content=[TextContent(type="text", text=f"Error calling {name}: {e}")],
                     isError=True,
                 )
+
+            except Exception as e:
+                if self._is_transport_error(e):
+                    await self._reset_session(f"transport error calling tool {name}: {e}")
+                    logger.error(f"transport error calling {name}: {e}")
+                    return CallToolResult(
+                        content=[
+                            TextContent(type="text", text=f"Transport error calling {name}: {e}")
+                        ],
+                        isError=True,
+                    )
+                # Unknown application failure: let the caller decide, as before.
+                raise
 
         return CallToolResult(
             content=[TextContent(type="text", text=f"Timeout Error calling {name}")],
