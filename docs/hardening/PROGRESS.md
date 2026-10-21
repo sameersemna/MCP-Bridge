@@ -50,7 +50,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P1-09 | Streaming/non-streaming tool parity | done | b21cfe0 | One merge policy: client tools + MCP tools (client wins clashes); client-owned calls end the loop as an OpenAI tool_calls passthrough; only MCP calls dispatch. Shared helper covers both loops. 4 tests. |
 | P2-01 | Request correlation | done | e6f1ccc | `X-Request-ID` middleware (accept/generate, sanitize, echo); loguru context, trace filename+payload, `mcp_bridge.request.id` span attribute. 4 tests. |
 | P2-02 | PII-safe tracing | done | 4dbea35 | `telemetry.capture_payloads=false` by default; when enabled, request/response/tool previews are redacted before becoming span attributes. 3 tests. |
-| P2-03 | Metrics | todo | | |
+| P2-03 | Metrics | done | aba85c2 | Dependency-free Prometheus counters/summaries; `/metrics` on the authenticated router behind `telemetry.metrics_enabled` (default false). Instruments upstream latency/status, tool calls, cache, idempotency, resets, turns. 3 tests. |
 | P2-04 | Limits and backpressure | todo | | |
 | P2-05 | CI lint/type blocking | todo | | |
 | P2-06 | Docker and Helm | todo | | |
@@ -88,3 +88,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 20:15 P1-09 done (b21cfe0). Making discovery unconditional exposed tests that supplied synthetic client tools: 14 e2e tests used `search` as a client tool and would both hang on real discovery and be treated as client-owned. They now stub the merge and remain loop-mechanics tests. Gate 493 passed / ruff 3 / mypy 55.
 - 2026-10-21 20:30 P2-01 done (e6f1ccc). Request-id middleware is outermost so CORS/error responses also carry the header; the id is sanitized before use in a filename. Gate 497 passed / ruff 3 / mypy 55.
 - 2026-10-21 20:42 P2-02 done (4dbea35). `config.telemetry.capture_payloads` defaults to false; span previews are omitted (not just empty) when disabled, and redacted when enabled. Gate 500 passed / ruff 3 / mypy 55.
+- 2026-10-21 20:55 P2-03 done (aba85c2). A dependency-free registry avoided adding `prometheus_client`; the summary form (`_count`/`_sum`) is used rather than histogram buckets, which the bridge does not need yet. Gate 503 passed / ruff 3 / mypy 55.
