@@ -1,5 +1,6 @@
 import asyncio
 import time
+from types import SimpleNamespace
 
 from lmos_openai_types import ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateChatCompletionResponse, FinishReason1
 
@@ -73,6 +74,17 @@ def test_call_tool_retries_once_after_timeout(monkeypatch):
     async def run_test() -> None:
         client = DummyClient("dummy")
         client.session = DummySession()
+        # P0-04: retries are limited to tools declared safe. This test is about
+        # session recovery across a retry, so declare the fake search tool
+        # read-only rather than relying on the old retry-everything behavior.
+        client.remember_tool_annotations(
+            [
+                SimpleNamespace(
+                    name="search",
+                    model_extra={"annotations": {"readOnlyHint": True}},
+                )
+            ]
+        )
         # Start the client so _reset_session will restart the maintainer after
         # a timeout, which re-establishes the session for the retry.
         await client.start()

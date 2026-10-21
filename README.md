@@ -140,7 +140,7 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_MAX_CONTEXT_TOKENS` | *(model-derived)* | Hard override for the tool-loop context budget (tokens). If unset, the budget is derived per-model from the model's context window × `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION`. When exceeded, the tool loop stops and a final answer is synthesized. Prevents runaway loops where the model keeps issuing tool calls and the context grows unboundedly. |
 | `MCP_BRIDGE_CONTEXT_BUDGET_FRACTION` | `0.75` | Fraction of the model's context window used as the tool-loop budget. The remaining fraction is headroom for the final synthesized answer. |
 | `MCP_BRIDGE_TOOL_TIMEOUT_SECONDS` | `60` | Per-tool-call timeout in seconds. A server's `requestTimeout` (ms) in `config.json` overrides this when it is larger — see below. |
-| `MCP_BRIDGE_TOOL_RETRY_COUNT` | `0` | Number of retries for a timed-out tool call. |
+| `MCP_BRIDGE_TOOL_RETRY_COUNT` | `1` | Retries for a timed-out tool call. Applied only when the tool is declared read-only/idempotent, or allow-listed with `idempotent_tools` / `retry_unsafe` (see below). |
 | `MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS` | `0.25` | Delay between tool-call retries. |
 | `MCP_BRIDGE_UPSTREAM_READ_TIMEOUT_SECONDS` | `300` | Read timeout for upstream LLM requests (seconds). Prevents a dead final-turn request from hanging for tens of minutes. |
 | `MCP_BRIDGE_UPSTREAM_CONNECT_TIMEOUT_SECONDS` | `10` | Connect timeout for upstream LLM requests (seconds). |
@@ -148,6 +148,30 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_UPSTREAM_POOL_TIMEOUT_SECONDS` | `10` | Connection-pool timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_SHUTDOWN_TIMEOUT_SECONDS` | `5` | Shared budget for stopping all downstream MCP clients on shutdown (seconds). Clients stop concurrently, so one hung transport cannot extend shutdown beyond this. Stdio servers are terminated and their child processes cleaned up. |
 | `MCP_BRIDGE_SSE_PING_TIMEOUT_SECONDS` | `20` | Liveness-ping timeout for SSE/HTTP MCP servers (seconds). Deliberately separate from `requestTimeout`, which is a *data* timeout. See below. |
+
+### Per-server retry policy
+
+A tool call that times out may already have run on the server. The bridge
+therefore retries only when the tool is *declared safe*:
+
+- MCP annotations say `readOnlyHint: true` or `idempotentHint: true` (a
+  contradicting `destructiveHint: true` wins unless the tool is also
+  idempotent);
+- or the canonical tool name is listed in the server's `idempotent_tools`;
+- or the server sets `retry_unsafe: true` (explicit opt-in; can duplicate side
+  effects).
+
+```json
+"filesystem": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"],
+  "idempotent_tools": ["read_file", "list_directory"]
+}
+```
+
+Unannotated tools are **not** retried. Their timeout result tells the model the
+outcome is unknown and that the call was not retried, so it can verify instead
+of repeating a write.
 
 ### SSE/HTTP session keep-alive and liveness pings
 

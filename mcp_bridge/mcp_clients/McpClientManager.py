@@ -330,6 +330,13 @@ class MCPClientManager:
         client, _ = resolved
         return client
 
+    @staticmethod
+    def _remember_tool_annotations(client: Any, tools: Any) -> None:
+        """Capture declared annotations so call_tool can judge retry safety."""
+        recorder = getattr(client, "remember_tool_annotations", None)
+        if callable(recorder):
+            recorder(tools)
+
     async def _list_client_tools(self, client: client_types, timeout: float) -> list[Any]:
         """Return the list of tools exposed by a client, or ``[]`` on failure.
 
@@ -354,13 +361,17 @@ class MCPClientManager:
                     await wait_for_session(timeout=int(wait_timeout), http_error=False)
                 else:
                     list_tools = await asyncio.wait_for(client.list_tools(), timeout=timeout)
-                    return list(getattr(list_tools, "tools", []) or [])
+                    client_tools = list(getattr(list_tools, "tools", []) or [])
+                    self._remember_tool_annotations(client, client_tools)
+                    return client_tools
 
             if not getattr(client, "session", None):
                 return []
 
             list_tools = await asyncio.wait_for(client.session.list_tools(), timeout=timeout)
-            return list(getattr(list_tools, "tools", []) or [])
+            client_tools = list(getattr(list_tools, "tools", []) or [])
+            self._remember_tool_annotations(client, client_tools)
+            return client_tools
         except asyncio.TimeoutError:
             client_name = getattr(client, "name", "unknown")
             logger.warning(f"Timed out discovering tools for client '{client_name}'")

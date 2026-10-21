@@ -57,6 +57,7 @@ except ImportError:  # pragma: no cover - allows minimal environments to import
     class BlobResourceContents:  # type: ignore[no-redef]
         pass
 
+from mcp_bridge.config import config
 from mcp_bridge.mcp_clients.session import McpClientSession
 from mcp_bridge.models.mcpServerStatus import McpServerStatus
 
@@ -96,6 +97,45 @@ def get_tool_retry_delay_seconds() -> float:
         return DEFAULT_MCP_TOOL_RETRY_DELAY_SECONDS
 
 
+def _annotations_from_tool(tool: Any) -> dict[str, Any]:
+    """Return a tool's declared annotations as a plain dict.
+
+    The pinned SDK (mcp 1.3.0) has no typed ``ToolAnnotations`` model, and its
+    ``Tool`` is declared with ``extra="allow"``, so a server's annotations
+    object surfaces in ``model_extra``. A typed model (if a future SDK adds
+    one) is normalised with ``model_dump``.
+    """
+    raw: Any = None
+    extra = getattr(tool, "model_extra", None)
+    if isinstance(extra, dict):
+        raw = extra.get("annotations")
+    if raw is None:
+        raw = getattr(tool, "annotations", None)
+    if isinstance(raw, dict):
+        return raw
+    dump = getattr(raw, "model_dump", None)
+    if callable(dump):
+        dumped = dump()
+        if isinstance(dumped, dict):
+            return dumped
+    return {}
+
+
+def _annotations_allow_retry(annotations: dict[str, Any]) -> bool:
+    """Whether a tool's annotations declare it safe to re-execute.
+
+    ``destructiveHint`` wins over ``readOnlyHint`` when the two contradict each
+    other; an idempotent tool remains safe because repeating it has no
+    additional effect.
+    """
+    read_only = annotations.get("readOnlyHint") is True
+    idempotent = annotations.get("idempotentHint") is True
+    destructive = annotations.get("destructiveHint") is True
+    if destructive and not idempotent:
+        return False
+    return read_only or idempotent
+
+
 class GenericMcpClient(ABC):
     name: str
     config: Any
@@ -126,6 +166,10 @@ class GenericMcpClient(ABC):
         # queued behind a long-running tool call is not evidence that the
         # server is dead, and treating it as such tore down healthy sessions.
         self._in_flight_calls = 0
+        # Declared MCP annotations per tool name, recorded during discovery.
+        # Used to decide whether a timed-out call may be retried: a timeout does
+        # not prove the server skipped the side effect.
+        self._tool_annotations: dict[str, dict[str, Any]] = {}
 
         logger.debug(f"initializing client class for {name}")
 
@@ -160,6 +204,35 @@ class GenericMcpClient(ABC):
             )
             limit = 1
         self._call_semaphore = asyncio.Semaphore(limit)
+
+    def remember_tool_annotations(self, tools: Any) -> None:
+        """Cache declared annotations for tools seen during discovery.
+
+        ``call_tool`` only receives a name, so the decision to retry has to be
+        made from metadata captured earlier. Discovery happens before every
+        dispatch (``resolve_tool``), so this covers all transports.
+        """
+        for tool in tools or []:
+            name = getattr(tool, "name", None)
+            if isinstance(name, str) and name:
+                self._tool_annotations[name] = _annotations_from_tool(tool)
+
+    def _retry_is_safe(self, tool_name: str) -> bool:
+        """Whether re-executing ``tool_name`` after a timeout is safe.
+
+        Safe means declared read-only/idempotent, listed in the server's
+        ``idempotent_tools``, or the server opted into ``retry_unsafe``.
+        Unannotated tools are deliberately unsafe: duplicating a side effect is
+        worse than a missing retry.
+        """
+        server_name = getattr(self, "name", "")
+        retry_unsafe = getattr(config, "retry_unsafe_servers", None) or set()
+        if server_name in retry_unsafe:
+            return True
+        allow_list = getattr(config, "idempotent_tools_by_server", None) or {}
+        if tool_name in (allow_list.get(server_name) or set()):
+            return True
+        return _annotations_allow_retry(self._tool_annotations.get(tool_name, {}))
 
     @abstractmethod
     async def _maintain_session(self):
@@ -315,18 +388,44 @@ class GenericMcpClient(ABC):
 
             except asyncio.TimeoutError:
                 await self._reset_session(f"timeout calling tool {name}")
+                # A timeout says nothing about whether the server ran the tool.
+                # Only re-execute when the tool is declared safe; otherwise tell
+                # the model the outcome is unknown so it can verify instead of
+                # blindly repeating a side effect.
+                retry_safe = self._retry_is_safe(name)
 
-                if attempt < retry_count:
+                if retry_safe and attempt < retry_count:
                     logger.debug(
                         f"timed out calling tool {name} on attempt {attempt + 1}; retrying in {retry_delay:.2f}s"
                     )
                     await asyncio.sleep(retry_delay)
                     continue
 
-                logger.warning(f"timed out calling tool after {retry_count + 1} attempts: {name}")
+                if retry_safe:
+                    logger.warning(f"timed out calling tool after {retry_count + 1} attempts: {name}")
+                    return CallToolResult(
+                        content=[
+                            TextContent(type="text", text=f"Timeout Error calling {name}")
+                        ],
+                        isError=True,
+                    )
+
+                logger.warning(
+                    f"timed out calling tool {name}; outcome unknown and the tool is "
+                    "not declared read-only/idempotent, so it was not retried"
+                )
                 return CallToolResult(
                     content=[
-                        TextContent(type="text", text=f"Timeout Error calling {name}")
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Timeout Error calling {name}: the outcome is unknown. "
+                                "The call was not retried because the tool is not declared "
+                                "read-only or idempotent (and is not allow-listed), so a retry "
+                                "could duplicate its side effects. Verify the result before "
+                                "calling it again."
+                            ),
+                        )
                     ],
                     isError=True,
                 )

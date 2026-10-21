@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -35,6 +36,17 @@ def test_call_tool_rebuilds_session_after_timeout(monkeypatch):
     async def run_test() -> None:
         client = RecoveringClient("dummy")
         client.session = None
+        # P0-04: only declared-safe tools are retried. fetch_content is a
+        # read-only fetch; declare that explicitly so this test keeps testing
+        # session recovery rather than the unsafe-retry behavior.
+        client.remember_tool_annotations(
+            [
+                SimpleNamespace(
+                    name="fetch_content",
+                    model_extra={"annotations": {"readOnlyHint": True}},
+                )
+            ]
+        )
 
         async def fake_sleep(_: float) -> None:
             return None
@@ -55,6 +67,14 @@ def test_transient_tool_timeouts_do_not_emit_warning_logs(monkeypatch):
     async def run_test() -> None:
         client = RecoveringClient("dummy")
         client.session = None
+        client.remember_tool_annotations(
+            [
+                SimpleNamespace(
+                    name="fetch_content",
+                    model_extra={"annotations": {"readOnlyHint": True}},
+                )
+            ]
+        )
         log_events: list[tuple[str, str]] = []
 
         async def fake_sleep(_: float) -> None:
