@@ -653,6 +653,21 @@ Authorization: Bearer your-secure-api-key-here
 
 If the `api_key` field is empty or not present in the configuration, authentication will be skipped, allowing backward compatibility.
 
+### Server-initiated requests (ping, roots, sampling)
+
+Downstream **SSE** sessions answer requests initiated by the server:
+
+- `ping` → empty result;
+- `roots/list` → `{"roots": []}` (the bridge exposes no roots);
+- `sampling/createMessage` → routed to the bridge's sampling handler in a
+  background task, so a slow model cannot block the read loop;
+- anything else → JSON-RPC `-32601 Method not found`.
+
+The client advertises `sampling` only when `sampling.models` is non-empty, and
+advertises `roots` without `listChanged` (the bridge never emits that
+notification). The request/response HTTP transport advertises no client
+capabilities until it has a persistent read stream.
+
 ### Full Configuration Example
 
 an example config.json file with most of the options explicitly set:

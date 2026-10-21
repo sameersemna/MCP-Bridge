@@ -94,6 +94,23 @@ def _describe_exception(exc: BaseException, *, depth: int = 0) -> str:
         return type(exc).__name__
 
 
+def _client_capabilities(*, supports_server_requests: bool) -> dict[str, Any]:
+    """Capabilities this client can actually honour.
+
+    ``roots`` is advertised because ``roots/list`` is answered with an empty
+    list; ``listChanged`` is not, because the bridge never emits that
+    notification. ``sampling`` is advertised only when at least one model is
+    configured. A transport with no persistent read stream cannot answer
+    server-initiated requests at all, so it advertises nothing.
+    """
+    if not supports_server_requests:
+        return {}
+    capabilities: dict[str, Any] = {"roots": {}}
+    if getattr(getattr(config, "sampling", None), "models", None):
+        capabilities["sampling"] = {}
+    return capabilities
+
+
 class HttpMcpSession:
     def __init__(self, url: str, read_timeout_seconds: float | None = None) -> None:
         self._url = url
@@ -105,10 +122,7 @@ class HttpMcpSession:
             "initialize",
             {
                 "protocolVersion": getattr(types, "LATEST_PROTOCOL_VERSION", "2024-11-05"),
-                "capabilities": {
-                    "sampling": {},
-                    "roots": {"listChanged": True},
-                },
+                "capabilities": _client_capabilities(supports_server_requests=False),
                 "clientInfo": {"name": "MCP-Bridge", "version": "0.5.1"},
             },
             result_type=types.InitializeResult,
@@ -239,6 +253,9 @@ class SseMcpSession:
         self._pending_responses: dict[int, asyncio.Future[Any]] = {}
         self._request_id = 1
         self._message_task: asyncio.Task[None] | None = None
+        # Server-initiated sampling runs off the read loop; keep a strong
+        # reference and cancel it on teardown.
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
     async def __aenter__(self) -> "SseMcpSession":
         self._message_task = asyncio.create_task(self._message_loop())
@@ -253,6 +270,12 @@ class SseMcpSession:
             if not future.done():
                 future.cancel()
         self._pending_responses.clear()
+
+        for background_task in list(self._background_tasks):
+            background_task.cancel()
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+        self._background_tasks.clear()
 
         task = self._message_task
         self._message_task = None
@@ -301,7 +324,87 @@ class SseMcpSession:
             elif isinstance(root, types.JSONRPCNotification):
                 logger.debug(f"received notification from SSE server: {root}")
             elif isinstance(root, types.JSONRPCRequest):
-                logger.debug(f"received request from SSE server: {root}")
+                # A server may probe liveness (ping), ask for roots, or request
+                # sampling. Logging and dropping these left the server waiting
+                # forever, which could stall the very tool call we were serving.
+                await self._handle_server_request(root)
+
+    async def _handle_server_request(self, request: Any) -> None:
+        """Answer a server-initiated JSON-RPC request.
+
+        ``ping`` and ``roots/list`` are immediate and answered inline.
+        Sampling calls the upstream model, so it runs as a tracked background
+        task: blocking the read loop would delay tool-call responses, including
+        the one whose server is waiting on this request.
+        """
+        method = getattr(request, "method", "")
+        request_id = getattr(request, "id", None)
+
+        if method == "ping":
+            await self._send_result(request_id, {})
+            return
+        if method == "roots/list":
+            # The bridge exposes no roots; an empty list is the honest answer.
+            await self._send_result(request_id, {"roots": []})
+            return
+        if method == "sampling/createMessage":
+            task = asyncio.create_task(self._handle_sampling_request(request))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+            return
+
+        logger.debug(f"answering unsupported server request from SSE server: {method}")
+        await self._send_error(request_id, -32601, f"Method not found: {method}")
+
+    async def _handle_sampling_request(self, request: Any) -> None:
+        request_id = getattr(request, "id", None)
+        try:
+            params = types.CreateMessageRequestParams.model_validate(
+                getattr(request, "params", None) or {}
+            )
+            # Lazy import: sampling pulls in the upstream HTTP client, and this
+            # module is imported while MCP clients are being constructed.
+            from mcp_bridge.sampling import sampler
+
+            result = await sampler.handle_sampling_message(params)
+            await self._send_result(
+                request_id, result.model_dump(by_alias=True, exclude_none=True)
+            )
+        except Exception as exc:
+            logger.warning(
+                f"sampling request from SSE server failed: {_describe_exception(exc)}"
+            )
+            await self._send_error(request_id, -32603, "Sampling request failed")
+
+    async def _send_result(self, request_id: Any, result: Any) -> None:
+        await self._send_message(
+            types.JSONRPCMessage(
+                types.JSONRPCResponse(jsonrpc="2.0", id=request_id, result=result)
+            ),
+            request_id,
+        )
+
+    async def _send_error(self, request_id: Any, code: int, message: str) -> None:
+        await self._send_message(
+            types.JSONRPCMessage(
+                types.JSONRPCError(
+                    jsonrpc="2.0",
+                    id=request_id,
+                    error=types.ErrorData(code=code, message=message),
+                )
+            ),
+            request_id,
+        )
+
+    async def _send_message(self, message: Any, request_id: Any) -> None:
+        try:
+            await self._write_stream.send(message)
+        except Exception as exc:
+            # The peer may be gone (normal during teardown); do not kill the
+            # read loop over a reply that can no longer be delivered.
+            logger.debug(
+                f"could not answer server request {request_id}: {_describe_exception(exc)}"
+            )
 
     def _resolve_future(
         self,
@@ -335,10 +438,7 @@ class SseMcpSession:
             "initialize",
             {
                 "protocolVersion": getattr(types, "LATEST_PROTOCOL_VERSION", "2024-11-05"),
-                "capabilities": {
-                    "sampling": {},
-                    "roots": {"listChanged": True},
-                },
+                "capabilities": _client_capabilities(supports_server_requests=True),
                 "clientInfo": {"name": "MCP-Bridge", "version": "0.5.1"},
             },
             result_type=types.InitializeResult,
