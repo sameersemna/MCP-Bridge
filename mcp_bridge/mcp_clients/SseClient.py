@@ -12,7 +12,7 @@ try:
     from mcp.client.sse import sse_client
     import mcp.types as types
 except ImportError:  # pragma: no cover - allows the package to import in minimal environments
-    class McpError(RuntimeError):
+    class McpError(RuntimeError):  # type: ignore[no-redef]
         pass
 
     async def sse_client(*args: Any, **kwargs: Any):
@@ -86,7 +86,7 @@ def _describe_exception(exc: BaseException, *, depth: int = 0) -> str:
     try:
         if _BASE_EXCEPTION_GROUP is not None and isinstance(exc, _BASE_EXCEPTION_GROUP):
             members = "; ".join(
-                _describe_exception(sub, depth=depth + 1) for sub in exc.exceptions
+                _describe_exception(sub, depth=depth + 1) for sub in exc.exceptions  # type: ignore[attr-defined]
             )
             return f"{type(exc).__name__}({members})"
         text = str(exc).strip()
@@ -671,14 +671,14 @@ class SseClient(GenericMcpClient):
 
     async def _maintain_session(self) -> None:
         async with sse_client(self.config.url) as client:
-            async with SseMcpSession(
+            async with SseMcpSession(  # type: ignore[misc]
                 *client,
                 read_timeout_seconds=self.config.requestTimeout / 1000.0 if self.config.requestTimeout else None,
             ) as session:
                 session.set_on_tools_changed(self.on_tools_changed)
                 await session.initialize()
                 logger.debug(f"finished initialise session for {self.name}")
-                self.session = session
+                self.session = session  # type: ignore[assignment]
 
                 try:
                     while True:
@@ -749,7 +749,7 @@ class HttpClient(GenericMcpClient):
         try:
             await session.initialize()
             logger.debug(f"finished initialise session for {self.name}")
-            self.session = session
+            self.session = session  # type: ignore[assignment]
 
             while True:
                 await asyncio.sleep(10)

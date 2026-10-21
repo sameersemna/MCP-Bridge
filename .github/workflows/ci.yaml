@@ -26,7 +26,7 @@ jobs:
         run: uv sync --dev
 
       - name: Run tests
-        run: uv run pytest -q
+        run: uv run pytest -q --cov=mcp_bridge --cov-fail-under=70
 
   secrets:
     name: Secret scan
@@ -44,12 +44,8 @@ jobs:
         run: python scripts/check_secrets.py
 
   lint:
-    name: Lint & Type check (informational)
+    name: Lint & Type check
     runs-on: ubuntu-latest
-    # Non-blocking: the codebase is not yet ruff/mypy-clean (see the
-    # stabilization backlog). These run to surface issues without failing the
-    # build. Once the backlog items are resolved, remove `continue-on-error`.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 

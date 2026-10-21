@@ -33,6 +33,7 @@ lmos-openai-types = { git = "https://github.com/LMOS-IO/LMOS-openai-types", rev 
 dev = [
     "mypy>=1.14.0",
     "pytest>=8.0.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.8.4",
     "uv>=0.5.20",
     "weasyprint>=69.0",

@@ -2007,7 +2007,7 @@ def _parse_pseudo_tool_calls(text: str) -> list[tuple[str, str]]:
         if not tool_name:
             continue
 
-        arguments: dict[str, Any] = {}
+        arguments: dict[str, Any] = {}  # type: ignore[no-redef]
         for param in _FUNCTION_PARAMETER_PATTERN.finditer(body):
             arg_name = param.group(1).strip()
             arg_value = param.group(2).strip()
@@ -2456,7 +2456,7 @@ async def chat_completions(
     discovered_tool_names = tool_names(request.tools)
     logger.info(f"tools discovered: {len(discovered_tool_names)} available: {', '.join(discovered_tool_names)}")
     if trace_logger is not None:
-        trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
+        trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])  # type: ignore[union-attr]
 
     max_tool_turns = get_max_tool_turns(getattr(request, "model", None))
     max_stub_retries = get_max_stub_retries()
@@ -2726,7 +2726,7 @@ async def chat_completions(
                 )
 
             msg = response.choices[0].message
-            if _should_use_empty_content_fallback(msg, finish_reason_value := response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None):
+            if _should_use_empty_content_fallback(msg, finish_reason_value := response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None):  # type: ignore[arg-type]
                 logger.warning("upstream model returned empty assistant content without tool calls; synthesizing a fallback response from tool evidence")
                 # The primary model returned empty content (e.g. it maxed out its
                 # output token budget on reasoning and produced nothing). Try the
@@ -2758,7 +2758,7 @@ async def chat_completions(
                 content=msg.content,
                 tool_calls=msg.tool_calls,
             )  # type: ignore
-            request.messages.append(msg)
+            request.messages.append(msg)  # type: ignore[arg-type]
 
             finish_reason_label = response.choices[0].finish_reason.value if response.choices[0].finish_reason is not None else None
             logger.log(
@@ -2791,10 +2791,10 @@ async def chat_completions(
                             f"parsing {len(parsed_calls)} tool call(s) for execution"
                         )
                         synthetic_calls = _build_synthetic_tool_calls(parsed_calls)
-                        msg.tool_calls = synthetic_calls
+                        msg.tool_calls = synthetic_calls  # type: ignore[assignment]
                         # The tool loop reads tool_calls from
                         # response.choices[0].message, so mirror them there too.
-                        response.choices[0].message.tool_calls = synthetic_calls
+                        response.choices[0].message.tool_calls = synthetic_calls  # type: ignore[assignment]
                         # Strip the raw markers from the assistant content so
                         # they don't leak into the conversation / final response.
                         cleaned_content = _strip_pseudo_tool_call_markers(assistant_text)
@@ -2873,8 +2873,8 @@ async def chat_completions(
                             f"parsing {len(parsed_calls)} tool call(s) for execution"
                         )
                         synthetic_calls = _build_synthetic_tool_calls(parsed_calls)
-                        msg.tool_calls = synthetic_calls
-                        response.choices[0].message.tool_calls = synthetic_calls
+                        msg.tool_calls = synthetic_calls  # type: ignore[assignment]
+                        response.choices[0].message.tool_calls = synthetic_calls  # type: ignore[assignment]
                         # Strip the raw markers from the assistant content so
                         # they don't leak into the conversation / final response.
                         cleaned_content = _strip_pseudo_tool_call_markers(assistant_text)
@@ -3083,7 +3083,7 @@ async def chat_completions(
                 "mcp_bridge_tool_loop_turns", float(tool_turns_completed)
             )
 
-            client_calls, mcp_calls = split_tool_calls(request, tool_call_items)
+            client_calls, mcp_calls = split_tool_calls(request, tool_call_items)  # type: ignore[arg-type]
             if client_calls:
                 # Standard OpenAI passthrough: the client owns this tool, so
                 # hand the whole tool_calls response back instead of trying to
@@ -3094,18 +3094,18 @@ async def chat_completions(
                         tool_calls=[name for name, _ in client_calls],
                     )
                 return response
-            tool_call_items = mcp_calls
+            tool_call_items = mcp_calls  # type: ignore[assignment]
 
             if tool_call_items:
                 try:
                     tool_call_results = await run_until_disconnected(
                         call_tools(
-                            tool_call_items,
+                            tool_call_items,  # type: ignore[arg-type]
                             timeout=tool_timeout_seconds,
                             trace_logger=trace_logger,
                             client_cache=tool_client_cache,
                             result_cache=tool_result_cache,
-                            persistent_cache=persistent_tool_cache,
+                            persistent_cache=persistent_tool_cache,  # type: ignore[arg-type]
                             cache_enabled=_cache_enabled,
                             tool_server_map=tool_server_map,
                             max_concurrency=getattr(
@@ -3187,7 +3187,7 @@ async def chat_completions(
                         tool_call_result,
                     )
                     tools_content = await _recover_mangled_pdf_tool_content(
-                        tool_name, tool_call_arguments, tools_content
+                        tool_name, tool_call_arguments, tools_content  # type: ignore[arg-type]
                     )
                     tool_message = ChatCompletionRequestMessage.model_validate(
                         {

@@ -12,7 +12,7 @@ class MCPServerConfig(BaseModel):
 try:
     from mcp.client.stdio import StdioServerParameters
 except ImportError:  # pragma: no cover - fallback for environments without the SDK installed
-    class StdioServerParameters(MCPServerConfig):
+    class StdioServerParameters(MCPServerConfig):  # type: ignore[no-redef]
         model_config = ConfigDict(extra="forbid")
 
         command: str = Field(default="python")
@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover - fallback for environments without the 
 try:
     from mcpx.client.transports.docker import DockerMCPServer
 except ImportError:  # pragma: no cover - fallback for environments without the SDK installed
-    class DockerMCPServer(MCPServerConfig):
+    class DockerMCPServer(MCPServerConfig):  # type: ignore[no-redef]
         model_config = ConfigDict(extra="forbid")
 
         image: str | None = None

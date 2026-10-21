@@ -76,7 +76,7 @@ class SseServerTransport:
         self._read_stream_writers[session_id] = read_stream_writer
         logger.debug(f"Created new session with ID: {session_id}")
 
-        sse_stream_writer, sse_stream_reader = anyio.create_memory_object_stream(
+        sse_stream_writer, sse_stream_reader = anyio.create_memory_object_stream(  # type: ignore[var-annotated]
             0, dict[str, Any]
         )
 

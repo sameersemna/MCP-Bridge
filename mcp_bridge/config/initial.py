@@ -19,7 +19,8 @@ __all__ = ["initial_settings"]
 class InitialSettings(BaseSettings):
     file: Optional[str] = Field("config.json")
     http_url: Optional[str] = Field(None)
-    json: Optional[Json] = Field(None)  # allow for raw config to be passed as env var
+    # Allow raw config to be passed as an env var.
+    json: Optional[Json] = Field(None)  # type: ignore[assignment]
 
     load_config: bool = Field(
         True, json_schema_extra={"include_in_schema": False}

@@ -34,12 +34,12 @@ except ImportError:  # pragma: no cover - optional dependency support
         @classmethod
         def model_validate(cls, payload: Any) -> "ChatCompletionRequestMessage":
             if isinstance(payload, cls):
-                return payload
+                return payload  # type: ignore[return-value]
             if isinstance(payload, dict):
-                return cls(**payload)
-            return cls(role="assistant", content=str(payload))
+                return cls(**payload)  # type: ignore[return-value]
+            return cls(role="assistant", content=str(payload))  # type: ignore[return-value]
 
-    CreateChatCompletionRequest = Any
+    CreateChatCompletionRequest = Any  # type: ignore[assignment, misc]
 
 try:
     import mcp.types
@@ -74,7 +74,7 @@ def maybe_add_tool_selection_instructions(request: Any) -> Any:
     if not messages:
         return request
 
-    text_chunks = []
+    text_chunks = []  # type: ignore[var-annotated]
     for message in messages:
         content = getattr(message, "content", None)
         if isinstance(content, list):
@@ -945,7 +945,6 @@ def _decode_legacy_google_redirect(url: str) -> str | None:
     match = _GOOGLE_REDIRECT_RE.match(url.strip())
     if not match:
         return None
-    token = match.group(1)
     # The legacy format puts the destination in the ``q`` param (URL-encoded).
     if "url?q=" not in url:
         return None
@@ -2342,12 +2341,12 @@ async def call_tools(
         try:
             call_kwargs = {"timeout": timeout}
             if trace_logger is not None:
-                call_kwargs["trace_logger"] = trace_logger
+                call_kwargs["trace_logger"] = trace_logger  # type: ignore[assignment]
 
             signature = _call_tool_parameters(call_tool)
             if "trace_logger" in signature:
-                call_kwargs["client_cache"] = client_cache
-                result = await call_tool(name, payload, **call_kwargs)
+                call_kwargs["client_cache"] = client_cache  # type: ignore[assignment]
+                result = await call_tool(name, payload, **call_kwargs)  # type: ignore[arg-type]
             else:
                 result = await call_tool(name, payload, timeout)
         except BaseException as exc:

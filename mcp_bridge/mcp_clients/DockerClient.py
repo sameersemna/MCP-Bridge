@@ -11,7 +11,7 @@ except ImportError:  # pragma: no cover - allows the package to import in minima
             self.args = args
             self.kwargs = kwargs
 
-    async def docker_client(*args: Any, **kwargs: Any):
+    async def docker_client(*args: Any, **kwargs: Any):  # type: ignore[misc]
         raise RuntimeError("mcpx SDK is not installed")
 
 from mcp_bridge.mcp_clients.session import McpClientSession

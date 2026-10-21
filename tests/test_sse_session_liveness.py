@@ -336,7 +336,6 @@ def test_late_ping_reply_after_timeout_does_not_break_loop():
     The late reply must be discarded without raising, and the message loop must
     still be alive so the session is not spuriously torn down.
     """
-    write_stream = _FakeStream()
     session, read_stream, _ = _session()
     session._ping_timeout_seconds = 0.05
 

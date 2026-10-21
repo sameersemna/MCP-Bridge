@@ -12,7 +12,7 @@ except ImportError:  # pragma: no cover - allows the package to import in minima
 
         @classmethod
         def model_validate_json(cls, value: str) -> "CreateChatCompletionResponse":
-            return cls()
+            return cls()  # type: ignore[return-value]
 
 try:
     from mcp import SamplingMessage
@@ -86,7 +86,7 @@ async def handle_sampling_message(
 
     logger.debug(
         "sampling request prepared: "
-        f"model={request['model']}; message_count={len(request.get('messages', []))}"
+        f"model={request['model']}; message_count={len(request.get('messages', []))}"  # type: ignore[arg-type]
     )
 
     async with get_client() as client:

@@ -13,7 +13,6 @@ import json
 import pytest
 from loguru import logger
 
-import mcp_bridge.logging as logging_module
 from mcp_bridge.config.final import Logging
 from mcp_bridge.openai_clients import streamChatCompletion as stream_module
 

@@ -425,7 +425,7 @@ class MCPClientManager:
             if not getattr(client, "session", None):
                 return []
 
-            list_tools = await asyncio.wait_for(client.session.list_tools(), timeout=timeout)
+            list_tools = await asyncio.wait_for(client.session.list_tools(), timeout=timeout)  # type: ignore[union-attr]
             client_tools = list(getattr(list_tools, "tools", []) or [])
             self._remember_tool_annotations(client, client_tools)
             return client_tools

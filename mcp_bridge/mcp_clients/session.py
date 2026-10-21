@@ -139,7 +139,7 @@ class McpClientSession(
         )
         self._on_tools_changed = on_tools_changed
         self._incoming_message_stream_writer, self._incoming_message_stream_reader = (
-            anyio.create_memory_object_stream(100)
+            anyio.create_memory_object_stream(100)  # type: ignore[var-annotated]
         )
 
     def set_on_tools_changed(self, callback: Callable[[], None] | None) -> None:

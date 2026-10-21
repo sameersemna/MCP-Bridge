@@ -16,22 +16,22 @@ try:
 except ImportError:  # pragma: no cover - fallback for minimal environments
     from pydantic import BaseModel, Field
 
-    class Function1(BaseModel):
+    class Function1(BaseModel):  # type: ignore[no-redef]
         name: str = ""
         arguments: str = ""
 
-    class ChatCompletionMessageToolCall(BaseModel):
+    class ChatCompletionMessageToolCall(BaseModel):  # type: ignore[no-redef]
         id: str = ""
         type: str = "function"
-        function: Function1 = Field(default_factory=Function1)
+        function: Function1 = Field(default_factory=Function1)  # type: ignore[arg-type]
 
-    class ChatCompletionRequestMessage(BaseModel):
+    class ChatCompletionRequestMessage(BaseModel):  # type: ignore[no-redef]
         role: str
         content: str | None = None
         tool_calls: list[ChatCompletionMessageToolCall] | None = None
         tool_call_id: str | None = None
 
-    class CreateChatCompletionRequest(BaseModel):
+    class CreateChatCompletionRequest(BaseModel):  # type: ignore[no-redef]
         stream: bool = False
         messages: list[ChatCompletionRequestMessage] = Field(default_factory=list)
         tools: list[Any] = Field(default_factory=list)
@@ -47,7 +47,7 @@ except ImportError:  # pragma: no cover - fallback for minimal environments
         delta: StreamDelta = Field(default_factory=StreamDelta)
         finish_reason: FinishReason | None = None
 
-    class CreateChatCompletionStreamResponse(BaseModel):
+    class CreateChatCompletionStreamResponse(BaseModel):  # type: ignore[no-redef]
         choices: list[StreamChoice] = Field(default_factory=list)
 
 from .utils import call_tools, chat_completion_add_tools, sanitize_tool_result_content, tool_names
@@ -69,7 +69,7 @@ from loguru import logger
 try:
     from httpx_sse import aconnect_sse
 except ImportError:  # pragma: no cover - fallback for minimal environments
-    async def aconnect_sse(*args: Any, **kwargs: Any):
+    async def aconnect_sse(*args: Any, **kwargs: Any):  # type: ignore[misc]
         raise RuntimeError("httpx_sse is not installed")
 
 try:
@@ -150,7 +150,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
     discovered_tool_names = tool_names(request.tools)
     logger.info(f"tools discovered: {len(discovered_tool_names)} available: {', '.join(discovered_tool_names)}")
     if trace_logger is not None:
-        trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])
+        trace_logger.record("tools_discovered", tools=[tool.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) for tool in request.tools])  # type: ignore[union-attr]
 
     fully_done = False
     # Repeated-tool-call guard: the non-streaming loop stops when the same tool
@@ -345,7 +345,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
             yield ServerSentEvent(event="message", data="[DONE]", id=None, retry=None)
             return
 
-        if len(last.choices) > 0 and last.choices[0].finish_reason.value in ["stop", "length"]:
+        if len(last.choices) > 0 and last.choices[0].finish_reason.value in ["stop", "length"]:  # type: ignore[union-attr]
             # The model may have emitted Anthropic-style pseudo tool-call
             # markers as plain text content (e.g. <invoke name="...">) instead
             # of structured tool_calls. Parse them so the tool still executes.
@@ -373,7 +373,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                     logger.log(
                         "DEBUGIMP",
                         "no tool calls found "
-                        f"(finish_reason={last.choices[0].finish_reason.value}; "
+                        f"(finish_reason={last.choices[0].finish_reason.value}; "  # type: ignore[union-attr]
                         f"{len(discovered_tool_names)} tool(s) were available to the model)"
                     )
                     fully_done = True
@@ -382,7 +382,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                 logger.log(
                     "DEBUGIMP",
                     "no tool calls found "
-                    f"(finish_reason={last.choices[0].finish_reason.value}; "
+                    f"(finish_reason={last.choices[0].finish_reason.value}; "  # type: ignore[union-attr]
                     f"{len(discovered_tool_names)} tool(s) were available to the model)"
                 )
                 fully_done = True

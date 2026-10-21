@@ -15,7 +15,7 @@ if initial_settings.load_config:
     try:
         from deepmerge import always_merger
     except ImportError:  # pragma: no cover - fallback for minimal environments
-        def always_merger() -> dict[str, Any]:
+        def always_merger() -> dict[str, Any]:  # type: ignore[misc]
             return {}
 
     configs: list[dict[str, Any]] = []

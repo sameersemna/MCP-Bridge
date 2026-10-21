@@ -24,7 +24,7 @@ try:
         BlobResourceContents,
     )
 except ImportError:  # pragma: no cover - allows minimal environments to import
-    class McpError(RuntimeError):
+    class McpError(RuntimeError):  # type: ignore[no-redef]
         pass
 
     class CallToolResult:  # type: ignore[no-redef]
