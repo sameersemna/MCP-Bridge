@@ -16,6 +16,7 @@ from mcp_bridge import __version__ as version
 from mcp_bridge.config import config
 from mcp_bridge.routers import secure_router, public_router
 from mcp_bridge.lifespan import lifespan
+from mcp_bridge.mcp_server.streamable_http import streamable_http_app
 from mcp_bridge.openapi_tags import tags_metadata
 from mcp_bridge.security_posture import enforce_security_posture
 from mcp_bridge.telemetry import setup_tracing
@@ -65,6 +66,10 @@ def create_app() -> FastAPI:
 
     app.include_router(secure_router)
     app.include_router(public_router)
+    # The Streamable HTTP transport writes its own ASGI response, so it is
+    # mounted rather than added as a FastAPI route. The wrapper enforces the
+    # API key when auth is enabled.
+    app.mount("/mcp-server/mcp", streamable_http_app)
 
     return app
 

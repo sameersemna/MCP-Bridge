@@ -9,6 +9,7 @@ the pool's lifetime to the app lifespan instead.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import httpx
@@ -89,6 +90,17 @@ def test_lifespan_shutdown_closes_the_shared_transport(monkeypatch) -> None:
         return None
 
     monkeypatch.setattr(lifespan_module.ClientManager, "initialize", fake_initialize)
+
+    @asynccontextmanager
+    async def no_streamable_http_lifespan():
+        yield
+
+    monkeypatch.setattr(
+        lifespan_module,
+        "streamable_http_lifespan",
+        no_streamable_http_lifespan,
+        raising=False,
+    )
 
     async def run() -> None:
         async with lifespan_module.lifespan(app=None):

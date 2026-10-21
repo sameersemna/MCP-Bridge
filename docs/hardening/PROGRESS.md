@@ -44,7 +44,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P1-03 | `[design]` `Idempotency-Key` support | done | 0933610 | ADR 004. Fingerprint over hashed credential+method+path+body; in-memory LRU or `redis.asyncio`; replay header, 409 in-progress, 422 mismatch, 400 for streaming; tool call and non-streaming chat. 6 tests. |
 | P1-04 | Blocking I/O on the event loop | done | 473c0e7 | Redis `aget/aput` on one lazy `redis.asyncio` client; disk cache via `to_thread`; trace rewrite on the executor with a lock; signature cached per callable; cache factory singleton per config. 4 tests. |
 | P1-05 | Sequential startup | done | b4eec8b | `initialize()` constructs clients with `gather(return_exceptions=True)`, preserving config order and isolating failures. 2 tests (max-time startup, failure isolation). |
-| P1-06 | Unbounded on-disk growth | todo | | |
+| P1-06 | Unbounded on-disk growth | done | b9e651d | Trace enable + max files/age/size; disk-cache entry/size caps; lifespan retention task; URL/tool-arg credential redaction. 6 tests. |
 | P1-07 | `[design]` MCP SDK/protocol modernization | todo | | |
 | P1-08 | Client disconnect and cancellation | todo | | |
 | P1-09 | Streaming/non-streaming tool parity | todo | | |
@@ -82,3 +82,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 18:05 P1-03 done (0933610), ADR `docs/hardening/adr/004-request-idempotency.md`. The environment has `REDIS_URL` set; async Redis bound to TestClient's short-lived loop failed, which exposed that the in-memory fallback's `asyncio.Lock` was loop-bound. The memory store is now lock-free (its operations contain no awaits). Gate 472 passed / ruff 3 / mypy 71.
 - 2026-10-21 18:25 P1-04 done (473c0e7). The existing Redis test injected a sync fake via `_client`; the async path now falls back to that client when no async client is configured, preserving the test seam. README Redis fallback text corrected (no silent backend switch). Gate 476 passed / ruff 3 / mypy 71.
 - 2026-10-21 18:40 P1-05 done (b4eec8b). Startup is `gather`-based; the inventory still lists enabled/disabled/failed/active in config order. Gate 478 passed / ruff 3 / mypy 71.
+- 2026-10-21 19:00 P1-06 done (b9e651d). The redaction test exposed that a bare `token=...` (no `?`/`&`) was not matched; the regex now anchors at string start too. Gate 484 passed / ruff 3 / mypy 71.

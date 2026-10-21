@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 
 from mcp_bridge import lifespan as lifespan_module
 from mcp_bridge import telemetry
@@ -93,6 +94,17 @@ def test_lifespan_shuts_down_clients_then_pool_then_tracing(monkeypatch) -> None
     monkeypatch.setattr(lifespan_module.ClientManager, "shutdown", fake_shutdown, raising=False)
     monkeypatch.setattr(lifespan_module, "close_shared_transport", fake_close_pool, raising=False)
     monkeypatch.setattr(lifespan_module, "shutdown_tracing", fake_shutdown_tracing, raising=False)
+
+    @asynccontextmanager
+    async def no_streamable_http_lifespan():
+        yield
+
+    monkeypatch.setattr(
+        lifespan_module,
+        "streamable_http_lifespan",
+        no_streamable_http_lifespan,
+        raising=False,
+    )
 
     async def run() -> None:
         async with lifespan_module.lifespan(app=None):

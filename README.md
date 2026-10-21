@@ -32,7 +32,8 @@ working features:
 - MCP tools
 - MCP sampling
 
-- SSE Bridge for external clients
+- Aggregated MCP server over Streamable HTTP (`/mcp-server/mcp`) and SSE
+  (`/mcp-server/sse`, deprecated)
 
 planned features:
 
@@ -135,10 +136,22 @@ i.e. 24 h) in memory (LRU capped by `MCP_BRIDGE_IDEMPOTENCY_MAX_ENTRIES`,
 default 1024) or in Redis when `REDIS_URL` is set. Without the header, behaviour
 is unchanged.
 
-## SSE Bridge
-MCP-Bridge also provides an SSE bridge for external clients. This lets external chat apps with explicit MCP support use MCP-Bridge as a MCP server. Point your client at the SSE endpoint (http://yourserver:8000/mcp-server/sse) and you should be able to see all the MCP tools available on the server.
+## Aggregated MCP server (Streamable HTTP and SSE)
+MCP-Bridge also provides an aggregated MCP server for external clients. This lets external chat apps with explicit MCP support use MCP-Bridge as an MCP server.
 
-This also makes it easy to test if your configuration is working correctly. You can use [wong2/mcp-cli](https://github.com/wong2/mcp-cli?tab=readme-ov-file#connect-to-a-running-server-over-sse) to test your configuration. `npx @wong2/mcp-cli --sse http://localhost:8000/mcp-server/sse`
+Two transports are exposed:
+
+- **Streamable HTTP (recommended):** `http://yourserver:8000/mcp-server/mcp`
+- **SSE (deprecated, kept for compatibility):** `http://yourserver:8000/mcp-server/sse`
+
+Both list the same aggregated tools. When `security.auth.enabled` is true, both require the same Bearer key as the rest of the API.
+
+You can inspect either transport with the official inspector or [wong2/mcp-cli](https://github.com/wong2/mcp-cli):
+
+```bash
+npx @modelcontextprotocol/inspector --cli http://localhost:8000/mcp-server/mcp --method tools/list
+npx @wong2/mcp-cli --sse http://localhost:8000/mcp-server/sse
+```
 
 If you want to use the tools inside of [claude desktop](https://claude.ai/download) or other `STDIO` only MCP clients, you can do this with a tool such as [lightconetech/mcp-gateway](https://github.com/lightconetech/mcp-gateway)
 
