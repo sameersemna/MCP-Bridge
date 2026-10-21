@@ -39,7 +39,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P0-10 | REST 500-instead-of-404 + HTTP contract | done | 2c06a93 | `get_client` → None; immutable body default; canonical-name dispatch (REST + aggregated); OpenAI-style 501 for streaming completions; `/v1/models` propagates upstream status. 8 tests. |
 | P0-11 | Insecure-by-default exposure | done | 7dbef54 | New `security.auth.required_for_non_loopback` (default false); loud warning or hard startup failure for unauthenticated non-loopback binds. `/health/live` public, `/health/ready` follows auth; `/health` unchanged. README Security section. 8 tests. |
 | P0-12 | Config HTTP load has no timeout/status check | done | edb7b50 | Explicit env timeout (10s), `raise_for_status`, JSON-object check; non-zero exit with a token-safe message unless `MCP_BRIDGE__CONFIG__HTTP_OPTIONAL=true`. 9 tests. |
-| P1-01 | `[design]` Tool registry | todo | | |
+| P1-01 | `[design]` Tool registry | done | 1743778 | ADR 003. Process-wide registry in config order; TTL 300s; invalidated by `tools/list_changed` (stdio/SSE) and session resets; resolution/discovery/suggestions/aggregated list read it. Discovery skips unready sessions; resolution stops on first match. 7 tests. |
 | P1-02 | Tool-name collisions / OpenAI name constraints | todo | | |
 | P1-03 | `[design]` `Idempotency-Key` support | todo | | |
 | P1-04 | Blocking I/O on the event loop | todo | | |
@@ -76,3 +76,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 15:50 P0-10 done (2c06a93). Collection failure in the full suite came from earlier tests replacing `sys.modules["lmos_openai_types"]` with a stub that lacks `CreateCompletionRequest`; the two `/v1` tests now run in a clean subprocess. Gate 435 passed / ruff 3 / mypy 72.
 - 2026-10-21 16:10 P0-11 done (7dbef54). Posture check extracted to `mcp_bridge/security_posture.py` so tests do not import `main`/`endpoints` and trip over the `lmos_openai_types` stub order. Gate 443 passed / ruff 3 / mypy 72.
 - 2026-10-21 16:28 P0-12 done (edb7b50). **All P0 items complete.** `httpx.get` has no `transport` parameter; switched the seam to an explicit `httpx.Client`. Gate 452 passed / ruff 3 / mypy 72.
+- 2026-10-21 17:05 P1-01 done (1743778), ADR `docs/hardening/adr/003-tool-registry.md`. Two regressions surfaced and were fixed rather than accepted: a global registry barrier delayed resolution behind a slow server (now incremental with early exit and per-server freshness), and the process-wide registry leaked tools between tests when the client set changed (now invalidated on client-set change). Mypy fell to 71. Gate 459 passed / ruff 3 / mypy 71.
