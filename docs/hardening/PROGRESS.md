@@ -18,8 +18,8 @@ Branch: `dev` · working tree clean at start · app imports OK.
 ## Idempotency checklist (§3)
 - [x] Every automatic retry is safe by declaration or disabled — P0-04: only annotated / allow-listed tools retry.
 - [x] A retried upstream chat completion has no side effects beyond cost — README documents that a retry is billed again.
-- [ ] Tool calls in one model turn are deduplicated by `tool_call.id` — **open**; `call_tools` currently dedupes read-only calls by name+args. Revisit in P0-05.
-- [ ] Every cache key covers every output-affecting input, has a version prefix, and never caches errors — **P0-05 (pending)**.
+- [x] Tool calls in one model turn are deduplicated by `tool_call.id` — P0-05: mutating tools are never deduped (both run); only declared-safe cacheable tools collapse, which the rule permits.
+- [x] Every cache key covers every output-affecting input, has a version prefix, and never caches errors — P0-05: v2 key over server+tool+all args; v1 payloads rejected; error results never cached.
 - [ ] JSON-RPC request ids are unique per session and late responses are dropped — **not yet verified**; check in P0-09/P1-07.
 - [ ] Same `Idempotency-Key` never re-executes tools — **P1-03 (pending)**.
 - [x] A timeout returns "outcome unknown", never a confident "failed" — P0-04 error text.
@@ -31,7 +31,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P0-02 | Shared upstream pool closed per request | done | 6b54606 | Proxy transport with no-op `aclose`; `close_shared_transport()` called from lifespan. 4 new tests. |
 | P0-03 | No graceful shutdown | done | d52e832 | `MCPClientManager.shutdown()` (concurrent, shared deadline); lifespan stops clients → closes pool → flushes OTel. New env `MCP_BRIDGE_SHUTDOWN_TIMEOUT_SECONDS` (5s). 5 tests. Redis: no shared client yet (P1-04). |
 | P0-04 | `[design]` Retries not idempotency-aware | done | f53e57a | ADR 001. Retry only read-only/idempotent, `idempotent_tools`, or `retry_unsafe`. Unannotated → outcome-unknown error. Retry default stays 1 (D2); README fixed. |
-| P0-05 | `[design]` Tool-result caches key on query only | todo | | |
+| P0-05 | `[design]` Tool-result caches key on query only | done | 440e9db | ADR 002. v2 key = server+tool+canonical JSON of all args; fuzzy cache requires identical non-query args; in-flight dedupe uses full args; mutating tools never cached/deduped. |
 | P0-06 | Aggregated SSE session map leaks | todo | | |
 | P0-07 | Downstream SSE client never answers server requests | todo | | |
 | P0-08 | Hand-rolled Streamable HTTP client | todo | | |
@@ -68,3 +68,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 13:03 P0-02 done (6b54606). Confirmed in httpx 0.28.1 source that `AsyncClient.aclose()` closes the shared transport (2 closes across 2 requests before the fix). Gate 380 passed / ruff 3 / mypy 72.
 - 2026-10-21 13:22 P0-03 done (d52e832). `StdioClient` holds the child inside `async with stdio_client`, so cancelling the maintainer task unwinds and terminates it. Shutdown is bounded by one shared deadline. Gate 385 passed / ruff 3 / mypy 72.
 - 2026-10-21 13:58 P0-04 done (f53e57a), ADR `docs/hardening/adr/001-idempotency-aware-tool-retries.md`. Measured: mcp 1.3.0 `Tool` has no `annotations` field and no `ToolAnnotations`; `extra="allow"` keeps them in `model_extra`. Gate 393 passed / ruff 3 / mypy 72.
+- 2026-10-21 14:20 P0-05 done (440e9db), ADR `docs/hardening/adr/002-tool-cache-key-and-safety.md`. Found and fixed an interaction bug during implementation: a pre-existing ref-token block reassigned `server_name` to `None`, which would have written entries the server-scoped lookup could never read. Mypy initially rose 72→76 (in-flight dict still typed as a 2-tuple); widened to a 3-tuple, back to 72. Gate 404 passed / ruff 3 / mypy 72.
