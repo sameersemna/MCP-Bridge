@@ -33,7 +33,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P0-04 | `[design]` Retries not idempotency-aware | done | f53e57a | ADR 001. Retry only read-only/idempotent, `idempotent_tools`, or `retry_unsafe`. Unannotated → outcome-unknown error. Retry default stays 1 (D2); README fixed. |
 | P0-05 | `[design]` Tool-result caches key on query only | done | 440e9db | ADR 002. v2 key = server+tool+canonical JSON of all args; fuzzy cache requires identical non-query args; in-flight dedupe uses full args; mutating tools never cached/deduped. |
 | P0-06 | Aggregated SSE session map leaks | done | 6d711de | Ported upstream #1227 cleanup: response wrapper closes streams; shielded `finally` pops the session and closes all ends. 2 tests. |
-| P0-07 | Downstream SSE client never answers server requests | todo | | |
+| P0-07 | Downstream SSE client never answers server requests | done | 02a435b | Answers ping inline, roots/list `{"roots":[]}`, sampling in a tracked task, -32601 otherwise. Advertises sampling only with models; HTTP advertises nothing. 6 tests. |
 | P0-08 | Hand-rolled Streamable HTTP client | todo | | |
 | P0-09 | Error resets kill healthy sessions | todo | | |
 | P0-10 | REST 500-instead-of-404 + HTTP contract | todo | | |
@@ -70,3 +70,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 13:58 P0-04 done (f53e57a), ADR `docs/hardening/adr/001-idempotency-aware-tool-retries.md`. Measured: mcp 1.3.0 `Tool` has no `annotations` field and no `ToolAnnotations`; `extra="allow"` keeps them in `model_extra`. Gate 393 passed / ruff 3 / mypy 72.
 - 2026-10-21 14:20 P0-05 done (440e9db), ADR `docs/hardening/adr/002-tool-cache-key-and-safety.md`. Found and fixed an interaction bug during implementation: a pre-existing ref-token block reassigned `server_name` to `None`, which would have written entries the server-scoped lookup could never read. Mypy initially rose 72→76 (in-flight dict still typed as a 2-tuple); widened to a 3-tuple, back to 72. Gate 404 passed / ruff 3 / mypy 72.
 - 2026-10-21 14:32 P0-06 done (6d711de). Verified the installed mcp 1.3.0 has the same leak; implemented upstream's #1227 fix plus an unconditional shielded close. Test hangs avoided by simulating `http.disconnect` (a never-returning fake `receive` prevented the response task from exiting) and by using `*_nowait` so a regression fails fast rather than blocking. Gate 406 passed / ruff 3 / mypy 72.
+- 2026-10-21 14:48 P0-07 done (02a435b). Mypy rose to 73 because a loop variable `task` collided with the existing `Task[None] | None`; renamed to `background_task`, back to 72. Gate 412 passed / ruff 3 / mypy 72.
