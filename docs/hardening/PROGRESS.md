@@ -53,7 +53,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P2-03 | Metrics | done | aba85c2 | Dependency-free Prometheus counters/summaries; `/metrics` on the authenticated router behind `telemetry.metrics_enabled` (default false). Instruments upstream latency/status, tool calls, cache, idempotency, resets, turns. 3 tests. |
 | P2-04 | Limits and backpressure | done | e82f5a7 | Opt-in `limits` config: per-key token bucket + concurrency cap, body-size 413, per-request tool-call cap. OpenAI-style 429 with Retry-After. 5 tests. |
 | P2-05 | CI lint/type blocking | done | 2980e46 | 3 ruff findings fixed (0 now); 51 narrow per-line mypy suppressions (documented ratchet, 0 errors); pytest-cov with 70% floor (measured 70.59%); `continue-on-error` removed. |
-| P2-06 | Docker and Helm | todo | | |
+| P2-06 | Docker and Helm | done | 4f5adc1 | Multi-stage Dockerfile (compilers only in builder; Node retained), healthcheck reads `MCP_BRIDGE__NETWORK__PORT` and probes `/health/live`; Helm probes, resources, non-root/read-only securityContext, emptyDir mounts. 2 tests. |
 | P3-01 | Replace control-flow asserts | todo | | |
 | P3-02 | Aggregated list handlers concurrent/isolated | todo | | |
 | P3-03 | `[design]` Split chatCompletion/utils | todo | | |
@@ -91,3 +91,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 20:55 P2-03 done (aba85c2). A dependency-free registry avoided adding `prometheus_client`; the summary form (`_count`/`_sum`) is used rather than histogram buckets, which the bridge does not need yet. Gate 503 passed / ruff 3 / mypy 55.
 - 2026-10-21 21:10 P2-04 done (e82f5a7). Two rounds of test failures traced to a missing `config` import in `streamChatCompletion` (the import anchor did not match because another import sat between the lines) and a fake-clock test that started at 0 against a bucket initialised with monotonic time. Gate 508 passed / ruff 3 / mypy 55.
 - 2026-10-21 21:30 P2-05 done (2980e46). **CI is now blocking.** Ruff 0, mypy 0 (51 baseline ignores, one existing ignore had to move ahead of an inline comment to take effect), coverage floor 70% (measured 70.59%). `pytest-cov` added to dev deps. Gate: 508 passed / ruff 0 / mypy 0.
+- 2026-10-21 21:45 P2-06 done (4f5adc1). **All P0–P2 items complete.** The Docker contract test initially failed because the runtime *comment* contained the literal 'build-essential'; the requirement is about the installed package, and the comment was reworded. Gate 510 passed / coverage 70.59% / ruff 0 / mypy 0.
