@@ -15,13 +15,22 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - [x] D3 SDK upgrade / Streamable HTTP server — asked 2026-10-21. **Answer: approved.** Upgrade + `/mcp-server/mcp`, keep `/mcp-server/sse`.
 - [x] D4 breaking defaults — asked 2026-10-21. **Approved:** P0-11 opt-in key + warning (`false`), P1-02 `tool_namespacing=on_collision`, P2-02 `telemetry.capture_payloads=false`.
 
+## Idempotency checklist (§3)
+- [x] Every automatic retry is safe by declaration or disabled — P0-04: only annotated / allow-listed tools retry.
+- [x] A retried upstream chat completion has no side effects beyond cost — README documents that a retry is billed again.
+- [ ] Tool calls in one model turn are deduplicated by `tool_call.id` — **open**; `call_tools` currently dedupes read-only calls by name+args. Revisit in P0-05.
+- [ ] Every cache key covers every output-affecting input, has a version prefix, and never caches errors — **P0-05 (pending)**.
+- [ ] JSON-RPC request ids are unique per session and late responses are dropped — **not yet verified**; check in P0-09/P1-07.
+- [ ] Same `Idempotency-Key` never re-executes tools — **P1-03 (pending)**.
+- [x] A timeout returns "outcome unknown", never a confident "failed" — P0-04 error text.
+
 ## Items
 | ID | Title | Status (todo/in-progress/done/deferred/blocked) | Commit | Notes |
 |----|-------|------|--------|-------|
 | P0-01 | Secrets in repo | done | 5c29ad6 | 4 values replaced with `${ENV_VAR}`; scanner + pytest + pre-commit + CI job. History not rewritten (D1). **Rotate the exposed keys.** |
 | P0-02 | Shared upstream pool closed per request | done | 6b54606 | Proxy transport with no-op `aclose`; `close_shared_transport()` called from lifespan. 4 new tests. |
 | P0-03 | No graceful shutdown | done | d52e832 | `MCPClientManager.shutdown()` (concurrent, shared deadline); lifespan stops clients → closes pool → flushes OTel. New env `MCP_BRIDGE_SHUTDOWN_TIMEOUT_SECONDS` (5s). 5 tests. Redis: no shared client yet (P1-04). |
-| P0-04 | `[design]` Retries not idempotency-aware | todo | | |
+| P0-04 | `[design]` Retries not idempotency-aware | done | f53e57a | ADR 001. Retry only read-only/idempotent, `idempotent_tools`, or `retry_unsafe`. Unannotated → outcome-unknown error. Retry default stays 1 (D2); README fixed. |
 | P0-05 | `[design]` Tool-result caches key on query only | todo | | |
 | P0-06 | Aggregated SSE session map leaks | todo | | |
 | P0-07 | Downstream SSE client never answers server requests | todo | | |
@@ -58,3 +67,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - **Action for operator:** rotate the Context7 and Tavily keys that were committed (they remain in git history).
 - 2026-10-21 13:03 P0-02 done (6b54606). Confirmed in httpx 0.28.1 source that `AsyncClient.aclose()` closes the shared transport (2 closes across 2 requests before the fix). Gate 380 passed / ruff 3 / mypy 72.
 - 2026-10-21 13:22 P0-03 done (d52e832). `StdioClient` holds the child inside `async with stdio_client`, so cancelling the maintainer task unwinds and terminates it. Shutdown is bounded by one shared deadline. Gate 385 passed / ruff 3 / mypy 72.
+- 2026-10-21 13:58 P0-04 done (f53e57a), ADR `docs/hardening/adr/001-idempotency-aware-tool-retries.md`. Measured: mcp 1.3.0 `Tool` has no `annotations` field and no `ToolAnnotations`; `extra="allow"` keeps them in `model_extra`. Gate 393 passed / ruff 3 / mypy 72.

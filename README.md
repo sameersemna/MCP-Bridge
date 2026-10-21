@@ -173,6 +173,10 @@ Unannotated tools are **not** retried. Their timeout result tells the model the
 outcome is unknown and that the call was not retried, so it can verify instead
 of repeating a write.
 
+Retries are never free: an upstream chat-completion retry re-sends the prompt
+and is billed again. Tool retries are limited to declared-safe tools for the
+same reason — repeating a side effect is worse than repeating a token cost.
+
 ### SSE/HTTP session keep-alive and liveness pings
 
 The bridge keeps an SSE (or HTTP) MCP session alive by sending a `ping` every
