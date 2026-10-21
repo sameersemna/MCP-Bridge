@@ -242,6 +242,14 @@ class Telemetry(BaseModel):
     defaults to false since we cannot assume you are actually running an open telemetry collector on your machine.
     """
     enabled: bool = Field(False, description="Enable telemetry")
+    capture_payloads: bool = Field(
+        False,
+        description=(
+            "Put request/response/tool-argument previews into OpenTelemetry span "
+            "attributes. Off by default because they can contain PII; when "
+            "enabled, values are redacted first."
+        ),
+    )
     service_name: str = Field(
         default="MCP Bridge", description="Name of the service"
     )

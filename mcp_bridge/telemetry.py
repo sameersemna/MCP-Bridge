@@ -1,4 +1,6 @@
+import json
 import logging
+from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
@@ -18,6 +20,29 @@ tracer = trace.get_tracer("mcp_bridge")
 class _TracingState:
     initialized = False
     provider: TracerProvider | None = None
+
+
+def payload_preview(value: Any, limit: int = 1600) -> str:
+    """Return a redacted payload preview, or ``""`` when capture is off.
+
+    PII-safe by default: request bodies, responses and tool arguments can contain
+    user data, so they only reach span attributes when the operator opts in with
+    ``telemetry.capture_payloads``. When enabled, ``redact_sensitive_data`` is
+    applied first.
+    """
+    if not getattr(config.telemetry, "capture_payloads", False):
+        return ""
+    try:
+        from mcp_bridge.logging import redact_sensitive_data
+
+        redacted = redact_sensitive_data(value)
+        if isinstance(redacted, str):
+            text = redacted
+        else:
+            text = json.dumps(redacted, ensure_ascii=False, default=str)
+        return text[:limit]
+    except Exception:
+        return ""
 
 
 def setup_tracing(app) -> None:

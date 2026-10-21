@@ -162,6 +162,13 @@ Every response carries `X-Request-ID`: the incoming header if supplied
 loguru's context, the trace-log filename/content, and the
 `mcp_bridge.request.id` span attribute.
 
+### Telemetry payload capture
+
+OpenTelemetry span attributes no longer include request, response or
+tool-argument previews by default. Set `telemetry.capture_payloads=true` to opt
+in; values are redacted (`Authorization`, API keys, credentials in URL query
+strings) before they are attached.
+
 ## Configuration
 
 To add new MCP servers, edit the config.json file.

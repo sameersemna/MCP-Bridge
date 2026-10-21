@@ -20,6 +20,7 @@ from mcp_bridge.idempotency import (
     request_identity,
 )
 from mcp_bridge.request_context import get_request_id
+from mcp_bridge.telemetry import payload_preview
 import json
 
 router = APIRouter(prefix="/v1", tags=[Tag.openai])
@@ -177,14 +178,13 @@ async def openai_chat_completions(
         span.set_attribute("mcp_bridge.request.stream", bool(request.stream))
         span.set_attribute("mcp_bridge.request.model", getattr(request, "model", "") or "")
         span.set_attribute("mcp_bridge.request.tool_count", len(getattr(request, "tools", []) or []))
-        span.set_attribute(
-            "mcp_bridge.request.preview",
-            json.dumps(
-                request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
-                ensure_ascii=False,
-                default=str,
-            )[:1600],
+        request_preview = payload_preview(
+            request.model_dump(
+                exclude_defaults=True, exclude_none=True, exclude_unset=True
+            )
         )
+        if request_preview:
+            span.set_attribute("mcp_bridge.request.preview", request_preview)
 
         trace_logger = RequestTraceLogger(
             request_payload=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
@@ -218,14 +218,15 @@ async def openai_chat_completions(
             # return path inside `chat_completions` is covered exactly once.
             _apply_citation_guard(request, response, trace_logger)
 
-            span.set_attribute(
-                "mcp_bridge.response.preview",
-                json.dumps(
-                    response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
-                    ensure_ascii=False,
-                    default=str,
-                )[:1600],
+            response_preview = payload_preview(
+                response.model_dump(
+                    exclude_defaults=True, exclude_none=True, exclude_unset=True
+                )
             )
+            if response_preview:
+                span.set_attribute(
+                    "mcp_bridge.response.preview", response_preview
+                )
             trace_logger.record("outgoing_response", response=response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True))
 
         if idempotency_store is not None and idempotency_key and not request.stream:

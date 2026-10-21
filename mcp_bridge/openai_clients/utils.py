@@ -18,6 +18,7 @@ from opentelemetry import trace
 
 from mcp_bridge.logging import RequestTraceLogger
 from mcp_bridge.mcp_clients.AbstractClient import CallToolResult, TextContent
+from mcp_bridge.telemetry import payload_preview
 
 try:
     from lmos_openai_types import ChatCompletionRequestMessage, CreateChatCompletionRequest
@@ -1995,7 +1996,9 @@ async def call_tool(
     with tracer.start_as_current_span("mcp_bridge.call_tool") as span:
         span.set_attribute("mcp_bridge.tool.name", tool_call_name or "")
         span.set_attribute("mcp_bridge.tool.arguments.length", len(tool_call_json or ""))
-        span.set_attribute("mcp_bridge.tool.arguments.preview", _span_payload_preview(tool_call_json))
+        arguments_preview = payload_preview(tool_call_json)
+        if arguments_preview:
+            span.set_attribute("mcp_bridge.tool.arguments.preview", arguments_preview)
         span.set_attribute("mcp_bridge.tool.arguments.json_valid", bool(tool_call_json is not None))
         span.set_attribute("mcp_bridge.tool.timeout_seconds", float(timeout or 0))
 
@@ -2131,7 +2134,9 @@ async def call_tool(
 
         span.set_attribute("mcp_bridge.tool.client_found", True)
         span.set_attribute("mcp_bridge.tool.result.is_error", bool(getattr(result, "isError", False)))
-        span.set_attribute("mcp_bridge.tool.result.preview", _span_payload_preview(result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) if hasattr(result, "model_dump") else result))
+        result_preview = payload_preview(result.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True) if hasattr(result, "model_dump") else result)
+        if result_preview:
+            span.set_attribute("mcp_bridge.tool.result.preview", result_preview)
         if trace_logger is not None:
             trace_logger.record(
                 "mcp_tool_dispatch_result",
