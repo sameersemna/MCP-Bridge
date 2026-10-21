@@ -14,10 +14,28 @@ from mcp_bridge.openai_clients import (
 
 from mcp_bridge.openapi_tags import Tag
 from mcp_bridge.logging import RequestTraceLogger
+from mcp_bridge.idempotency import (
+    get_idempotency_store,
+    make_fingerprint,
+    request_identity,
+)
 import json
 
 router = APIRouter(prefix="/v1", tags=[Tag.openai])
 tracer = trace.get_tracer("mcp_bridge.endpoints")
+
+
+def _idempotency_error(status: int, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status,
+        content={
+            "error": {
+                "message": message,
+                "type": "invalid_request_error",
+                "code": "idempotency_key",
+            }
+        },
+    )
 
 
 def _apply_citation_guard(request: Any, response: Any, trace_logger: RequestTraceLogger) -> None:
@@ -110,6 +128,47 @@ async def openai_chat_completions(
     http_request: Request
 ):
     """Chat Completions endpoint"""
+    idempotency_key = http_request.headers.get("Idempotency-Key")
+    if idempotency_key and request.stream:
+        return _idempotency_error(
+            400,
+            "Idempotency-Key is not supported for streaming requests",
+        )
+
+    idempotency_store = get_idempotency_store() if idempotency_key else None
+    if idempotency_store is not None and idempotency_key:
+        fingerprint = make_fingerprint(
+            identity=request_identity(http_request),
+            method=http_request.method,
+            path=http_request.url.path,
+            body=request.model_dump(
+                exclude_defaults=True, exclude_none=True, exclude_unset=True
+            ),
+        )
+        state, entry = await idempotency_store.begin(idempotency_key, fingerprint)
+        if state == "mismatch":
+            return _idempotency_error(
+                422,
+                "Idempotency-Key was reused with a different request body",
+            )
+        if state == "in_progress":
+            return _idempotency_error(
+                409,
+                "A request with this Idempotency-Key is still in progress",
+            )
+        if state == "replay":
+            if entry is None or entry.body is None:
+                return _idempotency_error(
+                    500, "Stored idempotent response is no longer available"
+                )
+            headers = dict(entry.headers)
+            headers["Idempotent-Replayed"] = "true"
+            return JSONResponse(
+                status_code=entry.status or 200,
+                content=entry.body,
+                headers=headers,
+            )
+
     with tracer.start_as_current_span("openai.chat.completions") as span:
         span.set_attribute("http.method", http_request.method)
         span.set_attribute("http.route", http_request.url.path)
@@ -131,16 +190,22 @@ async def openai_chat_completions(
             method=http_request.method,
         )
         trace_logger.record("incoming_request", prompt=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True))
-        if request.stream:
-            response = await streaming_chat_completions(request, http_request, trace_logger)
-        else:
-            response = await chat_completions(request, http_request, trace_logger)
+        try:
+            if request.stream:
+                response = await streaming_chat_completions(request, http_request, trace_logger)
+            else:
+                response = await chat_completions(request, http_request, trace_logger)
 
-        if response is None:
-            # Defense in depth: no code path should produce a null response, but
-            # guard against it so clients never see an HTTP 200 with a null body.
-            trace_logger.record("outgoing_response", response=None)
-            raise HTTPException(status_code=502, detail="Chat completion produced no response")
+            if response is None:
+                # Defense in depth: no code path should produce a null response,
+                # but guard against it so clients never see an HTTP 200 with a
+                # null body.
+                trace_logger.record("outgoing_response", response=None)
+                raise HTTPException(status_code=502, detail="Chat completion produced no response")
+        except Exception:
+            if idempotency_store is not None and idempotency_key:
+                await idempotency_store.release(idempotency_key)
+            raise
 
         if not request.stream:
             # Citation provenance guard: flag any cited URL that cannot be
@@ -159,6 +224,17 @@ async def openai_chat_completions(
                 )[:1600],
             )
             trace_logger.record("outgoing_response", response=response.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True))
+
+        if idempotency_store is not None and idempotency_key and not request.stream:
+            body = response.model_dump(
+                exclude_defaults=True, exclude_none=True, exclude_unset=True
+            )
+            await idempotency_store.complete(
+                idempotency_key,
+                status=200,
+                body=body,
+                body_bytes=len(json.dumps(body, default=str).encode("utf-8")),
+            )
         return response
 
 

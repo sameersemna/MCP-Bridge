@@ -119,6 +119,22 @@ View the documentation at [http://yourserver:8000/docs](http://localhost:8000/do
 
 MCP-Bridge exposes many rest api endpoints for interacting with all of the native MCP primatives. This lets you outsource the complexity of dealing with MCP servers to MCP-Bridge without comprimising on functionality. See the openapi docs for examples of how to use this functionality.
 
+### Idempotent retries (`Idempotency-Key`)
+
+`/v1/chat/completions` (non-streaming) and `/mcp/tools/{name}/call` accept an
+optional `Idempotency-Key` header:
+
+- a completed request replays its stored response with
+  `Idempotent-Replayed: true`;
+- an in-progress duplicate gets `409 Conflict`;
+- reusing a key with a different body gets `422`;
+- a streaming request carrying the header is rejected with `400`.
+
+Responses are stored for `MCP_BRIDGE_IDEMPOTENCY_TTL_SECONDS` (default 86400,
+i.e. 24 h) in memory (LRU capped by `MCP_BRIDGE_IDEMPOTENCY_MAX_ENTRIES`,
+default 1024) or in Redis when `REDIS_URL` is set. Without the header, behaviour
+is unchanged.
+
 ## SSE Bridge
 MCP-Bridge also provides an SSE bridge for external clients. This lets external chat apps with explicit MCP support use MCP-Bridge as a MCP server. Point your client at the SSE endpoint (http://yourserver:8000/mcp-server/sse) and you should be able to see all the MCP tools available on the server.
 
