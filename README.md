@@ -176,6 +176,18 @@ Set `telemetry.metrics_enabled=true` to expose Prometheus text metrics at
 upstream latency/status, tool calls by tool/server/outcome, cache hits/misses by
 layer, idempotency replays, session resets and tool-loop turns.
 
+### Limits and backpressure
+
+Disabled by default. Set `limits.enabled=true` to enforce:
+
+- `max_concurrent_per_key` (default 4) and `rate_limit_per_minute` (default
+  120) per API key, or per client IP when unauthenticated;
+- `max_body_bytes` (default 10 MiB);
+- `max_tool_calls_per_request` (default 8) concurrent tool calls.
+
+429 responses carry `Retry-After` and an OpenAI-style error body; oversized
+requests get 413.
+
 ## Configuration
 
 To add new MCP servers, edit the config.json file.

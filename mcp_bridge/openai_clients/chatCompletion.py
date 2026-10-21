@@ -3108,6 +3108,9 @@ async def chat_completions(
                             persistent_cache=persistent_tool_cache,
                             cache_enabled=_cache_enabled,
                             tool_server_map=tool_server_map,
+                            max_concurrency=getattr(
+                                config.limits, "max_tool_calls_per_request", None
+                            ),
                         ),
                         http_request,
                     )

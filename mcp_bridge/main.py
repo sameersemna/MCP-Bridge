@@ -16,6 +16,7 @@ from mcp_bridge import __version__ as version
 from mcp_bridge.config import config
 from mcp_bridge.routers import secure_router, public_router
 from mcp_bridge.lifespan import lifespan
+from mcp_bridge.limits import LimitsMiddleware
 from mcp_bridge.mcp_server.streamable_http import streamable_http_app
 from mcp_bridge.openapi_tags import tags_metadata
 from mcp_bridge.request_context import RequestIDMiddleware
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
     # Correlation id: outermost middleware so every response, including CORS
     # and error responses, carries X-Request-ID.
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(LimitsMiddleware)
 
     app.include_router(secure_router)
     app.include_router(public_router)

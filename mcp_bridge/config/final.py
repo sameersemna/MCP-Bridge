@@ -234,6 +234,24 @@ class Security(BaseModel):
     auth: Auth = Field(default_factory=Auth, description="Authentication configuration")
 
 
+class Limits(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(False, description="Enable request limits and backpressure")
+    max_concurrent_per_key: int = Field(
+        4, description="Concurrent requests allowed per API key / client"
+    )
+    rate_limit_per_minute: int = Field(
+        120, description="Token-bucket request rate per API key / client"
+    )
+    max_tool_calls_per_request: int = Field(
+        8, description="Maximum concurrent tool calls within one request"
+    )
+    max_body_bytes: int = Field(
+        10 * 1024 * 1024, description="Maximum accepted request body size"
+    )
+
+
 class Telemetry(BaseModel):
     """Telemetry configuration
 
@@ -341,6 +359,8 @@ class Settings(BaseSettings):
     network: Network = Field(default_factory=Network, description="network config")
 
     security: Security = Field(default_factory=Security, description="security config")
+
+    limits: Limits = Field(default_factory=Limits, description="request limits config")
 
     telemetry: Telemetry = Field(default_factory=Telemetry, description="telemetry config")
 

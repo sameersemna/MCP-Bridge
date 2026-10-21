@@ -58,6 +58,7 @@ from .chatCompletion import (
     get_max_tool_turns,
 )
 from mcp_bridge.models import SSEData
+from mcp_bridge.config import config
 from .genericHttpxClient import get_client
 from mcp_bridge.logging import RequestTraceLogger
 from mcp_bridge.cancellation import ClientDisconnected, run_until_disconnected
@@ -521,6 +522,9 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
                     ],
                     trace_logger=trace_logger,
                     tool_server_map=getattr(request, "_tool_server_map", {}) or {},
+                    max_concurrency=getattr(
+                        config.limits, "max_tool_calls_per_request", None
+                    ),
                 ),
                 http_request,
             )

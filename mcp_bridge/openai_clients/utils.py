@@ -2240,6 +2240,7 @@ async def call_tools(
     persistent_cache: PersistentToolCache | None = None,
     cache_enabled: Callable[[str], bool] | None = None,
     tool_server_map: dict[str, str] | None = None,
+    max_concurrency: int | None = None,
 ) -> list[Any]:
     """Execute multiple tool calls concurrently while preserving order.
 
@@ -2415,4 +2416,14 @@ async def call_tools(
                 )
         return result
 
-    return await asyncio.gather(*(_run(call) for call in tool_calls))
+    tool_semaphore = (
+        asyncio.Semaphore(max(1, max_concurrency)) if max_concurrency else None
+    )
+
+    async def _run_limited(call: tuple[str, str]) -> Any:
+        if tool_semaphore is None:
+            return await _run(call)
+        async with tool_semaphore:
+            return await _run(call)
+
+    return await asyncio.gather(*(_run_limited(call) for call in tool_calls))
