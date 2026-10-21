@@ -19,6 +19,7 @@ from mcp_bridge.idempotency import (
     make_fingerprint,
     request_identity,
 )
+from mcp_bridge.request_context import get_request_id
 import json
 
 router = APIRouter(prefix="/v1", tags=[Tag.openai])
@@ -172,6 +173,7 @@ async def openai_chat_completions(
     with tracer.start_as_current_span("openai.chat.completions") as span:
         span.set_attribute("http.method", http_request.method)
         span.set_attribute("http.route", http_request.url.path)
+        span.set_attribute("mcp_bridge.request.id", get_request_id(http_request))
         span.set_attribute("mcp_bridge.request.stream", bool(request.stream))
         span.set_attribute("mcp_bridge.request.model", getattr(request, "model", "") or "")
         span.set_attribute("mcp_bridge.request.tool_count", len(getattr(request, "tools", []) or []))
@@ -188,6 +190,7 @@ async def openai_chat_completions(
             request_payload=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True),
             http_path=http_request.url.path,
             method=http_request.method,
+            request_id=get_request_id(http_request),
         )
         trace_logger.record("incoming_request", prompt=request.model_dump(exclude_defaults=True, exclude_none=True, exclude_unset=True))
         try:

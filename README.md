@@ -155,6 +155,13 @@ npx @wong2/mcp-cli --sse http://localhost:8000/mcp-server/sse
 
 If you want to use the tools inside of [claude desktop](https://claude.ai/download) or other `STDIO` only MCP clients, you can do this with a tool such as [lightconetech/mcp-gateway](https://github.com/lightconetech/mcp-gateway)
 
+### Request correlation
+
+Every response carries `X-Request-ID`: the incoming header if supplied
+(sanitized for a filename), otherwise a generated id. The id is attached to
+loguru's context, the trace-log filename/content, and the
+`mcp_bridge.request.id` span attribute.
+
 ## Configuration
 
 To add new MCP servers, edit the config.json file.

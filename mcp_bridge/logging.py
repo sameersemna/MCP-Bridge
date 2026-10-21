@@ -326,14 +326,22 @@ def build_uvicorn_log_config() -> dict[str, Any]:
 class RequestTraceLogger:
     """Persist a structured trace of a single request lifecycle to a timestamped JSON file."""
 
-    def __init__(self, request_payload: Any, http_path: str, method: str) -> None:
+    def __init__(
+        self,
+        request_payload: Any,
+        http_path: str,
+        method: str,
+        request_id: str | None = None,
+    ) -> None:
         self.request_payload = redact_sensitive_data(request_payload)
         self.http_path = http_path
         self.method = method
+        self.request_id = request_id or ""
         self.events: list[dict[str, Any]] = []
         self._enabled = get_trace_log_enabled()
         self._timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        self._path = LOG_DIR / f"{self._timestamp}_{self._sanitize_path(http_path)}.json"
+        suffix = f"_{self.request_id}" if self.request_id else ""
+        self._path = LOG_DIR / f"{self._timestamp}{suffix}_{self._sanitize_path(http_path)}.json"
         self._directory = LOG_DIR
         if self._enabled:
             self._directory.mkdir(parents=True, exist_ok=True)
@@ -385,6 +393,7 @@ class RequestTraceLogger:
 
         payload = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": self.request_id,
             "method": self.method,
             "path": self.http_path,
             "request": self.request_payload,

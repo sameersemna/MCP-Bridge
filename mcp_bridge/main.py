@@ -18,6 +18,7 @@ from mcp_bridge.routers import secure_router, public_router
 from mcp_bridge.lifespan import lifespan
 from mcp_bridge.mcp_server.streamable_http import streamable_http_app
 from mcp_bridge.openapi_tags import tags_metadata
+from mcp_bridge.request_context import RequestIDMiddleware
 from mcp_bridge.security_posture import enforce_security_posture
 from mcp_bridge.telemetry import setup_tracing
 
@@ -63,6 +64,10 @@ def create_app() -> FastAPI:
         )
     else:
         logger.info("CORS middleware is disabled")
+
+    # Correlation id: outermost middleware so every response, including CORS
+    # and error responses, carries X-Request-ID.
+    app.add_middleware(RequestIDMiddleware)
 
     app.include_router(secure_router)
     app.include_router(public_router)
