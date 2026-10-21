@@ -21,7 +21,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - [x] Tool calls in one model turn are deduplicated by `tool_call.id` — P0-05: mutating tools are never deduped (both run); only declared-safe cacheable tools collapse, which the rule permits.
 - [x] Every cache key covers every output-affecting input, has a version prefix, and never caches errors — P0-05: v2 key over server+tool+all args; v1 payloads rejected; error results never cached.
 - [x] JSON-RPC request ids are unique per session and late responses are dropped — P0-08: HTTP ids increment for the session's lifetime (including re-init); SSE pops timed-out ids and `_resolve_future` drops unknown ids.
-- [ ] Same `Idempotency-Key` never re-executes tools — **P1-03 (pending)**.
+- [x] Same `Idempotency-Key` never re-executes tools — P1-03: replay returns the stored result; tests assert the fake tool ran once.
 - [x] A timeout returns "outcome unknown", never a confident "failed" — P0-04 error text.
 
 ## Items
@@ -41,7 +41,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P0-12 | Config HTTP load has no timeout/status check | done | edb7b50 | Explicit env timeout (10s), `raise_for_status`, JSON-object check; non-zero exit with a token-safe message unless `MCP_BRIDGE__CONFIG__HTTP_OPTIONAL=true`. 9 tests. |
 | P1-01 | `[design]` Tool registry | done | 1743778 | ADR 003. Process-wide registry in config order; TTL 300s; invalidated by `tools/list_changed` (stdio/SSE) and session resets; resolution/discovery/suggestions/aggregated list read it. Discovery skips unready sessions; resolution stops on first match. 7 tests. |
 | P1-02 | Tool-name collisions / OpenAI name constraints | done | 47c573c | `tool_namespacing` = none/on_collision (default)/always. Exposed names sanitized to `^[A-Za-z0-9_-]{1,64}$`, truncated with a stable hash; reverse lookup dispatches to the canonical tool. Applied to discovery, suggestions, aggregated list. 6 tests. |
-| P1-03 | `[design]` `Idempotency-Key` support | todo | | |
+| P1-03 | `[design]` `Idempotency-Key` support | done | 0933610 | ADR 004. Fingerprint over hashed credential+method+path+body; in-memory LRU or `redis.asyncio`; replay header, 409 in-progress, 422 mismatch, 400 for streaming; tool call and non-streaming chat. 6 tests. |
 | P1-04 | Blocking I/O on the event loop | todo | | |
 | P1-05 | Sequential startup | todo | | |
 | P1-06 | Unbounded on-disk growth | todo | | |
@@ -79,3 +79,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 17:05 P1-01 done (1743778), ADR `docs/hardening/adr/003-tool-registry.md`. Two regressions surfaced and were fixed rather than accepted: a global registry barrier delayed resolution behind a slow server (now incremental with early exit and per-server freshness), and the process-wide registry leaked tools between tests when the client set changed (now invalidated on client-set change). Mypy fell to 71. Gate 459 passed / ruff 3 / mypy 71.
 - 2026-10-21 17:12 P0-07 follow-up: the vendored stdio session advertised `roots` but never answered `roots/list`; it now advertises sampling only (the capability it actually implements). Gate 460 passed / ruff 3 / mypy 71.
 - 2026-10-21 17:35 P1-02 done (47c573c). A structural edit briefly deleted the `_ttl_seconds` function header and a per-server exposed-name update was initially missed; both were caught before running. Gate 466 passed / ruff 3 / mypy 71.
+- 2026-10-21 18:05 P1-03 done (0933610), ADR `docs/hardening/adr/004-request-idempotency.md`. The environment has `REDIS_URL` set; async Redis bound to TestClient's short-lived loop failed, which exposed that the in-memory fallback's `asyncio.Lock` was loop-bound. The memory store is now lock-free (its operations contain no awaits). Gate 472 passed / ruff 3 / mypy 71.
