@@ -56,9 +56,9 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P2-06 | Docker and Helm | done | 4f5adc1 | Multi-stage Dockerfile (compilers only in builder; Node retained), healthcheck reads `MCP_BRIDGE__NETWORK__PORT` and probes `/health/live`; Helm probes, resources, non-root/read-only securityContext, emptyDir mounts. 2 tests. |
 | P3-01 | Replace control-flow asserts | done | a0935ea | Runtime asserts replaced with explicit errors (stdio streams, session readiness, env). Resource reads derive text/blob from the type and return `ReadResourceContents`, preserving custom MIME types. 3 tests. |
 | P3-02 | Aggregated list handlers concurrent/isolated | done | 1be397e | `list_prompts`/`list_resources` gather all clients in parallel and log+skip a failing client; `list_prompts` previously had no per-client guard, so one bad server broke the aggregate. 2 tests (concurrency by wall clock, failure isolation). |
-| P3-03 | `[design]` Split chatCompletion/utils | todo | | |
-| P3-04 | Repository hygiene (ask first) | todo | | |
-| P3-05 | README/docs update | todo | | |
+| P3-03 | `[design]` Split chatCompletion/utils | deferred | — | Deferred on **context budget, not design**. Both files are 2.4k/3.3k lines and the item requires behaviour-unchanged moves; a half-applied move is worse than none. Staged plan, one module per commit, gate after each: (1) `caches.py` — `ToolResultCache`, `PersistentToolCache`, `RedisToolCache`, `_canonical_json`, `_tool_cache_key`, `get_tool_cache` (~520 self-contained lines, re-exported from `utils`); (2) `url_redirects.py` — Google/ref-token unredirect helpers; (3) `tool_args.py` — schema coerce/default/repair helpers; (4) `tool_loop/` package for `chatCompletion`. Step 1 is the highest value and lowest risk. |
+| P3-04 | Repository hygiene (ask first) | done | — | No file moved, by design. `.gitignore` already covers `response*.*`, `*.log` (incl. `firebase-debug.log`), `logs/`, `tmp/`, `tool_cache/`, `reports/`; `git ls-files logs` and a tracked `firebase-debug.log` are both empty. Proposal for the 13 tracked ad-hoc scripts is in the Final Report and awaits approval. |
+| P3-05 | README/docs update | done | ea97d3f | Feature list refreshed — resources and streaming completions were still described as planned/unimplemented. Added a transport support matrix (upstream stdio/SSE/HTTP, downstream Streamable HTTP/SSE) and how tool discovery works when a transport has no notification channel. Idempotency, metrics, limits, caching and security posture were documented in their own items. |
 
 ## Log
 - 2026-10-21 12:32 Baseline gate recorded from a clean `dev` tree: pytest 372 passed, ruff 3 findings, mypy 72 errors/16 files, mcp 1.3.0, app imports OK. Ledger created.
@@ -94,3 +94,153 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 21:45 P2-06 done (4f5adc1). **All P0–P2 items complete.** The Docker contract test initially failed because the runtime *comment* contained the literal 'build-essential'; the requirement is about the installed package, and the comment was reworded. Gate 510 passed / coverage 70.59% / ruff 0 / mypy 0.
 - 2026-10-21 22:00 P3-01 done (a0935ea). mcp 1.27 types `BlobResourceContents.blob` as a base64 **string**, not bytes; the decoder handles both. Gate 513 passed / coverage 70.65% / ruff 0 / mypy 0.
 - 2026-10-21 22:15 P3-02 done (1be397e). Gate 515 passed / coverage 70.91% / ruff 0 / mypy 0.
+- 2026-10-21 22:30 P3-04 done (no commit; nothing moved). Audited `.gitignore` against the requested entries: all present, and neither `logs/` nor `firebase-debug.log` is tracked today. The 13 root-level scripts are listed in the Final Report as a proposal only.
+- 2026-10-21 22:40 P3-05 done (ea97d3f). Verified the new anchor `#transport-support-matrix` resolves and that no "planned to be supported" / "not implemented yet" claim survives in `README.md` or `docs/`. Gate 515 passed.
+- 2026-10-21 22:45 P3-03 deferred. Measured the actual move size before deciding: `utils.py` is 2,428 lines and `chatCompletion.py` 3,279. The cache subsystem alone is ~520 contiguous, self-contained lines, so step (1) of the plan is mechanical — but each move needs the whole block copied verbatim and a full gate, and the remaining context cannot carry four of them safely. Recorded the ordered plan in the item row instead of starting a move that could be left half-applied.
+
+---
+
+# Final Report
+
+## Item status
+
+| ID | Item | Status | Commit |
+|----|------|--------|--------|
+| P0-01 | Secrets in repo | done | 5c29ad6 |
+| P0-02 | Shared upstream pool closed per request | done | 6b54606 |
+| P0-03 | Graceful shutdown | done | d52e832 |
+| P0-04 | Idempotency-aware retries | done | f53e57a |
+| P0-05 | Tool-result cache keys | done | 440e9db |
+| P0-06 | Aggregated SSE session leak | done | 6d711de |
+| P0-07 | Downstream SSE answers server requests | done | 02a435b + 40e625c |
+| P0-08 | Hand-rolled Streamable HTTP client | done | 7326223 |
+| P0-09 | Error resets kill healthy sessions | done | b9fe9ee |
+| P0-10 | REST 500-instead-of-404 + HTTP contract | done | 2c06a93 |
+| P0-11 | Insecure-by-default exposure | done | 7dbef54 |
+| P0-12 | Config HTTP load timeout/status | done | edb7b50 |
+| P1-01 | Tool registry | done | 1743778 |
+| P1-02 | Tool-name collisions | done | 47c573c |
+| P1-03 | `Idempotency-Key` support | done | 0933610 |
+| P1-04 | Blocking I/O on the event loop | done | 473c0e7 |
+| P1-05 | Sequential startup | done | b4eec8b |
+| P1-06 | Unbounded on-disk growth | done | b9e651d |
+| P1-07 | MCP SDK / Streamable HTTP server | done | 20a2ff6 |
+| P1-08 | Client disconnect and cancellation | done | 1f5962a |
+| P1-09 | Streaming/non-streaming tool parity | done | b21cfe0 |
+| P2-01 | Request correlation | done | e6f1ccc |
+| P2-02 | PII-safe tracing | done | 4dbea35 |
+| P2-03 | Metrics | done | aba85c2 |
+| P2-04 | Limits and backpressure | done | e82f5a7 |
+| P2-05 | CI lint/type blocking | done | 2980e46 |
+| P2-06 | Docker and Helm | done | 4f5adc1 |
+| P3-01 | Replace control-flow asserts | done | a0935ea |
+| P3-02 | Aggregated list handlers | done | 1be397e |
+| P3-03 | Split `chatCompletion`/`utils` | **deferred** | — |
+| P3-04 | Repository hygiene | done (proposal) | — |
+| P3-05 | README/docs update | done | ea97d3f |
+
+**31 done, 1 deferred, 0 blocked.** Final gate: **515 passed · coverage 70.91 %
+(floor 70) · ruff 0 · mypy 0 (66 files) · app imports OK.** No history was
+rewritten, nothing was pushed, and each item is a single commit on `dev`.
+
+## New environment variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MCP_BRIDGE_SHUTDOWN_TIMEOUT_SECONDS` | `5` | Shared budget for stopping all downstream clients concurrently. |
+| `MCP_BRIDGE_CONFIG_HTTP_TIMEOUT_SECONDS` | `10` | Timeout for downloading config over HTTP. |
+| `MCP_BRIDGE__CONFIG__HTTP_OPTIONAL` | `false` | Continue without an unreachable HTTP config instead of aborting startup. |
+| `MCP_BRIDGE_TOOL_REGISTRY_TTL_SECONDS` | `300` | Registry lifetime for transports with no `list_changed` channel. |
+| `MCP_BRIDGE_IDEMPOTENCY_TTL_SECONDS` | `86400` | Stored idempotent response lifetime. |
+| `MCP_BRIDGE_IDEMPOTENCY_MAX_ENTRIES` | `1024` | In-memory idempotency LRU cap. |
+| `MCP_BRIDGE_TRACE_LOG_ENABLED` | `true` | Disable per-request trace files. |
+| `MCP_BRIDGE_TRACE_LOG_MAX_FILES` | `500` | Trace file count cap (`0` disables). |
+| `MCP_BRIDGE_TRACE_LOG_MAX_AGE_DAYS` | `14` | Trace file age cap. |
+| `MCP_BRIDGE_TRACE_LOG_MAX_TOTAL_MB` | `500` | Trace directory size cap. |
+| `MCP_BRIDGE_TOOL_CACHE_MAX_ENTRIES` | `5000` | Disk tool-cache entry cap. |
+| `MCP_BRIDGE_TOOL_CACHE_MAX_MB` | `500` | Disk tool-cache size cap. |
+| `MCP_BRIDGE_RETENTION_INTERVAL_SECONDS` | `3600` | Retention sweep period. |
+
+All are optional; every default preserves the previous behaviour except where
+noted below.
+
+## New configuration keys
+
+- `idempotent_tools` (per server) — extra tools that may be retried safely.
+- `retry_unsafe` (per server) — opt a server out of the annotation gate.
+- `headers` (per server) — static headers for HTTP/SSE upstreams.
+- `tool_namespacing` — `none` | `on_collision` (default) | `always`.
+- `security.auth.required_for_non_loopback` — hard-fail instead of warn.
+- `telemetry.capture_payloads` — opt in to payload previews in spans.
+- `telemetry.metrics_enabled` — expose `/metrics`.
+- `limits` — `enabled`, body size / rate / concurrency / tool-call caps.
+
+## Operator-visible behaviour changes
+
+1. **Retries are gated on idempotency.** A tool without read-only/idempotent
+   annotations is not retried, and a timeout reports "outcome unknown" rather
+   than "failed". Servers that declare nothing and were previously retried now
+   need `idempotent_tools` or `retry_unsafe`.
+2. **Tool results are cached under a v2 key** covering server, tool and every
+   argument. Old on-disk entries are ignored, not mis-served. Mutating tools are
+   never cached or deduplicated.
+3. **Secrets no longer live in config.** Four values became `${ENV_VAR}`
+   references. **The exposed keys are still in git history — rotate them.**
+4. **Startup can refuse to run.** With `required_for_non_loopback: true` an
+   unauthenticated non-loopback bind is a hard failure rather than a warning.
+5. **An unreachable HTTP config aborts startup** unless
+   `MCP_BRIDGE__CONFIG__HTTP_OPTIONAL=true`.
+6. **`/v1/completions` streaming returns an OpenAI-style 501**, not a 500.
+7. **Resource reads return `ReadResourceContents`** and preserve custom MIME
+   types; blob payloads are base64-decoded.
+8. **Aggregated `prompts/list` and `resources/list` are concurrent**, and one
+   failing server no longer breaks the whole list.
+9. **The aggregated server also speaks Streamable HTTP** at `/mcp-server/mcp`;
+   SSE remains at `/mcp-server/sse` and is deprecated.
+
+## Remaining risks
+
+1. **Rotate the four exposed secrets.** They remain in `git` history (the user
+   declined a history rewrite).
+2. **P3-03 is not done.** `openai_clients/utils.py` (2,428 lines) and
+   `chatCompletion.py` (3,279 lines) remain monolithic; review cost and merge
+   conflict risk stay high.
+3. **Coverage is 70.91 % against a 70 % floor** — a small margin; new code
+   without tests will trip CI quickly (which is the intent, but it is tight).
+4. **51 per-line mypy suppressions** form a baseline ratchet. They are
+   documented and reviewed, but they hide the SDK's untyped surface.
+5. **HTTP upstreams discover tool changes only by TTL** (300 s). A renamed or
+   removed tool can be briefly stale; calls fail cleanly rather than dispatch
+   to the wrong server.
+6. **The downstream Streamable HTTP *client*** is still the hand-rolled session
+   from P0-08; ADR 005 records replacing it with the SDK client as a follow-up.
+7. **No CI job runs against a live MCP server.** All coverage is against fakes,
+   so protocol-version drift is caught by the SDK pin, not by a test.
+
+## Recommended next steps
+
+1. Rotate the four credentials, then add a `gitleaks`/history scan to CI.
+2. Execute P3-03 step 1 (`caches.py`, ~520 self-contained lines) — the highest
+   value, lowest risk move; then `url_redirects.py`, `tool_args.py`,
+   `tool_loop/`, one commit each.
+3. Decide on the 13 root-level scripts (below) and move them in one commit.
+4. Replace the hand-rolled HTTP client with the SDK's (ADR 005 follow-up).
+5. Raise the coverage floor as the suppression count falls; treat the two
+   numbers as one ratchet.
+
+## P3-04 — repository hygiene proposal (no files moved)
+
+Thirteen ad-hoc scripts are tracked at the repository root. Proposed grouping,
+**awaiting approval**:
+
+- `scripts/upstream-smoke/` — `test.sh`, `test1.sh`, `test_9router.sh`,
+  `test_nvidia.sh`, `test_ollama.sh`, `test_omniroute.sh`, `test_openrouter.sh`
+  (they are per-provider smoke tests, not a pytest suite; the `test_*` names
+  also confuse test discovery).
+- `scripts/tools/` — `test_endpoint.py`, `debug_tools.py`.
+- `scripts/prompt/` — `compress_prompt.py`, `compress_prompt.sh`.
+- `scripts/genpdf/` — `genpdf.sh`, `genpdf_quote_transform.py`.
+
+`.gitignore` already covers `response*.*`, `*.log` (so `firebase-debug.log`),
+`logs/`, `tmp/`, `tool_cache/` and `reports/`; nothing under `logs/` is
+tracked. No `.gitignore` change was required.
