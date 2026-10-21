@@ -22,24 +22,38 @@ MCP-Bridge is designed to facilitate the integration of MCP tools with the OpenA
 
 ## Current Features
 
-working features:
+**Chat completions API** (`/v1/chat/completions`, `/v1/completions`)
 
-- non streaming chat completions with MCP
-- streaming chat completions with MCP
+- streaming and non-streaming chat completions with MCP tools
+- non-streaming completions without MCP
+- OpenAI-compatible tool calling against any configured MCP server
+- tools supplied by the client are passed through untouched
 
-- non streaming completions without MCP
+**MCP primitives**
 
-- MCP tools
-- MCP sampling
+- tools: `tools/list`, `tools/call`, annotation-aware retry policy
+- sampling on stdio and SSE upstreams
+- prompts and resources: `prompts/list`, `resources/list`, `resources/read`,
+  with blob resources decoded and their MIME type preserved
+- resource templates are not aggregated (the handler returns an empty list)
 
-- Aggregated MCP server over Streamable HTTP (`/mcp-server/mcp`) and SSE
-  (`/mcp-server/sse`, deprecated)
+**Aggregated MCP server** (`/mcp-server/mcp`, `/mcp-server/sse`)
 
-planned features:
+- Streamable HTTP (recommended) and SSE (deprecated)
+- exposes the same aggregated tools, prompts and resources as the REST API
 
-- streaming completions are not implemented yet
+**Operational**
 
-- MCP resources are planned to be supported
+- optional `Idempotency-Key` retries with replay / 409 / 422 semantics
+- process-wide tool registry with a TTL and `list_changed` invalidation
+- per-server retry policy that only retries tools declared idempotent
+- tool-result caching (in-memory, on-disk, or Redis) with disk retention
+- Prometheus metrics, request IDs, trace logs with payload redaction
+- body-size, rate and concurrency limits with OpenAI-style errors
+- startup security-posture check for unauthenticated non-loopback binds
+
+Upstream transports and their support level are listed in the
+[transport matrix](#transport-support-matrix).
 
 ## Installation
 
@@ -145,6 +159,20 @@ Two transports are exposed:
 - **SSE (deprecated, kept for compatibility):** `http://yourserver:8000/mcp-server/sse`
 
 Both list the same aggregated tools. When `security.auth.enabled` is true, both require the same Bearer key as the rest of the API.
+
+### Transport support matrix
+
+| Direction | Transport | Status | Notes |
+| --- | --- | --- | --- |
+| Upstream (bridge is MCP client) | stdio | supported | child process lifecycle managed by the bridge; sampling and `notifications/tools/list_changed` handled |
+| Upstream (bridge is MCP client) | SSE | supported | liveness pings answered in a tracked task; stream cleanup follows the upstream `#1227` fix |
+| Upstream (bridge is MCP client) | Streamable HTTP | supported | one session per client, `Mcp-Session-Id` captured and echoed, `DELETE` on close, re-init on 404 |
+| Downstream (bridge is MCP server) | Streamable HTTP | recommended | mounted at `/mcp-server/mcp` |
+| Downstream (bridge is MCP server) | SSE | deprecated | `/mcp-server/sse` |
+
+Upstream stdio and SSE discover tool changes through `list_changed`; the
+request/response HTTP transport has no notification channel, so its registry
+entry is refreshed when `MCP_BRIDGE_TOOL_REGISTRY_TTL_SECONDS` elapses.
 
 You can inspect either transport with the official inspector or [wong2/mcp-cli](https://github.com/wong2/mcp-cli):
 
