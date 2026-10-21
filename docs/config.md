@@ -85,6 +85,15 @@ when using docker you will need to add a reference to the config.json file in th
     - MCP_BRIDGE__CONFIG__HTTP_URL=http://10.88.100.170:8888/config.json
   ```
 
+  HTTP config loading is strict and bounded:
+
+  - the request times out after `MCP_BRIDGE_CONFIG_HTTP_TIMEOUT_SECONDS`
+    (default `10` seconds);
+  - a non-2xx status, a non-JSON content type, invalid JSON, or a JSON value
+    that is not an object aborts startup with a clear error;
+  - set `MCP_BRIDGE__CONFIG__HTTP_OPTIONAL=true` to log a warning and continue
+    without that config source instead of aborting.
+
 - add the config json directly as an environment variable
   ```bash
   environment:

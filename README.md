@@ -130,6 +130,12 @@ If you want to use the tools inside of [claude desktop](https://claude.ai/downlo
 
 To add new MCP servers, edit the config.json file.
 
+When `MCP_BRIDGE__CONFIG__HTTP_URL` is used, the config download is bounded by
+`MCP_BRIDGE_CONFIG_HTTP_TIMEOUT_SECONDS` (default `10`) and must return a 2xx
+JSON object. Any failure aborts startup with a clear error unless
+`MCP_BRIDGE__CONFIG__HTTP_OPTIONAL=true`, which logs a warning and continues
+without that config source.
+
 ### Tool-loop environment variables
 
 The tool-calling loop can be tuned with the following environment variables:
