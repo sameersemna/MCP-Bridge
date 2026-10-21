@@ -103,6 +103,16 @@ sampling_function_signature = Callable[
 ]
 
 
+def stdio_client_capabilities() -> types.ClientCapabilities:
+    """Capabilities the stdio client actually implements.
+
+    Sampling is handled by this session. ``roots/list`` is not implemented, so
+    advertising roots made a server wait for a reply that never came; omit the
+    capability rather than claim it.
+    """
+    return types.ClientCapabilities(sampling=types.SamplingCapability())
+
+
 class McpClientSession(
     BaseSession[
         types.ClientRequest,
@@ -143,13 +153,7 @@ class McpClientSession(
                     method="initialize",
                     params=types.InitializeRequestParams(
                         protocolVersion=types.LATEST_PROTOCOL_VERSION,
-                        capabilities=types.ClientCapabilities(
-                            sampling=types.SamplingCapability(),
-                            experimental=None,
-                            roots=types.RootsCapability(
-                                listChanged=True
-                            ),
-                        ),
+                        capabilities=stdio_client_capabilities(),
                         clientInfo=types.Implementation(name="MCP-Bridge", version=version),
                     ),
                 )
