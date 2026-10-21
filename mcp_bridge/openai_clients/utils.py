@@ -1205,6 +1205,8 @@ async def _resolve_ref_token(
     try:
         client = ClientManager.get_client(server_name)
     except Exception:
+        client = None
+    if client is None:
         logger.debug(f"no client for server '{server_name}' while resolving ref token")
         return None
 

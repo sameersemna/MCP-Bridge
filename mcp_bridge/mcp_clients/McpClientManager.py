@@ -331,7 +331,10 @@ class MCPClientManager:
             setter(limit)
 
     def get_client(self, server_name: str):
-        return self.clients[server_name]
+        # Returning None (instead of raising KeyError) lets the management
+        # routers turn a missing server into their intended 404 rather than a
+        # 500 from an uncaught exception.
+        return self.clients.get(server_name)
 
     def get_clients(self):
         return list(self.clients.items())

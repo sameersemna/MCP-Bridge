@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 from opentelemetry import trace
@@ -83,7 +84,22 @@ async def openai_completions(
 ):
     """Completions endpoint"""
     if request.stream:
-        raise NotImplementedError("Streaming Completion is not supported")
+        # Return an OpenAI-shaped error rather than raising NotImplementedError,
+        # which surfaced as an opaque 500.
+        return JSONResponse(
+            status_code=501,
+            content={
+                "error": {
+                    "message": (
+                        "Streaming completions are not supported; use "
+                        "/v1/chat/completions with stream=true."
+                    ),
+                    "type": "invalid_request_error",
+                    "param": "stream",
+                    "code": "unsupported",
+                }
+            },
+        )
     else:
         return await completions(request, http_request)
 
@@ -151,4 +167,17 @@ async def models(request: Request):
     """List models"""
     async with get_client(request) as client:
         response = await client.get("/models")
+    if response.status_code >= 400:
+        # Propagate the upstream status instead of returning an error body as
+        # if it were a successful model list.
+        try:
+            body = response.json()
+        except Exception:
+            body = {
+                "error": {
+                    "message": f"Upstream model list failed with status {response.status_code}",
+                    "type": "upstream_error",
+                }
+            }
+        return JSONResponse(status_code=response.status_code, content=body)
     return response.json()

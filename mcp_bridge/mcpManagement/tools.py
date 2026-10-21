@@ -1,5 +1,5 @@
 from typing import Any
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp.types import ListToolsResult, CallToolResult
 
@@ -19,11 +19,20 @@ async def get_tools() -> dict[str, ListToolsResult]:
 
 
 @router.post("/{tool_name}/call")
-async def call_tool(tool_name: str, arguments: dict[str, Any] = {}) -> CallToolResult:
-    """Call a tool"""
+async def call_tool(
+    tool_name: str, arguments: dict[str, Any] = Body(default_factory=dict)
+) -> CallToolResult:
+    """Call a tool.
 
-    client = await ClientManager.get_client_from_tool(tool_name)
-    if not client:
+    ``Body(default_factory=dict)`` avoids the shared mutable default that made
+    every call without a body reuse one dict. Dispatch uses the *resolved*
+    canonical name, not the alias the caller used, so the server receives a
+    name it actually knows.
+    """
+
+    resolved = await ClientManager.resolve_tool(tool_name)
+    if resolved is None:
         raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
 
-    return await client.call_tool(tool_name, arguments)
+    client, resolved_name = resolved
+    return await client.call_tool(resolved_name, arguments)

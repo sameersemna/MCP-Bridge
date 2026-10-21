@@ -118,14 +118,15 @@ async def handle_read_resource(uri: AnyUrl) -> str | bytes:
 async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-    client = await ClientManager.get_client_from_tool(name)
-
-    # if client is None, then we cannot call the tool
-    if client is None:
+    # Resolve first: the caller may use an alias or a normalized spelling, but
+    # the downstream server only knows its canonical tool name.
+    resolved = await ClientManager.resolve_tool(name)
+    if resolved is None:
         raise Exception(f"Tool '{name}' not found")
 
+    client, resolved_name = resolved
     normalized_arguments = _normalize_arguments(arguments)
-    return (await client.call_tool(name, normalized_arguments)).content
+    return (await client.call_tool(resolved_name, normalized_arguments)).content
 
 
 # options
