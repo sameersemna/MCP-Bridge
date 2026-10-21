@@ -1,3 +1,4 @@
+import asyncio
 import base64
 from typing import Any
 
@@ -25,30 +26,48 @@ server = Server("MCP-Bridge")
 ## list functions
 
 
+async def _prompts_for(name: str, client: Any) -> list[types.Prompt]:
+    try:
+        result = await client.list_prompts()
+        return list(getattr(result, "prompts", []) or [])
+    except Exception as e:
+        logger.error(f"Error listing prompts for {name}: {e}")
+        return []
+
+
 @server.list_prompts()
 async def list_prompts() -> list[types.Prompt]:
-    prompts = []
-    for name, client in ClientManager.get_clients():
-        # if client is None, then we cannot list the prompts
-        if client is None:
-            logger.error(f"Client '{name}' not found")
-            continue
+    clients = [
+        (name, client)
+        for name, client in ClientManager.get_clients()
+        if client is not None
+    ]
+    batches = await asyncio.gather(
+        *(_prompts_for(name, client) for name, client in clients)
+    )
+    return [prompt for batch in batches for prompt in batch]
 
-        client_prompts = await client.list_prompts()
-        prompts.extend(client_prompts.prompts)
-    return prompts
+
+async def _resources_for(name: str, client: Any) -> list[types.Resource]:
+    try:
+        result = await client.list_resources()
+        return list(getattr(result, "resources", []) or [])
+    except Exception as e:
+        logger.error(f"Error listing resources for {name}: {e}")
+        return []
 
 
 @server.list_resources()
 async def list_resources() -> list[types.Resource]:
-    resources = []
-    for name, client in ClientManager.get_clients():
-        try:
-            client_resources = await client.list_resources()
-            resources.extend(client_resources.resources)
-        except Exception as e:
-            logger.error(f"Error listing resources for {name}: {e}")
-    return resources
+    clients = [
+        (name, client)
+        for name, client in ClientManager.get_clients()
+        if client is not None
+    ]
+    batches = await asyncio.gather(
+        *(_resources_for(name, client) for name, client in clients)
+    )
+    return [resource for batch in batches for resource in batch]
 
 
 @server.list_resource_templates()
