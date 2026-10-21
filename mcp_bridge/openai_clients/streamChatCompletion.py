@@ -60,6 +60,8 @@ from .chatCompletion import (
 from mcp_bridge.models import SSEData
 from .genericHttpxClient import get_client
 from mcp_bridge.logging import RequestTraceLogger
+from mcp_bridge.cancellation import ClientDisconnected, run_until_disconnected
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from loguru import logger
 
 try:
@@ -491,11 +493,29 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
         if trace_logger is not None:
             trace_logger.record("mcp_tool_calls", tool_calls=[{"name": tool_call.get("name", ""), "arguments": tool_call.get("arguments", "")} for tool_call in collected_tool_calls])
 
-        tool_call_results = await call_tools(
-            [(tool_call.get("name", ""), tool_call.get("arguments", "")) for tool_call in collected_tool_calls],
-            trace_logger=trace_logger,
-            tool_server_map=getattr(request, "_tool_server_map", {}) or {},
-        )
+        try:
+            tool_call_results = await run_until_disconnected(
+                call_tools(
+                    [
+                        (
+                            tool_call.get("name", ""),
+                            tool_call.get("arguments", ""),
+                        )
+                        for tool_call in collected_tool_calls
+                    ],
+                    trace_logger=trace_logger,
+                    tool_server_map=getattr(request, "_tool_server_map", {}) or {},
+                ),
+                http_request,
+            )
+        except ClientDisconnected:
+            logger.info(
+                "client disconnected during tool execution; ending stream"
+            )
+            await ClientManager.notify_cancelled()
+            if trace_logger is not None:
+                trace_logger.record("client_disconnected")
+            return
 
         for tool_call, tool_call_result in zip(collected_tool_calls, tool_call_results):
             if tool_call_result is None:

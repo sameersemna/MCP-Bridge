@@ -401,6 +401,24 @@ class GenericMcpClient(ABC):
             # A registry invalidation must never break a session lifecycle.
             logger.debug(f"tool-change callback failed for {self.name}: {exc}")
 
+    async def notify_cancelled(self, reason: str = "client disconnected") -> None:
+        """Tell the downstream session to abandon its in-flight request.
+
+        Transports that can carry ``notifications/cancelled`` implement it on
+        the session; others (stdio's SDK session does not expose the outgoing
+        request id) are a no-op.
+        """
+        session = self.session
+        notifier = getattr(session, "notify_cancelled", None)
+        if not callable(notifier):
+            return
+        try:
+            await notifier(reason)
+        except Exception as exc:
+            logger.debug(
+                f"could not send cancellation for {self.name}: {exc}"
+            )
+
     async def _reset_session(self, reason: str) -> None:
         logger.info(f"resetting MCP session for {self.name}: {reason}")
         self.session = None

@@ -304,6 +304,17 @@ class HttpMcpSession:
 
             return await self._parse_sse_response(response)
 
+    async def notify_cancelled(self, reason: str = "client disconnected") -> None:
+        request_id = max(0, self._request_id - 1)
+        await self._post_jsonrpc(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/cancelled",
+                "params": {"requestId": request_id, "reason": reason},
+            },
+            allow_reinit=False,
+        )
+
     async def _parse_sse_response(self, response: httpx.Response) -> dict[str, Any]:
         event_name: str | None = None
         data_lines: list[str] = []
@@ -523,6 +534,19 @@ class SseMcpSession:
             logger.debug(
                 f"could not answer server request {request_id}: {_describe_exception(exc)}"
             )
+
+    async def notify_cancelled(self, reason: str = "client disconnected") -> None:
+        request_id = max(0, self._request_id - 1)
+        await self._send_message(
+            types.JSONRPCMessage(
+                types.JSONRPCNotification(
+                    jsonrpc="2.0",
+                    method="notifications/cancelled",
+                    params={"requestId": request_id, "reason": reason},
+                )
+            ),
+            request_id,
+        )
 
     def _resolve_future(
         self,

@@ -30,6 +30,8 @@ from .citation_guard import (
 )
 from mcp_bridge.config import config
 from mcp_bridge.logging import RequestTraceLogger
+from mcp_bridge.cancellation import ClientDisconnected, run_until_disconnected
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from loguru import logger
 import json
 
@@ -3068,16 +3070,30 @@ async def chat_completions(
             tool_turns_completed += 1
 
             if tool_call_items:
-                tool_call_results = await call_tools(
-                    tool_call_items,
-                    timeout=tool_timeout_seconds,
-                    trace_logger=trace_logger,
-                    client_cache=tool_client_cache,
-                    result_cache=tool_result_cache,
-                    persistent_cache=persistent_tool_cache,
-                    cache_enabled=_cache_enabled,
-                    tool_server_map=tool_server_map,
-                )
+                try:
+                    tool_call_results = await run_until_disconnected(
+                        call_tools(
+                            tool_call_items,
+                            timeout=tool_timeout_seconds,
+                            trace_logger=trace_logger,
+                            client_cache=tool_client_cache,
+                            result_cache=tool_result_cache,
+                            persistent_cache=persistent_tool_cache,
+                            cache_enabled=_cache_enabled,
+                            tool_server_map=tool_server_map,
+                        ),
+                        http_request,
+                    )
+                except ClientDisconnected:
+                    logger.info(
+                        "client disconnected during tool execution; stopping"
+                    )
+                    await ClientManager.notify_cancelled()
+                    if trace_logger is not None:
+                        trace_logger.record("client_disconnected")
+                    raise HTTPException(
+                        status_code=499, detail="Client disconnected"
+                    )
                 if trace_logger is not None:
                     trace_logger.record("mcp_tool_calls", tool_calls=[{"name": name, "arguments": arguments} for name, arguments in tool_call_items])
 

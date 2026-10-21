@@ -232,6 +232,10 @@ and a single tool-call timeout does not reset it: three consecutive timeouts
 within 60 seconds trip a breaker that does. This keeps one slow call from
 aborting unrelated in-flight calls on the same server.
 
+If the client disconnects while tools are running, the loop stops instead of
+continuing to call upstream models and tools, and the bridge sends
+`notifications/cancelled` to the downstream sessions that support it.
+
 ### SSE/HTTP session keep-alive and liveness pings
 
 The bridge keeps an SSE (or HTTP) MCP session alive by sending a `ping` every

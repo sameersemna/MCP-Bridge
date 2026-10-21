@@ -272,6 +272,17 @@ class MCPClientManager:
                 + json.dumps(inventory, sort_keys=True)
             )
 
+    async def notify_cancelled(self, reason: str = "client disconnected") -> None:
+        """Tell every downstream client to cancel its in-flight request."""
+        await asyncio.gather(
+            *(
+                client.notify_cancelled(reason)
+                for _, client in self.get_clients()
+                if getattr(client, "notify_cancelled", None) is not None
+            ),
+            return_exceptions=True,
+        )
+
     async def shutdown(self, timeout: float | None = None) -> None:
         """Stop every MCP client concurrently and clear the registry.
 
