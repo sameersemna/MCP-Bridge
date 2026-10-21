@@ -54,16 +54,9 @@ async def list_resource_templates() -> list[types.ResourceTemplate]:
 
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
-    tools = []
-    for name, client in ClientManager.get_clients():
-        # if client is None, then we cannot list the tools
-        if client is None:
-            logger.error(f"Client '{name}' not found")
-            continue
-
-        client_tools = await client.list_tools()
-        tools.extend(client_tools.tools)
-    return tools
+    # Read the warm registry instead of issuing one tools/list per client.
+    await ClientManager.refresh_tool_registry()
+    return [entry.tool for entry in ClientManager.registry.all()]
 
 
 ## get functions

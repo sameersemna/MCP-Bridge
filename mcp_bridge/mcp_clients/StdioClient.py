@@ -76,6 +76,7 @@ class StdioClient(GenericMcpClient):
             assert client[0] is not None, f"missing read stream for {self.name}"
             assert client[1] is not None, f"missing write stream for {self.name}"
             async with McpClientSession(*client) as session:
+                session.set_on_tools_changed(self.on_tools_changed)
                 logger.debug(f"entered client session context manager for {self.name}")
                 await session.initialize()
                 logger.debug(f"finished initialise session for {self.name}")

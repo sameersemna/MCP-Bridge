@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import json
 import os
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 from loguru import logger
@@ -341,6 +341,7 @@ class SseMcpSession:
         write_stream: Any,
         read_timeout_seconds: float | None = None,
         ping_timeout_seconds: float | None = _UNSET_TIMEOUT,  # type: ignore[assignment]
+        on_tools_changed: Callable[[], None] | None = None,
     ) -> None:
         self._read_stream = read_stream
         self._write_stream = write_stream
@@ -356,9 +357,14 @@ class SseMcpSession:
         self._pending_responses: dict[int, asyncio.Future[Any]] = {}
         self._request_id = 1
         self._message_task: asyncio.Task[None] | None = None
+        self._on_tools_changed = on_tools_changed
         # Server-initiated sampling runs off the read loop; keep a strong
         # reference and cancel it on teardown.
         self._background_tasks: set[asyncio.Task[Any]] = set()
+
+    def set_on_tools_changed(self, callback: Callable[[], None] | None) -> None:
+        """Register a callback for ``notifications/tools/list_changed``."""
+        self._on_tools_changed = callback
 
     async def __aenter__(self) -> "SseMcpSession":
         self._message_task = asyncio.create_task(self._message_loop())
@@ -426,6 +432,15 @@ class SseMcpSession:
                 )
             elif isinstance(root, types.JSONRPCNotification):
                 logger.debug(f"received notification from SSE server: {root}")
+                if getattr(root, "method", "") == "notifications/tools/list_changed":
+                    callback = self._on_tools_changed
+                    if callback is not None:
+                        try:
+                            callback()
+                        except Exception as exc:
+                            logger.debug(
+                                f"tool-change callback failed for SSE session: {exc}"
+                            )
             elif isinstance(root, types.JSONRPCRequest):
                 # A server may probe liveness (ping), ask for roots, or request
                 # sampling. Logging and dropping these left the server waiting
@@ -636,6 +651,7 @@ class SseClient(GenericMcpClient):
                 *client,
                 read_timeout_seconds=self.config.requestTimeout / 1000.0 if self.config.requestTimeout else None,
             ) as session:
+                session.set_on_tools_changed(self.on_tools_changed)
                 await session.initialize()
                 logger.debug(f"finished initialise session for {self.name}")
                 self.session = session

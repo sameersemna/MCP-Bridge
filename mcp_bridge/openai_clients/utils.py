@@ -164,78 +164,21 @@ def _cache_tool_schema(tool_name: str, input_schema: Any) -> None:
 async def chat_completion_add_tools(request: CreateChatCompletionRequest):
     request.tools = []
 
-    tool_discovery_timeout_seconds = get_tool_discovery_timeout_seconds()
-    clients = await _ensure_client_manager_initialized()
+    await _ensure_client_manager_initialized()
+    # One registry read instead of re-running tools/list against every server
+    # for every request. The registry refreshes on a TTL or a list_changed
+    # notification.
+    await ClientManager.refresh_tool_registry()
 
     # Map of tool name -> owning MCP server name, used to gate per-server
     # tool-result caching (only servers opted in via `"cached": true` are
     # cached). Attached to the request so the tool loop can consult it.
     tool_server_map: dict[str, str] = {}
 
-    async def _discover_tools_for_session(session: Any) -> list[Any]:
-        configured_request_timeout = None
-        config = getattr(session, "config", None)
-        request_timeout = getattr(config, "requestTimeout", None)
-        if request_timeout is not None:
-            configured_request_timeout = float(request_timeout) / 1000.0
-
-        wait_timeout = float(tool_discovery_timeout_seconds)
-        if configured_request_timeout is not None:
-            wait_timeout = max(wait_timeout, configured_request_timeout)
-
-        try:
-            await session._wait_for_session(timeout=wait_timeout, http_error=False)
-        except Exception:
-            logger.warning(f"session not ready for {session.name}; skipping tool discovery")
-            return []
-
-        if session.session is None:
-            logger.error(f"session is `None` for {session.name}")
-            return []
-
-        try:
-            tools = await asyncio.wait_for(session.session.list_tools(), timeout=wait_timeout)
-        except asyncio.TimeoutError:
-            logger.warning(
-                f"tool discovery timed out for {session.name} after {wait_timeout:.1f}s "
-                f"(server did not respond to tools/list)"
-            )
-            return []
-        except Exception as exc:
-            exc_repr = str(exc) or type(exc).__name__
-            logger.warning(f"tool discovery failed for {session.name}: {exc_repr}")
-            return []
-
-        try:
-            converted = []
-            for tool in tools.tools:
-                tool_name = getattr(tool, "name", None)
-                _cache_tool_schema(tool_name, getattr(tool, "inputSchema", None))
-                if tool_name:
-                    tool_server_map[str(tool_name)] = session.name
-                converted.append(mcp2openai(tool))
-            return converted
-        except Exception as exc:
-            # A single malformed tool schema from one server must not abort
-            # tool discovery for the whole request. Skip this server's tools
-            # and let the others proceed.
-            exc_repr = str(exc) or type(exc).__name__
-            logger.warning(f"tool conversion failed for {session.name}: {exc_repr}")
-            return []
-
-    # `return_exceptions=True` is defense-in-depth: even if a discovery task
-    # raises unexpectedly (e.g. a bug in a transport), one server's failure
-    # must not abort the entire request. Exceptions are logged and skipped.
-    discovered_tools = await asyncio.gather(
-        *(_discover_tools_for_session(session) for _, session in clients),
-        return_exceptions=True,
-    )
-
-    for tools in discovered_tools:
-        if isinstance(tools, BaseException):
-            logger.warning(f"tool discovery task raised: {tools!r}")
-            continue
-        request.tools.extend(tools)
+    for entry in ClientManager.registry.all():
+        _cache_tool_schema(entry.name, getattr(entry.tool, "inputSchema", None))
+        tool_server_map[entry.name] = entry.server
+        request.tools.append(mcp2openai(entry.tool))
 
     # Attach the tool->server map to the request for cache gating downstream.
     try:

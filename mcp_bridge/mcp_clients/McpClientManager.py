@@ -32,6 +32,7 @@ from mcp_bridge.logging import redact_sensitive_data
 from .DockerClient import DockerClient
 from .SseClient import HttpClient, SseClient
 from .StdioClient import StdioClient
+from .ToolRegistry import RegisteredTool, ToolRegistry, normalize_tool_name
 
 DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS = 10.0
 
@@ -173,10 +174,15 @@ class MCPClientManager:
     clients: dict[str, client_types] = {}
     _lock = asyncio.Lock()
 
+    def __init__(self) -> None:
+        # One process-wide view of the downstream tool set. Resolution,
+        # suggestions, discovery and the aggregated server all read this
+        # instead of re-running tools/list per call.
+        self.registry = ToolRegistry()
+
     @staticmethod
     def _normalize_tool_name(tool: str) -> str:
-        normalized = tool.strip().lower().replace("-", "_")
-        return normalized
+        return normalize_tool_name(tool)
 
     @staticmethod
     def _get_client_class(server_config: Any) -> type[client_types]:
@@ -296,18 +302,21 @@ class MCPClientManager:
             client_class = self._get_client_class(server_config)
             if client_class is StdioClient:
                 client = client_class(name, server_config)
+                client.on_tools_changed = self.registry.invalidate
                 await client.start()
                 self._apply_concurrency_limit(name, client)
                 return client
 
             if client_class in {SseClient, HttpClient}:
                 client = client_class(name, server_config)  # type: ignore[arg-type]
+                client.on_tools_changed = self.registry.invalidate
                 await client.start()
                 self._apply_concurrency_limit(name, client)
                 return client
 
             if client_class is DockerClient:
                 client = client_class(name, server_config)
+                client.on_tools_changed = self.registry.invalidate
                 await client.start()
                 self._apply_concurrency_limit(name, client)
                 return client
@@ -353,7 +362,9 @@ class MCPClientManager:
         if callable(recorder):
             recorder(tools)
 
-    async def _list_client_tools(self, client: client_types, timeout: float) -> list[Any]:
+    async def _list_client_tools(
+        self, client: client_types, timeout: float, *, wait_for_ready: bool = True
+    ) -> list[Any]:
         """Return the list of tools exposed by a client, or ``[]`` on failure.
 
         Handles both clients that expose a ``session`` (with ``list_tools``)
@@ -364,6 +375,12 @@ class MCPClientManager:
             if not getattr(client, "session", None):
                 wait_for_session = getattr(client, "_wait_for_session", None)
                 if callable(wait_for_session):
+                    # Discovery must not block on a server whose maintainer has
+                    # not established a session yet: the registry retries it on
+                    # a later resolution. Resolution still gets the servers
+                    # that are ready immediately.
+                    if not wait_for_ready:
+                        return []
                     configured_request_timeout = None
                     config = getattr(client, "config", None)
                     request_timeout = getattr(config, "requestTimeout", None)
@@ -397,151 +414,215 @@ class MCPClientManager:
             logger.debug(f"Client '{client_name}' could not be resolved for tools: {exc}")
             return []
 
-    async def resolve_tool(self, tool: str, timeout: float | None = None):
-        """Resolve a (possibly loosely-named) tool call to its owning client and
-        the exact tool name the server expects.
+    def _sync_registry_servers(self) -> None:
+        """Drop cached tools when the configured client set changes.
 
-        LLMs frequently call tools by a name that differs from the registered
-        name (e.g. ``google-search`` vs ``google_search``, or a server name
-        instead of a tool name). This normalizes separators and returns the
-        canonical tool name so the downstream ``session.call_tool`` uses the
-        name the server actually recognizes.
-
-        If the called name matches no tool but matches a *server* name, and
-        that server exposes exactly one tool, the call is dispatched to that
-        tool directly (the common "called the server instead of the tool" case).
-
-        Returns ``(client, actual_tool_name)`` or ``None`` if no client exposes
-        a matching tool.
+        Without this, a registry warmed for one client set would keep serving
+        those tools after clients are replaced (notably between tests, but also
+        after a configuration reload).
         """
-        effective_timeout = timeout
-        if effective_timeout is None:
-            effective_timeout = DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
+        current = [name for name, _ in self.get_clients()]
+        if current != self.registry.server_order():
+            self.registry.set_server_order(current)
+            self.registry.invalidate()
 
+    async def _discover_server(
+        self, name: str, client: client_types, timeout: float
+    ) -> tuple[str, list[RegisteredTool]]:
+        """Discover one server, never waiting for an unready session."""
+        tools = await self._list_client_tools(client, timeout, wait_for_ready=False)
+        annotations = getattr(client, "_tool_annotations", {}) or {}
+        entries: list[RegisteredTool] = []
+        for tool in tools:
+            tool_name = getattr(tool, "name", "")
+            if not tool_name:
+                continue
+            entries.append(
+                RegisteredTool(
+                    server=name,
+                    name=tool_name,
+                    tool=tool,
+                    annotations=annotations.get(tool_name, {}),
+                )
+            )
+        return name, entries
+
+    async def _refresh_until_match(
+        self, normalized_tool: str | None, timeout: float
+    ) -> None:
+        """Discover stale servers, stopping as soon as a match is found.
+
+        ``normalized_tool=None`` means "fill in every stale server" (used on the
+        error path for suggestions). Slow servers are cancelled once the match
+        is known, so one unresponsive server cannot delay resolution.
+        """
+        self._sync_registry_servers()
+        async with self.registry.lock:
+            pending = [
+                (name, client)
+                for name, client in self.get_clients()
+                if self.registry.is_server_stale(name)
+            ]
+            if not pending:
+                return
+
+            tasks = {
+                asyncio.create_task(self._discover_server(name, client, timeout)): name
+                for name, client in pending
+            }
+            try:
+                for completed in asyncio.as_completed(tasks, timeout=timeout):
+                    try:
+                        name, entries = await completed
+                    except Exception as exc:
+                        logger.debug(f"tool discovery failed for a server: {exc!r}")
+                        continue
+                    self.registry.merge_server(name, entries)
+                    if (
+                        normalized_tool is not None
+                        and self.registry.get(normalized_tool) is not None
+                    ):
+                        break
+            except asyncio.TimeoutError:
+                logger.debug("tool registry refresh hit its time budget")
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def refresh_tool_registry(
+        self, *, force: bool = False, timeout: float | None = None
+    ) -> None:
+        """Rebuild the whole registry, skipping sessions that are not ready."""
+        effective_timeout = (
+            float(timeout) if timeout is not None else DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
+        )
+        self._sync_registry_servers()
+        if not force and not self.registry.is_stale():
+            return
+
+        async with self.registry.lock:
+            if not force and not self.registry.is_stale():
+                return
+            results = await asyncio.gather(
+                *(
+                    self._discover_server(name, client, effective_timeout)
+                    for name, client in self.get_clients()
+                ),
+                return_exceptions=True,
+            )
+            entries: list[RegisteredTool] = []
+            for result in results:
+                if isinstance(result, BaseException):
+                    logger.debug(f"tool registry refresh failed for a server: {result!r}")
+                    continue
+                _, server_entries = result
+                entries.extend(server_entries)
+            self.registry.replace(entries)
+
+    async def resolve_tool(self, tool: str, timeout: float | None = None):
+        """Resolve a (possibly loosely-named) tool call to its owning client.
+
+        Resolution reads the warm registry, so it makes no ``tools/list`` RPCs
+        once discovery has run. Aliases and the single-tool server-name
+        fallback are resolved from registry entries too. The winner is stable
+        because the registry is built in config order.
+        """
         normalized_tool = self._normalize_tool_name(tool)
-
-        async def _probe(client: client_types):
-            client_tools = await self._list_client_tools(client, effective_timeout)
-            for client_tool in client_tools:
-                if self._normalize_tool_name(getattr(client_tool, "name", "")) == normalized_tool:
-                    return (client, getattr(client_tool, "name", tool))
-            return None
-
-        clients = [client for _, client in self.get_clients()]
+        clients = dict(self.get_clients())
         if not clients:
             return None
 
-        probe_tasks = [asyncio.create_task(_probe(client)) for client in clients]
-        try:
-            deadline = asyncio.get_running_loop().time() + effective_timeout
-            while probe_tasks:
-                remaining = deadline - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    break
+        self._sync_registry_servers()
+        effective_timeout = (
+            float(timeout) if timeout is not None else DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
+        )
 
-                done, pending = await asyncio.wait(
-                    probe_tasks,
-                    timeout=remaining,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
+        def _from_entry(entry: RegisteredTool):
+            client = clients.get(entry.server)
+            if client is None:
+                return None
+            return (client, entry.name)
 
-                for task in done:
-                    probe_tasks.remove(task)
-                    result = task.result()
-                    if result is not None:
-                        for pending_task in pending:
-                            pending_task.cancel()
-                        return result
+        entry = self.registry.get(normalized_tool)
+        if entry is not None and not self.registry.is_server_stale(entry.server):
+            resolved = _from_entry(entry)
+            if resolved is not None:
+                return resolved
 
-                if not pending:
-                    break
+        # Discover until the requested tool is found; a slow server is
+        # cancelled once a match exists.
+        await self._refresh_until_match(normalized_tool, effective_timeout)
+        entry = self.registry.get(normalized_tool)
+        if entry is not None:
+            resolved = _from_entry(entry)
+            if resolved is not None:
+                return resolved
 
-                probe_tasks = list(pending)
-        except Exception:
-            for task in probe_tasks:
-                task.cancel()
-            raise
+        # Not found: fill in the remaining servers before trying aliases and
+        # the server-name fallback (error path, bounded by the same budget).
+        await self._refresh_until_match(None, effective_timeout)
 
-        for task in probe_tasks:
-            task.cancel()
+        # Alias fallback: the model may use a generic synonym for a tool that
+        # is registered under a more specific name.
+        by_normalized = {
+            normalize_tool_name(item.name): item for item in self.registry.all()
+        }
+        for candidate in _TOOL_NAME_ALIASES.get(normalized_tool, ()):
+            match = by_normalized.get(candidate)
+            if match is not None:
+                resolved = _from_entry(match)
+                if resolved is not None:
+                    logger.debug(f"resolved tool alias '{tool}' -> '{match.name}'")
+                    return resolved
 
-        # Alias fallback: the called name may be a common generic synonym for a
-        # tool registered under a more specific name (e.g. the model calls
-        # ``web_search`` but the registered tool is ``web_search_exa``). Try each
-        # curated candidate in order and dispatch to the first one that is
-        # actually registered. This only ever resolves to a *real* tool, so it
-        # cannot invent a target on a server set where the candidate is absent.
-        alias_candidates = _TOOL_NAME_ALIASES.get(normalized_tool, ())
-        if alias_candidates:
-            normalized_to_client: dict[str, tuple[client_types, str]] = {}
-            for client in clients:
-                client_tools = await self._list_client_tools(client, effective_timeout)
-                for client_tool in client_tools:
-                    actual_name = getattr(client_tool, "name", "")
-                    if actual_name:
-                        normalized_to_client.setdefault(
-                            self._normalize_tool_name(actual_name), (client, actual_name)
-                        )
-            for candidate in alias_candidates:
-                match = normalized_to_client.get(candidate)
-                if match is not None:
-                    logger.debug(
-                        f"resolved tool alias '{tool}' -> '{match[1]}'"
-                    )
-                    return match
-
-        # Server-name fallback: the called name matched no tool, but it may be
-        # a *server* name. If that server exposes exactly one tool, dispatch to
-        # it directly so the common "called the server" case succeeds silently.
-        for client in clients:
-            client_name = getattr(client, "name", "")
-            if client_name and self._normalize_tool_name(client_name) == normalized_tool:
-                client_tools = await self._list_client_tools(client, effective_timeout)
-                if len(client_tools) == 1:
-                    return (client, getattr(client_tools[0], "name", tool))
-                # Multiple tools on the matched server: cannot disambiguate
-                # reliably, so fall through to the corrective error path.
+        # Server-name fallback: if exactly one tool belongs to the named
+        # server, the caller probably meant that tool.
+        for server_name, client in clients.items():
+            if self._normalize_tool_name(server_name) == normalized_tool:
+                server_tools = self.registry.for_server(server_name)
+                if len(server_tools) == 1:
+                    return (client, server_tools[0].name)
                 break
 
         return None
 
     async def suggest_tools(self, tool: str, timeout: float | None = None) -> list[str]:
-        """Return a list of registered tool names that are close matches to the
-        given (misnamed) tool call, for use in a corrective error message.
+        """Return registered tool names close to a misnamed call.
 
-        If the called name matches a *server* name, that server's tools are
-        returned first (the model likely meant one of them). Otherwise fuzzy
-        matching (``difflib``) is used against every tool name exposed by every
-        client, so the model can see what it should have called.
+        Reads the warm registry; no per-client discovery RPCs.
         """
-        effective_timeout = timeout
-        if effective_timeout is None:
-            effective_timeout = DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
-
         normalized_tool = self._normalize_tool_name(tool)
+        clients = dict(self.get_clients())
+        if not clients:
+            return []
+
+        self._sync_registry_servers()
+        effective_timeout = (
+            float(timeout) if timeout is not None else DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS
+        )
+        await self._refresh_until_match(None, effective_timeout)
 
         # Server-name match: the model likely meant a tool on this server.
-        for _, client in self.get_clients():
-            client_name = getattr(client, "name", "")
-            if client_name and self._normalize_tool_name(client_name) == normalized_tool:
-                client_tools = await self._list_client_tools(client, effective_timeout)
-                names = [getattr(t, "name", "") for t in client_tools]
-                return [n for n in names if n]
+        for server_name in clients:
+            if self._normalize_tool_name(server_name) == normalized_tool:
+                return [entry.name for entry in self.registry.for_server(server_name)]
 
-        all_tool_names: list[str] = []
-        for _, client in self.get_clients():
-            client_tools = await self._list_client_tools(client, effective_timeout)
-            for client_tool in client_tools:
-                name = getattr(client_tool, "name", "")
-                if name:
-                    all_tool_names.append(name)
-
+        all_tool_names = [entry.name for entry in self.registry.all()]
         if not all_tool_names:
             return []
 
-        matches = difflib.get_close_matches(normalized_tool, [self._normalize_tool_name(n) for n in all_tool_names], n=5, cutoff=0.4)
-        normalized_to_original = {self._normalize_tool_name(n): n for n in all_tool_names}
-        return [normalized_to_original[m] for m in matches]
+        matches = difflib.get_close_matches(
+            normalized_tool,
+            [self._normalize_tool_name(name) for name in all_tool_names],
+            n=5,
+            cutoff=0.4,
+        )
+        normalized_to_original = {
+            self._normalize_tool_name(name): name for name in all_tool_names
+        }
+        return [normalized_to_original[match] for match in matches]
 
     async def get_client_from_prompt(self, prompt: str, timeout: float | None = None):
         effective_timeout = timeout

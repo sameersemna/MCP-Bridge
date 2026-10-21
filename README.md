@@ -148,6 +148,7 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_TOOL_TIMEOUT_SECONDS` | `60` | Per-tool-call timeout in seconds. A server's `requestTimeout` (ms) in `config.json` overrides this when it is larger — see below. |
 | `MCP_BRIDGE_TOOL_RETRY_COUNT` | `1` | Retries for a timed-out tool call. Applied only when the tool is declared read-only/idempotent, or allow-listed with `idempotent_tools` / `retry_unsafe` (see below). |
 | `MCP_BRIDGE_TOOL_RETRY_DELAY_SECONDS` | `0.25` | Delay between tool-call retries. |
+| `MCP_BRIDGE_TOOL_REGISTRY_TTL_SECONDS` | `300` | How long the process-wide tool registry is trusted before rediscovery. `notifications/tools/list_changed` refreshes it immediately on stdio and SSE; the request/response HTTP transport relies on this TTL. |
 | `MCP_BRIDGE_UPSTREAM_READ_TIMEOUT_SECONDS` | `300` | Read timeout for upstream LLM requests (seconds). Prevents a dead final-turn request from hanging for tens of minutes. |
 | `MCP_BRIDGE_UPSTREAM_CONNECT_TIMEOUT_SECONDS` | `10` | Connect timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_WRITE_TIMEOUT_SECONDS` | `10` | Write timeout for upstream LLM requests (seconds). |

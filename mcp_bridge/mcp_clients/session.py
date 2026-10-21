@@ -118,6 +118,7 @@ class McpClientSession(
         read_stream: MemoryObjectReceiveStream[types.JSONRPCMessage | Exception],
         write_stream: MemoryObjectSendStream[types.JSONRPCMessage],
         read_timeout_seconds: timedelta | None = None,
+        on_tools_changed: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(
             read_stream,
@@ -126,9 +127,14 @@ class McpClientSession(
             types.ServerNotification,
             read_timeout_seconds=read_timeout_seconds,
         )
+        self._on_tools_changed = on_tools_changed
         self._incoming_message_stream_writer, self._incoming_message_stream_reader = (
             anyio.create_memory_object_stream(100)
         )
+
+    def set_on_tools_changed(self, callback: Callable[[], None] | None) -> None:
+        """Register a callback for ``notifications/tools/list_changed``."""
+        self._on_tools_changed = callback
 
     async def initialize(self) -> types.InitializeResult:
         result = await self.send_request(
@@ -358,6 +364,9 @@ class McpClientSession(
                         notification = self._receive_notification_type.model_validate(
                             message.root.model_dump(by_alias=True, mode="json", exclude_none=True)
                         )
+                        if isinstance(notification.root, types.ToolListChangedNotification):
+                            if self._on_tools_changed is not None:
+                                self._on_tools_changed()
                         if isinstance(notification.root, types.CancelledNotification):
                             cancelled_id = notification.root.params.requestId
                             if cancelled_id in self._in_flight:

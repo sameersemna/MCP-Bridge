@@ -3,7 +3,7 @@ import contextlib
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Callable
 
 import anyio
 import httpx
@@ -181,6 +181,10 @@ class GenericMcpClient(ABC):
         # Consecutive-timeout breaker state (see _record_timeout_and_maybe_reset).
         self._consecutive_timeouts = 0
         self._first_timeout_at: float | None = None
+        # Called when this client's tool set may have changed (a
+        # notifications/tools/list_changed message or a session reset). The
+        # manager points this at the tool registry's invalidate().
+        self.on_tools_changed: Callable[[], None] | None = None
 
         logger.debug(f"initializing client class for {name}")
 
@@ -386,10 +390,23 @@ class GenericMcpClient(ABC):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
+    def _notify_tools_changed(self) -> None:
+        """Tell the registry that this client's tool set may have changed."""
+        callback = self.on_tools_changed
+        if callback is None:
+            return
+        try:
+            callback()
+        except Exception as exc:
+            # A registry invalidation must never break a session lifecycle.
+            logger.debug(f"tool-change callback failed for {self.name}: {exc}")
+
     async def _reset_session(self, reason: str) -> None:
         logger.info(f"resetting MCP session for {self.name}: {reason}")
         self.session = None
         self._offline = False
+        # A new session may expose a different tool set.
+        self._notify_tools_changed()
 
         if not self._started:
             return
