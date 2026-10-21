@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.openai_clients.genericHttpxClient import close_shared_transport
 from loguru import logger
 
 
@@ -17,5 +18,6 @@ async def lifespan(app):
     logger.log("DEBUG", "Returned form lifespan yield")
 
     # shutdown
+    await close_shared_transport()
 
     logger.log("DEBUG", "Exiting fastapi lifespan")
