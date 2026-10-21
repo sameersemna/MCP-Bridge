@@ -45,7 +45,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P1-04 | Blocking I/O on the event loop | done | 473c0e7 | Redis `aget/aput` on one lazy `redis.asyncio` client; disk cache via `to_thread`; trace rewrite on the executor with a lock; signature cached per callable; cache factory singleton per config. 4 tests. |
 | P1-05 | Sequential startup | done | b4eec8b | `initialize()` constructs clients with `gather(return_exceptions=True)`, preserving config order and isolating failures. 2 tests (max-time startup, failure isolation). |
 | P1-06 | Unbounded on-disk growth | done | b9e651d | Trace enable + max files/age/size; disk-cache entry/size caps; lifespan retention task; URL/tool-arg credential redaction. 6 tests. |
-| P1-07 | `[design]` MCP SDK/protocol modernization | todo | | |
+| P1-07 | `[design]` MCP SDK/protocol modernization | done | 20a2ff6 | ADR 005. Upgraded to mcp 1.27.2 (`>=1.7.2,<2`); measured 484 existing tests pass. Added mounted Streamable HTTP at `/mcp-server/mcp` (auth-aware), kept `/mcp-server/sse`. Client replacement documented as follow-up. Scoped mypy SDK override (53 errors). |
 | P1-08 | Client disconnect and cancellation | todo | | |
 | P1-09 | Streaming/non-streaming tool parity | todo | | |
 | P2-01 | Request correlation | todo | | |
@@ -83,3 +83,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 18:25 P1-04 done (473c0e7). The existing Redis test injected a sync fake via `_client`; the async path now falls back to that client when no async client is configured, preserving the test seam. README Redis fallback text corrected (no silent backend switch). Gate 476 passed / ruff 3 / mypy 71.
 - 2026-10-21 18:40 P1-05 done (b4eec8b). Startup is `gather`-based; the inventory still lists enabled/disabled/failed/active in config order. Gate 478 passed / ruff 3 / mypy 71.
 - 2026-10-21 19:00 P1-06 done (b9e651d). The redaction test exposed that a bare `token=...` (no `?`/`&`) was not matched; the regex now anchors at string start too. Gate 484 passed / ruff 3 / mypy 71.
+- 2026-10-21 19:30 P1-07 done (20a2ff6), ADR `docs/hardening/adr/005-sdk-upgrade-and-streamable-http.md`. Probe branch: mcp 1.27.2 + pydantic 2.14.1, all 484 existing tests passed; mypy rose 71→94, so a scoped `[mypy-mcp.*] follow_imports=skip` was added (53 errors, below baseline). The Streamable HTTP manager must be *mounted*, not a FastAPI route (double response), and two test-isolation issues were fixed (global sse-starlette event, global session manager). Gate 485 passed / ruff 3 / mypy 53.
