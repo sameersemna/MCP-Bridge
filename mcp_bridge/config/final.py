@@ -130,6 +130,14 @@ class SSEMCPServer(MCPServerConfig):
         default_factory=dict,
         description="Authentication configuration for the MCP server",
     )
+    headers: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Static HTTP headers sent with every request to this server, e.g. "
+            "Authorization. Values support ${ENV_VAR} substitution and are "
+            "redacted in logs."
+        ),
+    )
     requestTimeout: int | None = Field(
         default=None,
         description="Request timeout in milliseconds",

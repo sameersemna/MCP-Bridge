@@ -2,6 +2,7 @@ from mcp import types
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
 from pydantic import AnyUrl
+from mcp_bridge import __version__
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from loguru import logger
 
@@ -131,7 +132,7 @@ async def handle_call_tool(
 
 options = InitializationOptions(
     server_name="MCP-Bridge",
-    server_version="0.2.0",
+    server_version=__version__,
     capabilities=server.get_capabilities(
         notification_options=NotificationOptions(),
         experimental_capabilities={},

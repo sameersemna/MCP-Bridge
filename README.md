@@ -653,6 +653,27 @@ Authorization: Bearer your-secure-api-key-here
 
 If the `api_key` field is empty or not present in the configuration, authentication will be skipped, allowing backward compatibility.
 
+### Remote server headers and session lifecycle
+
+HTTP/SSE servers that require authentication can set static headers. Values
+support `${ENV_VAR}` substitution (resolved at config load) and are redacted in
+logs:
+
+```json
+"remote": {
+  "type": "http",
+  "url": "https://mcp.example.com/mcp",
+  "headers": {"X-Api-Key": "${REMOTE_MCP_KEY}"},
+  "auth": {"type": "bearer", "token": "${REMOTE_MCP_TOKEN}"}
+}
+```
+
+`headers` wins over `auth`; a bearer `auth` entry is mapped to `Authorization`
+only when `headers` does not set it. For Streamable HTTP the bridge keeps one
+connection per session, captures and echoes `Mcp-Session-Id`, sends
+`MCP-Protocol-Version` after initialization, re-initializes once if the server
+returns `404` (session expired), and sends `DELETE` when the session stops.
+
 ### Server-initiated requests (ping, roots, sampling)
 
 Downstream **SSE** sessions answer requests initiated by the server:

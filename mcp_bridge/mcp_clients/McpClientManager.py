@@ -123,6 +123,19 @@ def _redact_server_config_for_logging(server_config: Any) -> Any:
 
         data = redact_sensitive_data(data)
 
+        # A header's name does not reveal whether its value is secret (tokens
+        # are routinely sent in custom headers), so redact every value. For
+        # `auth`, keep only the non-secret `type` discriminator.
+        headers = data.get("headers")
+        if isinstance(headers, dict):
+            data["headers"] = {str(key): "[REDACTED]" for key in headers}
+        auth = data.get("auth")
+        if isinstance(auth, dict):
+            data["auth"] = {
+                str(key): (value if str(key).lower() == "type" else "[REDACTED]")
+                for key, value in auth.items()
+            }
+
         args = data.get("args")
         if isinstance(args, list):
             redacted_args = list(args)

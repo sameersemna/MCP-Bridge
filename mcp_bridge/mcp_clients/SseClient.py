@@ -20,6 +20,7 @@ except ImportError:  # pragma: no cover - allows the package to import in minima
 
     types = Any
 
+from mcp_bridge import __version__
 from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
 from .AbstractClient import GenericMcpClient
@@ -111,11 +112,97 @@ def _client_capabilities(*, supports_server_requests: bool) -> dict[str, Any]:
     return capabilities
 
 
+def _server_headers(server_config: Any) -> dict[str, str]:
+    """Build request headers from a server's ``headers`` and ``auth`` config.
+
+    ``headers`` is the general mechanism and wins. A bearer ``auth`` entry is
+    mapped to ``Authorization`` only when headers do not already set one; the
+    previous code never read ``auth`` at all, so remote servers that required a
+    token could only be configured through URL query strings (which leak into
+    logs).
+    """
+    headers = {
+        str(key): str(value)
+        for key, value in (getattr(server_config, "headers", None) or {}).items()
+    }
+    auth = getattr(server_config, "auth", None) or {}
+    if isinstance(auth, dict):
+        auth_type = str(auth.get("type", "bearer")).lower()
+        token = auth.get("token") or auth.get("api_key")
+        if token and auth_type not in {"none", "basic"}:
+            headers.setdefault("Authorization", f"Bearer {token}")
+    return headers
+
+
 class HttpMcpSession:
-    def __init__(self, url: str, read_timeout_seconds: float | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        read_timeout_seconds: float | None = None,
+        headers: dict[str, str] | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._url = url
         self._read_timeout_seconds = read_timeout_seconds
+        self._configured_headers = dict(headers or {})
+        # Test seam: an in-process transport avoids a real network round trip.
+        self._transport = transport
         self._request_id = 1
+        self._session_id: str | None = None
+        self._protocol_version: str | None = None
+        # One client for the whole session. The previous implementation created
+        # and closed a client per JSON-RPC message, losing keep-alive and making
+        # a stateful Streamable HTTP session impossible.
+        self._client: httpx.AsyncClient | None = None
+
+    def _request_headers(self) -> dict[str, str]:
+        headers = {
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            **self._configured_headers,
+        }
+        # Session headers are protocol state, not operator defaults: apply them
+        # last so a configured header cannot break the session by accident.
+        if self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
+        if self._protocol_version:
+            headers["MCP-Protocol-Version"] = self._protocol_version
+        return headers
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            timeout = (
+                None
+                if self._read_timeout_seconds is None
+                else float(self._read_timeout_seconds)
+            )
+            self._client = httpx.AsyncClient(timeout=timeout, transport=self._transport)
+        return self._client
+
+    async def aclose(self) -> None:
+        """Delete the server-side session (if any) and close the client."""
+        client = self._client
+        self._client = None
+        if client is None:
+            return
+        if self._session_id:
+            try:
+                response = await client.delete(
+                    self._url, headers=self._request_headers()
+                )
+                response.raise_for_status()
+            except Exception as exc:
+                logger.debug(
+                    f"failed to delete MCP session: {_describe_exception(exc)}"
+                )
+        try:
+            await client.aclose()
+        except Exception as exc:
+            logger.debug(
+                f"failed to close MCP HTTP client: {_describe_exception(exc)}"
+            )
+        self._session_id = None
+        self._protocol_version = None
 
     async def initialize(self) -> Any:
         response = await self._send_request(
@@ -123,10 +210,14 @@ class HttpMcpSession:
             {
                 "protocolVersion": getattr(types, "LATEST_PROTOCOL_VERSION", "2024-11-05"),
                 "capabilities": _client_capabilities(supports_server_requests=False),
-                "clientInfo": {"name": "MCP-Bridge", "version": "0.5.1"},
+                "clientInfo": {"name": "MCP-Bridge", "version": __version__},
             },
             result_type=types.InitializeResult,
+            allow_reinit=False,
         )
+        negotiated = getattr(response, "protocolVersion", None)
+        if isinstance(negotiated, str) and negotiated:
+            self._protocol_version = negotiated
         await self._send_notification("notifications/initialized", None)
         return response
 
@@ -143,7 +234,9 @@ class HttpMcpSession:
             result_type=types.CallToolResult,
         )
 
-    async def _send_request(self, method: str, params: Any, result_type: Any) -> Any:
+    async def _send_request(
+        self, method: str, params: Any, result_type: Any, *, allow_reinit: bool = True
+    ) -> Any:
         request_id = self._request_id
         self._request_id += 1
 
@@ -155,7 +248,7 @@ class HttpMcpSession:
             "params": normalized_params,
         }
 
-        response = await self._post_jsonrpc(payload)
+        response = await self._post_jsonrpc(payload, allow_reinit=allow_reinit)
         if not isinstance(response, dict) or "result" not in response:
             # The SDK's McpError expects an ErrorData object (it reads
             # `error.message`), not a plain string. Passing a string here
@@ -178,28 +271,38 @@ class HttpMcpSession:
         }
         await self._post_jsonrpc(payload)
 
-    async def _post_jsonrpc(self, payload: dict[str, Any]) -> dict[str, Any]:
-        headers = {
-            "Accept": "application/json, text/event-stream",
-            "Content-Type": "application/json",
-        }
+    async def _post_jsonrpc(
+        self, payload: dict[str, Any], *, allow_reinit: bool = True
+    ) -> dict[str, Any]:
+        client = self._get_client()
+        async with client.stream(
+            "POST", self._url, headers=self._request_headers(), json=payload
+        ) as response:
+            # Always trust the latest id: servers may rotate it.
+            session_id = response.headers.get("mcp-session-id")
+            if session_id:
+                self._session_id = session_id
 
-        timeout_seconds = self._read_timeout_seconds
-        timeout = None if timeout_seconds is None else float(timeout_seconds)
+            if response.status_code == 404 and self._session_id and allow_reinit:
+                # The session expired server-side. Drain the body so the
+                # connection can be released, initialize once, then retry. The
+                # flag prevents a loop if initialize itself is rejected.
+                await response.aread()
+                logger.info(f"MCP session expired for {self._url}; re-initializing")
+                await self.initialize()
+                return await self._post_jsonrpc(payload, allow_reinit=False)
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", self._url, headers=headers, json=payload) as response:
-                response.raise_for_status()
+            response.raise_for_status()
 
-                content_type = response.headers.get("content-type", "")
-                content_length = response.headers.get("content-length", "")
-                if response.status_code in {202, 204} or content_length == "0":
-                    return {}
+            content_type = response.headers.get("content-type", "")
+            content_length = response.headers.get("content-length", "")
+            if response.status_code in {202, 204} or content_length == "0":
+                return {}
 
-                if "application/json" in content_type:
-                    return json.loads((await response.aread()).decode("utf-8"))
+            if "application/json" in content_type:
+                return json.loads((await response.aread()).decode("utf-8"))
 
-                return await self._parse_sse_response(response)
+            return await self._parse_sse_response(response)
 
     async def _parse_sse_response(self, response: httpx.Response) -> dict[str, Any]:
         event_name: str | None = None
@@ -439,7 +542,7 @@ class SseMcpSession:
             {
                 "protocolVersion": getattr(types, "LATEST_PROTOCOL_VERSION", "2024-11-05"),
                 "capabilities": _client_capabilities(supports_server_requests=True),
-                "clientInfo": {"name": "MCP-Bridge", "version": "0.5.1"},
+                "clientInfo": {"name": "MCP-Bridge", "version": __version__},
             },
             result_type=types.InitializeResult,
         )
@@ -601,12 +704,13 @@ class HttpClient(GenericMcpClient):
         session = HttpMcpSession(
             self.config.url,
             read_timeout_seconds=self.config.requestTimeout / 1000.0 if self.config.requestTimeout else None,
+            headers=_server_headers(self.config),
         )
-        await session.initialize()
-        logger.debug(f"finished initialise session for {self.name}")
-        self.session = session
-
         try:
+            await session.initialize()
+            logger.debug(f"finished initialise session for {self.name}")
+            self.session = session
+
             while True:
                 await asyncio.sleep(10)
 
@@ -639,5 +743,10 @@ class HttpClient(GenericMcpClient):
             logger.error(f"ping failed for {self.name}: {_describe_exception(exc)}")
             self.session = None
             raise
+        finally:
+            # Always send DELETE and close the per-session client, including
+            # when the maintainer is cancelled during shutdown.
+            self.session = None
+            await session.aclose()
 
         logger.debug(f"exiting session for {self.name}")
