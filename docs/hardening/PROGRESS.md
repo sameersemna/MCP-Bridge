@@ -37,7 +37,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P0-08 | Hand-rolled Streamable HTTP client | done | 7326223 | Session id capture/echo, `MCP-Protocol-Version`, `headers` + bearer auth, one client/session, 404 re-init, DELETE on close, `__version__` everywhere; header/auth values redacted. 9 tests. |
 | P0-09 | Error resets kill healthy sessions | done | b9fe9ee | Application `McpError` no longer resets; transport errors do; single timeout does not; 3 consecutive timeouts within 60s trip a breaker; success clears it. 6 tests, all 6 verified failing pre-fix via a scoped stash. |
 | P0-10 | REST 500-instead-of-404 + HTTP contract | done | 2c06a93 | `get_client` → None; immutable body default; canonical-name dispatch (REST + aggregated); OpenAI-style 501 for streaming completions; `/v1/models` propagates upstream status. 8 tests. |
-| P0-11 | Insecure-by-default exposure | todo | | |
+| P0-11 | Insecure-by-default exposure | done | 7dbef54 | New `security.auth.required_for_non_loopback` (default false); loud warning or hard startup failure for unauthenticated non-loopback binds. `/health/live` public, `/health/ready` follows auth; `/health` unchanged. README Security section. 8 tests. |
 | P0-12 | Config HTTP load has no timeout/status check | todo | | |
 | P1-01 | `[design]` Tool registry | todo | | |
 | P1-02 | Tool-name collisions / OpenAI name constraints | todo | | |
@@ -74,3 +74,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 15:15 P0-08 done (7326223). The 404 test initially failed because the test called `list_tools()` without `initialize()`, so no session existed to expire — fixed the test, not the code. Existing HTTP fakes (no `delete`/`aclose`) still pass because they never call `aclose`. Gate 421 passed / ruff 3 / mypy 72.
 - 2026-10-21 15:30 P0-09 done (b9fe9ee). Non-vacuity proven by stashing only `AbstractClient.py`: all 6 new tests failed pre-fix, all pass post-fix. Gate 427 passed / ruff 3 / mypy 72.
 - 2026-10-21 15:50 P0-10 done (2c06a93). Collection failure in the full suite came from earlier tests replacing `sys.modules["lmos_openai_types"]` with a stub that lacks `CreateCompletionRequest`; the two `/v1` tests now run in a clean subprocess. Gate 435 passed / ruff 3 / mypy 72.
+- 2026-10-21 16:10 P0-11 done (7dbef54). Posture check extracted to `mcp_bridge/security_posture.py` so tests do not import `main`/`endpoints` and trip over the `lmos_openai_types` stub order. Gate 443 passed / ruff 3 / mypy 72.
