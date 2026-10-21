@@ -135,7 +135,8 @@ async def stdio_client(server: StdioServerParameters):
     )
 
     async def stdout_reader() -> None:
-        assert process.stdout is not None
+        if process.stdout is None:
+            raise RuntimeError("stdio process has no stdout")
         buffer = ""
         try:
             async with read_stream_writer:
@@ -176,7 +177,8 @@ async def stdio_client(server: StdioServerParameters):
                 pass
 
     async def stdin_writer() -> None:
-        assert process.stdin is not None
+        if process.stdin is None:
+            raise RuntimeError("stdio process has no stdin")
         try:
             async with write_stream_reader:
                 async for message in write_stream_reader:
@@ -194,7 +196,8 @@ async def stdio_client(server: StdioServerParameters):
             logger.debug(f"stdio stdin writer stopped: {exc}")
 
     async def stderr_reader() -> None:
-        assert process.stderr is not None
+        if process.stderr is None:
+            raise RuntimeError("stdio process has no stderr")
         try:
             while True:
                 line = await process.stderr.readline()

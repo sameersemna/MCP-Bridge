@@ -1,5 +1,9 @@
+import base64
+from typing import Any
+
 from mcp import types
 from mcp.server import Server, NotificationOptions
+from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.models import InitializationOptions
 from pydantic import AnyUrl
 from mcp_bridge import __version__
@@ -91,31 +95,46 @@ async def get_prompt(name: str, args: dict[str, str] | None) -> types.GetPromptR
     return result
 
 
+def _resource_contents(resource: Any) -> ReadResourceContents:
+    """Return content with its MIME type, for text or blob resources.
+
+    Deriving from the resource type (rather than matching ``text/plain``) lets
+    custom types such as ``application/json`` and ``image/png`` through, and
+    preserves the advertised MIME type instead of rejecting it.
+    """
+    if isinstance(resource, types.TextResourceContents):
+        if not isinstance(resource.text, str):
+            raise TypeError("text resource has no text content")
+        return ReadResourceContents(resource.text, resource.mimeType or "text/plain")
+
+    if isinstance(resource, types.BlobResourceContents):
+        blob = resource.blob
+        if isinstance(blob, bytes):
+            data = blob
+        elif isinstance(blob, str):
+            data = base64.b64decode(blob)
+        else:
+            raise TypeError("blob resource has no blob content")
+        return ReadResourceContents(
+            data, resource.mimeType or "application/octet-stream"
+        )
+
+    mime = getattr(resource, "mimeType", "") or ""
+    if mime.startswith("text/"):
+        return ReadResourceContents(str(getattr(resource, "text", "")), mime)
+    raise ValueError(f"Unsupported resource type: {mime or type(resource).__name__}")
+
+
 @server.read_resource()
-async def handle_read_resource(uri: AnyUrl) -> str | bytes:
+async def handle_read_resource(uri: AnyUrl) -> list[ReadResourceContents]:
     for name, client in ClientManager.get_clients():
         try:
             client_resources = await client.list_resources()
             if str(uri) in map(lambda x: str(x.uri), client_resources.resources):
                 response = await client.read_resource(uri)
-                for resource in response:
-                    if resource.mimeType == "text/plain":
-                        assert isinstance(resource, types.TextResourceContents)
-                        assert type(resource.text) is str
-                        return resource.text
-
-                    elif resource.mimeType == "application/octet-stream":
-                        assert isinstance(resource, types.BlobResourceContents)
-                        assert type(resource.blob) is bytes
-                        return resource.blob
-
-                    else:
-                        raise Exception(
-                            f"Unsupported resource type: {resource.mimeType}"
-                        )
-
+                return [_resource_contents(resource) for resource in response]
         except Exception as e:
-            logger.error(f"Error listing resources for {name}: {e}")
+            logger.error(f"Error reading resources for {name}: {e}")
 
     raise Exception(f"Resource '{uri}' not found")
 

@@ -686,7 +686,8 @@ class GenericMcpClient(ABC):
 
             raise TimeoutError(f"Could not connect to MCP server \"{self.name}\".")
 
-        assert self.session is not None, "Session is None"
+        if self.session is None:  # pragma: no cover - defensive
+            raise RuntimeError("MCP session is not ready")
 
     async def status(self) -> McpServerStatus:
         """Get the status of the MCP server"""

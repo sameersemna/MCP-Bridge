@@ -11,7 +11,8 @@ def substitute_env_vars(config: Any, env: dict[str, str] | None = None) -> Any:
     if env is None:
         env = os.environ.copy()
 
-    assert env is not None, "env is None"  # the guard should have caught this
+    if env is None:  # pragma: no cover - defensive
+        raise RuntimeError("environment is unavailable for substitution")
 
     # handle strings
     if isinstance(config, str):
