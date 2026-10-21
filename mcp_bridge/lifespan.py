@@ -1,7 +1,9 @@
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.openai_clients.genericHttpxClient import close_shared_transport
+from mcp_bridge.retention import retention_loop
 from mcp_bridge.telemetry import shutdown_tracing
 from loguru import logger
 
@@ -16,7 +18,13 @@ async def lifespan(app):
     logger.log("DEBUG", "Initialized MCP Client Manager")
 
     logger.log("DEBUG", "Yielding lifespan")
-    yield
+    retention_task = asyncio.create_task(retention_loop())
+    try:
+        yield
+    finally:
+        retention_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await retention_task
     logger.log("DEBUG", "Returned form lifespan yield")
 
     # shutdown

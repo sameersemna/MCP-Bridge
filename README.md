@@ -492,6 +492,24 @@ These can be set in a `.env` file (gitignored) at the repo root, or as real
 environment variables (which take precedence). The app loads `.env` into the
 process environment at startup via `python-dotenv`.
 
+### Disk retention
+
+Trace logs and the on-disk tool cache are pruned periodically by a lifespan
+background task (every `MCP_BRIDGE_RETENTION_INTERVAL_SECONDS`, default 3600):
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MCP_BRIDGE_TRACE_LOG_ENABLED` | `true` | Disable writing per-request trace files. |
+| `MCP_BRIDGE_TRACE_LOG_MAX_FILES` | `500` | Keep at most this many trace files (oldest removed first; `0` disables). |
+| `MCP_BRIDGE_TRACE_LOG_MAX_AGE_DAYS` | `14` | Remove trace files older than this. |
+| `MCP_BRIDGE_TRACE_LOG_MAX_TOTAL_MB` | `500` | Keep the trace directory under this size. |
+| `MCP_BRIDGE_TOOL_CACHE_MAX_ENTRIES` | `5000` | Disk cache entry cap. |
+| `MCP_BRIDGE_TOOL_CACHE_MAX_MB` | `500` | Disk cache size cap. |
+
+Trace payloads are redacted before writing: known sensitive keys, every
+`Authorization`-style header, and credentials embedded in URL query strings or
+tool arguments are replaced with `[REDACTED]`.
+
 ### Google redirect URL un-redirection (defense in depth)
 
 Some search MCP servers (e.g. a Google SERP scraper) return Google's search

@@ -2,8 +2,10 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import threading
+import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,9 +98,116 @@ def _default_log_dir() -> Path:
 
 LOG_DIR = _default_log_dir()
 
+# Query-string parameters that commonly carry credentials. Trace payloads
+# include tool arguments and URLs, where a secret has no dict key to match.
+_SECRET_QUERY_RE = re.compile(
+    r"(?i)((?:^|[?&])(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|key|secret|password)=)[^&\s\"']+"
+)
+
+
+def get_trace_log_enabled() -> bool:
+    raw = os.getenv("MCP_BRIDGE_TRACE_LOG_ENABLED", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def get_trace_log_max_files() -> int:
+    return int(_env_float("MCP_BRIDGE_TRACE_LOG_MAX_FILES", 500))
+
+
+def get_trace_log_max_age_days() -> float:
+    return _env_float("MCP_BRIDGE_TRACE_LOG_MAX_AGE_DAYS", 14)
+
+
+def get_trace_log_max_total_mb() -> float:
+    return _env_float("MCP_BRIDGE_TRACE_LOG_MAX_TOTAL_MB", 500)
+
+
+def prune_trace_logs(
+    log_dir: Path | None = None,
+    *,
+    max_files: int | None = None,
+    max_age_days: float | None = None,
+    max_total_mb: float | None = None,
+) -> int:
+    """Delete old trace files until every configured limit is satisfied.
+
+    ``0`` disables a limit. Oldest files are removed first; returns the number
+    of files deleted.
+    """
+    directory = Path(log_dir) if log_dir is not None else LOG_DIR
+    if not directory.is_dir():
+        return 0
+
+    limit_files = get_trace_log_max_files() if max_files is None else max_files
+    limit_age = get_trace_log_max_age_days() if max_age_days is None else max_age_days
+    limit_mb = (
+        get_trace_log_max_total_mb() if max_total_mb is None else max_total_mb
+    )
+    limit_bytes = int(limit_mb * 1024 * 1024) if limit_mb > 0 else 0
+
+    files = sorted(
+        (path for path in directory.glob("*.json") if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+    )
+    removed = 0
+    now = time.time()
+
+    if limit_age > 0:
+        max_age_seconds = limit_age * 86400
+        for path in list(files):
+            try:
+                age = now - path.stat().st_mtime
+            except OSError:
+                files.remove(path)
+                continue
+            if age > max_age_seconds:
+                try:
+                    path.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+                files.remove(path)
+
+    total_bytes = 0
+    for path in files:
+        try:
+            total_bytes += path.stat().st_size
+        except OSError:
+            pass
+
+    while files and (
+        (limit_files > 0 and len(files) > limit_files)
+        or (limit_bytes > 0 and total_bytes > limit_bytes)
+    ):
+        path = files.pop(0)
+        try:
+            size = path.stat().st_size
+            path.unlink()
+            removed += 1
+            total_bytes = max(0, total_bytes - size)
+        except OSError:
+            pass
+
+    return removed
+
 
 def redact_sensitive_data(value: Any) -> Any:
-    """Recursively redact secrets from dictionaries and lists."""
+    """Recursively redact secrets from dictionaries, lists and strings."""
+
+    if isinstance(value, str):
+        # A URL or tool argument may carry a credential without a dict key.
+        return _SECRET_QUERY_RE.sub(r"\1[REDACTED]", value)
 
     if isinstance(value, Mapping):
         redacted: dict[str, Any] = {}
@@ -222,10 +331,12 @@ class RequestTraceLogger:
         self.http_path = http_path
         self.method = method
         self.events: list[dict[str, Any]] = []
+        self._enabled = get_trace_log_enabled()
         self._timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         self._path = LOG_DIR / f"{self._timestamp}_{self._sanitize_path(http_path)}.json"
         self._directory = LOG_DIR
-        self._directory.mkdir(parents=True, exist_ok=True)
+        if self._enabled:
+            self._directory.mkdir(parents=True, exist_ok=True)
         # Serialize writes from executor threads: each trace rewrites the whole
         # file, and two interleaved rewrites could corrupt it.
         self._write_lock = threading.Lock()
@@ -236,6 +347,8 @@ class RequestTraceLogger:
         return sanitized.replace(" ", "_")
 
     def record(self, event_type: str, **payload: Any) -> None:
+        if not self._enabled:
+            return
         self.events.append(
             {
                 "type": event_type,
@@ -254,6 +367,8 @@ class RequestTraceLogger:
         loop.run_in_executor(None, self._write)
 
     def _write(self) -> None:
+        if not self._enabled:
+            return
         with self._write_lock:
             self._write_locked()
 
