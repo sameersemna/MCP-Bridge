@@ -17,6 +17,7 @@ tracer = trace.get_tracer("mcp_bridge")
 
 class _TracingState:
     initialized = False
+    provider: TracerProvider | None = None
 
 
 def setup_tracing(app) -> None:
@@ -29,6 +30,7 @@ def setup_tracing(app) -> None:
         resource = Resource(attributes={"service.name": config.telemetry.service_name})
         provider = TracerProvider(resource=resource)
         trace.set_tracer_provider(provider)
+        _TracingState.provider = provider
 
         if config.telemetry.enabled:
             try:
@@ -53,3 +55,20 @@ def setup_tracing(app) -> None:
         app.state._tracing_initialized = False
         logger.exception("Tracing initialization failed")
         raise
+
+
+def shutdown_tracing() -> None:
+    """Flush and stop the tracer provider exactly once.
+
+    ``TracerProvider.shutdown()`` is synchronous and shuts down the batch span
+    processor, so the caller should run it off the event loop. Idempotent: the
+    provider is cleared before shutting it down.
+    """
+    provider = _TracingState.provider
+    _TracingState.provider = None
+    if provider is None:
+        return
+    try:
+        provider.shutdown()
+    except Exception:
+        logger.exception("Tracing shutdown failed")

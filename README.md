@@ -146,6 +146,7 @@ The tool-calling loop can be tuned with the following environment variables:
 | `MCP_BRIDGE_UPSTREAM_CONNECT_TIMEOUT_SECONDS` | `10` | Connect timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_WRITE_TIMEOUT_SECONDS` | `10` | Write timeout for upstream LLM requests (seconds). |
 | `MCP_BRIDGE_UPSTREAM_POOL_TIMEOUT_SECONDS` | `10` | Connection-pool timeout for upstream LLM requests (seconds). |
+| `MCP_BRIDGE_SHUTDOWN_TIMEOUT_SECONDS` | `5` | Shared budget for stopping all downstream MCP clients on shutdown (seconds). Clients stop concurrently, so one hung transport cannot extend shutdown beyond this. Stdio servers are terminated and their child processes cleaned up. |
 | `MCP_BRIDGE_SSE_PING_TIMEOUT_SECONDS` | `20` | Liveness-ping timeout for SSE/HTTP MCP servers (seconds). Deliberately separate from `requestTimeout`, which is a *data* timeout. See below. |
 
 ### SSE/HTTP session keep-alive and liveness pings

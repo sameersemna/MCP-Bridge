@@ -1,6 +1,7 @@
 import asyncio
 import difflib
 import json
+import os
 from typing import Any, Union
 from urllib.parse import urlparse
 
@@ -33,6 +34,22 @@ from .SseClient import HttpClient, SseClient
 from .StdioClient import StdioClient
 
 DEFAULT_MCP_DISCOVERY_TIMEOUT_SECONDS = 10.0
+
+# How long shutdown waits for all MCP clients to stop. The budget is shared:
+# clients stop concurrently, so a hung transport costs at most this long.
+DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
+
+def _shutdown_timeout_seconds() -> float:
+    """Read the shutdown budget from the environment, falling back sanely."""
+    raw = os.getenv("MCP_BRIDGE_SHUTDOWN_TIMEOUT_SECONDS")
+    if raw is None:
+        return DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_SHUTDOWN_TIMEOUT_SECONDS
 
 client_types = Union[StdioClient, SseClient, HttpClient, DockerClient]
 
@@ -222,6 +239,42 @@ class MCPClientManager:
                 "Effective MCP server inventory: "
                 + json.dumps(inventory, sort_keys=True)
             )
+
+    async def shutdown(self, timeout: float | None = None) -> None:
+        """Stop every MCP client concurrently and clear the registry.
+
+        This is terminal: call it from the application lifespan on exit. Stdio
+        clients own a child process, so skipping ``stop()`` orphans it. Every
+        client gets the same deadline rather than a serial budget, so one hung
+        transport cannot delay the rest beyond ``timeout`` seconds.
+        """
+        if timeout is None:
+            timeout = _shutdown_timeout_seconds()
+
+        async with self._lock:
+            clients = list(self.clients.items())
+            self.clients.clear()
+
+        if not clients:
+            return
+
+        logger.info(f"Stopping {len(clients)} MCP client(s) (timeout {timeout:.1f}s)")
+
+        async def _stop(name: str, client: client_types) -> None:
+            stop = getattr(client, "stop", None)
+            if not callable(stop):
+                return
+            try:
+                await asyncio.wait_for(stop(), timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"Timed out after {timeout:.1f}s stopping MCP client '{name}'; "
+                    "its transport may still be open"
+                )
+            except Exception as exc:
+                logger.warning(f"Failed to stop MCP client '{name}': {exc}")
+
+        await asyncio.gather(*(_stop(name, client) for name, client in clients))
 
     async def construct_client(self, name: str, server_config: Any) -> client_types:
         logger.debug(f"Constructing client for {_redact_server_config_for_logging(server_config)}")
