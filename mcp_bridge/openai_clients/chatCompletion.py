@@ -32,6 +32,7 @@ from mcp_bridge.config import config
 from mcp_bridge.logging import RequestTraceLogger
 from mcp_bridge.cancellation import ClientDisconnected, run_until_disconnected
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.openai_clients.tool_policy import split_tool_calls
 from loguru import logger
 import json
 
@@ -2448,8 +2449,9 @@ async def chat_completions(
 ) -> CreateChatCompletionResponse:
     """performs a chat completion using the inference server"""
 
-    if not getattr(request, "tools", None):
-        request = await chat_completion_add_tools(request)
+    # Merge MCP tools alongside any client-provided tools (client wins on a
+    # name clash). Both loops use the same policy now.
+    request = await chat_completion_add_tools(request)
     discovered_tool_names = tool_names(request.tools)
     logger.info(f"tools discovered: {len(discovered_tool_names)} available: {', '.join(discovered_tool_names)}")
     if trace_logger is not None:
@@ -3068,6 +3070,19 @@ async def chat_completions(
                     )
 
             tool_turns_completed += 1
+
+            client_calls, mcp_calls = split_tool_calls(request, tool_call_items)
+            if client_calls:
+                # Standard OpenAI passthrough: the client owns this tool, so
+                # hand the whole tool_calls response back instead of trying to
+                # execute it against an MCP server.
+                if trace_logger is not None:
+                    trace_logger.record(
+                        "client_tool_passthrough",
+                        tool_calls=[name for name, _ in client_calls],
+                    )
+                return response
+            tool_call_items = mcp_calls
 
             if tool_call_items:
                 try:

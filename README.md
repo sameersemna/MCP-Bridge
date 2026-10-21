@@ -178,6 +178,14 @@ Every form is sanitized to `^[a-zA-Z0-9_-]{1,64}$` (the OpenAI function-name
 rule), with a stable 8-character hash suffix when a name must be truncated.
 Dispatch maps the exposed name back to the canonical tool on the owning server.
 
+### Client tools vs MCP tools
+
+Client-provided function tools are merged with MCP tools; a client tool wins a
+name clash. A model call to a client-owned tool ends the tool loop and is
+returned to the client as a standard `finish_reason: "tool_calls"` response
+(OpenAI passthrough), while MCP-owned calls are executed by the bridge. The
+streaming and non-streaming paths use the same policy.
+
 ### Tool-loop environment variables
 
 The tool-calling loop can be tuned with the following environment variables:

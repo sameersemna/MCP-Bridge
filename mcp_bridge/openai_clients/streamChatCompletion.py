@@ -62,6 +62,7 @@ from .genericHttpxClient import get_client
 from mcp_bridge.logging import RequestTraceLogger
 from mcp_bridge.cancellation import ClientDisconnected, run_until_disconnected
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.openai_clients.tool_policy import split_tool_calls
 from loguru import logger
 
 try:
@@ -439,6 +440,21 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
         #### MOST OF THIS IS COPY PASTED FROM CHAT_COMPLETIONS
         if not collected_tool_calls:
             continue
+
+        stream_calls = [
+            (tool_call.get("name", ""), tool_call.get("arguments", ""))
+            for tool_call in collected_tool_calls
+        ]
+        client_calls, _ = split_tool_calls(request, stream_calls)
+        if client_calls:
+            # The client owns these tools; the stream already delivered the
+            # tool-call deltas, so end here as an OpenAI tool_calls passthrough.
+            if trace_logger is not None:
+                trace_logger.record(
+                    "client_tool_passthrough",
+                    tool_calls=[name for name, _ in client_calls],
+                )
+            return
 
         # Stop the loop when the same tool call has been issued 3+ times, or
         # when the per-model tool-turn budget is exhausted. A model that keeps

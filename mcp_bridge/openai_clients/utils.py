@@ -162,7 +162,24 @@ def _cache_tool_schema(tool_name: str, input_schema: Any) -> None:
 
 
 async def chat_completion_add_tools(request: CreateChatCompletionRequest):
-    request.tools = []
+    client_tools = list(getattr(request, "tools", None) or [])
+    client_tool_names: set[str] = set()
+    for tool in client_tools:
+        function = getattr(tool, "function", None)
+        if isinstance(function, dict):
+            name = function.get("name")
+        else:
+            name = getattr(function, "name", None)
+        if name:
+            client_tool_names.add(str(name))
+
+    # Client-defined tools are kept; MCP tools are added alongside them. A
+    # client tool wins a name clash (it is the caller's own contract).
+    request.tools = client_tools
+    try:
+        request._client_tool_names = client_tool_names  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
     await _ensure_client_manager_initialized()
     # One registry read instead of re-running tools/list against every server
@@ -177,6 +194,8 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
 
     for entry in ClientManager.registry.all():
         exposed = entry.exposed or entry.name
+        if exposed in client_tool_names:
+            continue
         _cache_tool_schema(exposed, getattr(entry.tool, "inputSchema", None))
         tool_server_map[exposed] = entry.server
         converted = mcp2openai(entry.tool)

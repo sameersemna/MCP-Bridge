@@ -99,7 +99,16 @@ def test_chat_completions_logs_discovered_tool_names(monkeypatch):
     async def fake_get_client(request=None):
         yield fake_client
 
+    async def fake_add_tools(req):
+        # This test asserts the discovery log for the tools it supplied; it is
+        # not exercising MCP registry discovery.
+        req._client_tool_names = {"google_search", "google_weather"}
+        return req
+
     monkeypatch.setattr(chat_completion_module, "get_client", fake_get_client)
+    monkeypatch.setattr(
+        chat_completion_module, "chat_completion_add_tools", fake_add_tools
+    )
 
     request = CreateChatCompletionRequest.model_validate(
         {

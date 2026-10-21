@@ -11,11 +11,30 @@ import json
 from contextlib import asynccontextmanager
 
 import httpx
+import pytest
 from fastapi import HTTPException
 from lmos_openai_types import CreateChatCompletionRequest
 
 from mcp_bridge.mcp_clients.AbstractClient import CallToolResult, TextContent
 from mcp_bridge.openai_clients import chatCompletion as chat_completion_module
+
+
+@pytest.fixture(autouse=True)
+def _stub_tool_merge(monkeypatch):
+    """These tests use a synthetic tool to exercise loop mechanics.
+
+    They are not testing MCP discovery, and the synthetic tool must be treated
+    as MCP-owned so the loop dispatches it. The client-vs-MCP merge policy is
+    covered directly in tests/test_tool_parity.py.
+    """
+
+    async def fake_add_tools(request):
+        request._client_tool_names = set()
+        return request
+
+    monkeypatch.setattr(
+        chat_completion_module, "chat_completion_add_tools", fake_add_tools
+    )
 
 
 class FakeResponse:
