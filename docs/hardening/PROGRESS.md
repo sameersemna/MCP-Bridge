@@ -51,7 +51,7 @@ Branch: `dev` · working tree clean at start · app imports OK.
 | P2-01 | Request correlation | done | e6f1ccc | `X-Request-ID` middleware (accept/generate, sanitize, echo); loguru context, trace filename+payload, `mcp_bridge.request.id` span attribute. 4 tests. |
 | P2-02 | PII-safe tracing | done | 4dbea35 | `telemetry.capture_payloads=false` by default; when enabled, request/response/tool previews are redacted before becoming span attributes. 3 tests. |
 | P2-03 | Metrics | done | aba85c2 | Dependency-free Prometheus counters/summaries; `/metrics` on the authenticated router behind `telemetry.metrics_enabled` (default false). Instruments upstream latency/status, tool calls, cache, idempotency, resets, turns. 3 tests. |
-| P2-04 | Limits and backpressure | todo | | |
+| P2-04 | Limits and backpressure | done | e82f5a7 | Opt-in `limits` config: per-key token bucket + concurrency cap, body-size 413, per-request tool-call cap. OpenAI-style 429 with Retry-After. 5 tests. |
 | P2-05 | CI lint/type blocking | todo | | |
 | P2-06 | Docker and Helm | todo | | |
 | P3-01 | Replace control-flow asserts | todo | | |
@@ -89,3 +89,4 @@ Branch: `dev` · working tree clean at start · app imports OK.
 - 2026-10-21 20:30 P2-01 done (e6f1ccc). Request-id middleware is outermost so CORS/error responses also carry the header; the id is sanitized before use in a filename. Gate 497 passed / ruff 3 / mypy 55.
 - 2026-10-21 20:42 P2-02 done (4dbea35). `config.telemetry.capture_payloads` defaults to false; span previews are omitted (not just empty) when disabled, and redacted when enabled. Gate 500 passed / ruff 3 / mypy 55.
 - 2026-10-21 20:55 P2-03 done (aba85c2). A dependency-free registry avoided adding `prometheus_client`; the summary form (`_count`/`_sum`) is used rather than histogram buckets, which the bridge does not need yet. Gate 503 passed / ruff 3 / mypy 55.
+- 2026-10-21 21:10 P2-04 done (e82f5a7). Two rounds of test failures traced to a missing `config` import in `streamChatCompletion` (the import anchor did not match because another import sat between the lines) and a fake-clock test that started at 0 against a bucket initialised with monotonic time. Gate 508 passed / ruff 3 / mypy 55.
